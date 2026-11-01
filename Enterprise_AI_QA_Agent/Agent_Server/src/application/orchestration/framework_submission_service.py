@@ -36,6 +36,30 @@ class FrameworkReleaseSubmissionLoader:
     max_tokens: int
     deadline_seconds: float
 
+    @classmethod
+    def from_configuration(cls, config, capabilities, *, agent_registry, model_registry):
+        """Compose with the startup-verified identity, never infer or enable it."""
+        policy = config.message_submission_policy
+        if policy is None:
+            logger.info("framework_submission_unconfigured")
+            return None
+        try:
+            if (not config.enabled or not config.checkpoint_enabled or config.release_store is None
+                or config.release_reference is None or capabilities is None
+                or not capabilities.deepagents_available or capabilities.release_reference is None):
+                raise ValueError("Configured message submission requires its verified runtime release")
+            loader = cls(release_store=config.release_store, release_reference=capabilities.release_reference,
+                agent_registry=agent_registry, model_registry=model_registry,
+                mode_keys=frozenset(config.pilot_mode_keys), checkpoint_namespace=policy.checkpoint_namespace,
+                max_calls=policy.max_calls, max_tokens=policy.max_tokens, deadline_seconds=policy.deadline_seconds)
+        except Exception as exc:
+            logger.error("framework_submission_configuration_failed", extra={"error_type": type(exc).__name__})
+            raise ValueError("Configured framework message submission failed") from None
+        logger.info("framework_submission_configured", extra={
+            "framework_release_revision": loader.release_reference.source_revision,
+            "framework_release_sha256": loader.release_reference.archive_sha256})
+        return loader
+
     async def __call__(self, session, request, command) -> PreparedFrameworkSubmission | None:
         if request.mode_key not in self.mode_keys:
             return None

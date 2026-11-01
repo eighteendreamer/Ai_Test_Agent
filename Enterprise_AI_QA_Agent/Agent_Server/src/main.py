@@ -182,6 +182,7 @@ from src.runtime.framework_worker_capabilities import FrameworkWorkerCapabilitie
 from src.application.models.framework_model_call_policy import FrameworkModelCallPolicy
 from src.application.models.framework_model_evidence import FrameworkModelEvidence
 from src.application.orchestration.agent_task_dispatcher import AgentTaskDispatcher
+from src.application.orchestration.framework_submission_service import FrameworkReleaseSubmissionLoader
 from src.runtime.postgres_resource_allocation_store import PostgresResourceAllocationStore
 from src.runtime.postgres_browser_allocation_store import PostgresBrowserAllocationStore
 from src.runtime.compaction_worker import CompactionWorker
@@ -905,6 +906,9 @@ async def _initialize_lifespan_resources(
         framework_model_calls=framework_model_calls,
         framework_native_reader=(deep_agent_bound_runtime_adapter.open_native_reader
             if deep_agent_bound_runtime_adapter is not None else None),
+        framework_submission_loader=FrameworkReleaseSubmissionLoader.from_configuration(
+            settings.deep_agents, app.state.framework_worker_capabilities,
+            agent_registry=agent_registry, model_registry=model_registry),
     )
     cleanup.push_async_callback(
         _close_lifespan_resource, "agent_task_child_reaper", app.state.agent_task_dispatcher.stop_child_reaper,

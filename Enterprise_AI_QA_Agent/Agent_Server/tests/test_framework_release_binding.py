@@ -613,15 +613,24 @@ async def test_http_prepared_release_runs_full_context_graph_and_commits_origina
 
             active_configurations = [config]
             external_registry = None
+            configuration_reads = []
             if preparation == "external":
+                from threading import Event
                 from src.infrastructure.model_config_store import MySQLModelConfigStore
                 from src.registry.models import ModelRegistry
                 from tests.test_framework_submission_loading import require_unlocked_session
 
                 model_store = MySQLModelConfigStore(h.settings)
+                material_loading = Event()
 
                 def list_active():
-                    require_unlocked_session(h)
+                    # The admission read must not own this row. Runtime reads
+                    # coexist with legitimate Session heartbeat transactions.
+                    if material_loading.is_set():
+                        require_unlocked_session(h)
+                        configuration_reads.append("admission")
+                    else:
+                        configuration_reads.append("runtime")
                     return list(active_configurations)
 
                 monkeypatch.setattr(model_store, "list_active", list_active)
@@ -662,16 +671,27 @@ async def test_http_prepared_release_runs_full_context_graph_and_commits_origina
 
             if preparation == "external":
                 from src.application.orchestration.framework_submission_service import FrameworkReleaseSubmissionLoader
+                from src.core.config import DeepAgentsConfig
 
-                source_loader = FrameworkReleaseSubmissionLoader(release_store=current_source_release[0],
-                    release_reference=current_source_release[1], agent_registry=parts.agent_registry,
-                    model_registry=external_registry, mode_keys=frozenset({"code_review"}),
-                    checkpoint_namespace="prepared:v2", max_calls=8, max_tokens=100_000, deadline_seconds=300)
+                reference_path = tmp_path / "configured-release-reference.json"
+                reference_path.write_text(current_source_release[1].model_dump_json(), encoding="utf-8")
+                h.settings.deep_agents = DeepAgentsConfig(**{**h.settings.deep_agents.model_dump(),
+                    "enabled": True, "checkpoint_enabled": True, "release_store": current_source_release[0],
+                    "release_reference": reference_path, "message_submission_policy": {
+                        "checkpoint_namespace": "prepared:v2", "max_calls": 8, "max_tokens": 100_000,
+                        "deadline_seconds": 300}})
+                capabilities = FrameworkWorkerCapabilities.from_configuration(h.settings.deep_agents)
+                source_loader = FrameworkReleaseSubmissionLoader.from_configuration(h.settings.deep_agents, capabilities,
+                    agent_registry=parts.agent_registry, model_registry=external_registry)
 
                 async def load(session, request, command):
-                    value = await source_loader(session, request, command)
-                    prepared.append(value)
-                    return value
+                    material_loading.set()
+                    try:
+                        value = await source_loader(session, request, command)
+                        prepared.append(value)
+                        return value
+                    finally:
+                        material_loading.clear()
 
                 dispatcher = prepared_dispatcher(h, current_source_release, None, loader=load)
             else:
@@ -688,6 +708,17 @@ async def test_http_prepared_release_runs_full_context_graph_and_commits_origina
                 response = await client.post(f"/sessions/{h.session_id}/messages", json=body)
             assert response.status_code == 202 and requests == []
             task_id = response.json()["task"]["id"]
+            if preparation == "external":
+                assert configuration_reads and set(configuration_reads) == {"admission"}
+                assert not material_loading.is_set()
+                # A runtime config read does not participate in PG admission.
+                # A legitimate concurrent heartbeat may own this row; prove
+                # our config-store fixture does not add a runtime lock probe.
+                with postgres_connect(h.settings) as conn, conn.cursor() as cur:
+                    cur.execute(f"SELECT id FROM {h.settings.database.postgres_session_table} WHERE id=%s FOR UPDATE",
+                        (h.session_id,))
+                    assert external_registry.get_runtime_config(config.key).key == config.key
+                assert configuration_reads[-1] == "runtime"
             active_configurations[:] = [replacement, config]
             if selection == "session_preference":
                 session = await h.store.get_session(h.session_id)

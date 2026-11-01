@@ -5,7 +5,7 @@ import re
 from functools import lru_cache
 from pathlib import Path
 
-from pydantic import BaseModel, Field, SecretStr, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 ENV_FILE = Path(__file__).resolve().parents[2] / ".env"
@@ -497,6 +497,24 @@ class LangSmithConfig(BaseModel):
         return max(100, value)
 
 
+class FrameworkMessageSubmissionPolicy(BaseModel):
+    """Server-only admission limits; absent policy preserves legacy writers."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    checkpoint_namespace: str = Field(min_length=1, max_length=255)
+    max_calls: int = Field(ge=1, le=100_000)
+    max_tokens: int = Field(ge=1, le=1_000_000_000_000)
+    deadline_seconds: float = Field(gt=0, allow_inf_nan=False)
+
+    @field_validator("checkpoint_namespace")
+    @classmethod
+    def require_nonblank_namespace(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("Submission checkpoint namespace must not be blank")
+        return value
+
+
 class DeepAgentsConfig(BaseModel):
     """Opt-in runtime capability and independent new-turn route switches.
 
@@ -509,6 +527,7 @@ class DeepAgentsConfig(BaseModel):
     new_turns_enabled: bool = True
     release_store: Path | None = None
     release_reference: Path | None = None
+    message_submission_policy: FrameworkMessageSubmissionPolicy | None = None
     pilot_mode_keys: list[str] = Field(default_factory=lambda: ["code_review"])
     read_only_filesystem_enabled: bool = False
     read_only_max_file_size_mb: int = 10
@@ -538,6 +557,10 @@ class DeepAgentsConfig(BaseModel):
     def validate_release_paths(self):
         if (self.release_store is None) != (self.release_reference is None):
             raise ValueError("release_store and release_reference must be configured together")
+        if self.message_submission_policy is not None and (
+            not self.enabled or not self.checkpoint_enabled or self.release_reference is None
+        ):
+            raise ValueError("Message submission policy requires enabled checkpoint runtime and configured release")
         return self
 
     @field_validator("checkpoint_schema")

@@ -59,7 +59,7 @@ v2 CLI 未传显式 `--release-store`／`--release-reference` 时也消费同一
 
 旧源码未导出这份目录时，归档探针保持旧清单原样，不补造空目录或回写旧制品；旧清单缺失不等于旧读者支持了新格式。现有普通读取、JSON 模式读取和 claim 前格式分类仍走原 reader，无新写入格式／版本上界变化。
 
-**发布限制不变**：所有旧初始化读者升级／隔离前，不得启用引用写者。应用默认未装配新消息准备端口，API 普通消息受理仍走现有 legacy；下述显式接入只在隔离 Harness 中启用。源码归档验收复用当前 venv，不等于双制品独立依赖安装、完整后端部署或 E4。
+**发布限制不变**：所有旧初始化读者升级／隔离前，不得启用引用写者。应用默认不创建消息材料 loader，API 普通消息受理仍走原路径；现在 main 可消费下述显式服务端策略，但本轮没有配置或启用生产实例。源码归档验收复用当前 venv，不等于双制品独立依赖安装、完整后端部署或 E4。
 
 - `tests/test_framework_release_startup.py`：配置、原安装校验 factory、实际 lifespan 的资源前顺序、CLI 配置分支、日志有限输出，以及恢复当前源码快照的新进程预检。新进程的 SQL／业务初始化明确替换为空端口，不是全后端 lifespan 验收。
 - `tests/test_framework_release_binding.py`／`test_framework_release_workers.py`：安装源码一致性、历史读者／真实 PG 与 Redis 的既有消费契约；具体结果和限制见实施记录。
@@ -88,7 +88,7 @@ v2 Dispatcher 的任务读取与 claim 锁内的 task／owner 绑定均使用原
 
 ### 显式接入原消息受理事务（v4 §4.1／§14.1）
 
-`AgentTaskDispatcher` 可由受信服务端装配 `framework_submission_preparer(session, execution_request, command)`；默认 `None`，真实 main／CLI 均未装配，不新增公共请求字段、配置或生产选路。该同步端口返回上面的 `PreparedFrameworkSubmission`，或明确返回 `None` 保留该模式的 legacy 路径；异常不回退。客户端 metadata／context 不得选择、替换或安装该端口。`new_turns_enabled=false` 时不调用准备端口，新意图仍走 legacy；重试则继续返回首次已受理任务，不改其已有绑定。
+`AgentTaskDispatcher` 可由受信服务端装配 `framework_submission_preparer(session, execution_request, command)`；该同步端口默认 `None`，main／CLI 不安装同步回调。它返回上面的 `PreparedFrameworkSubmission`，或明确返回 `None` 保留该模式的 legacy 路径；异常不回退。客户端 metadata／context 不得选择、替换或安装端口。`new_turns_enabled=false` 时不调用准备端口，新意图仍走 legacy；重试则继续返回首次已受理任务，不改其已有绑定。正式异步组合与服务端配置见下文。
 
 原 `PostgresAgentTaskStore.submit_prepared_message()` 在既有 Session 行锁内先查同一消息幂等身份，再为首次请求调用准备端口，复用原同连接事务保存绑定／owner、模型预算、消息、stage、任务、事件和 outbox。准备端口必须同步、只读、无执行副作用；可校验已捕获的配置和本机制品，不能在持锁期间调用模型、图、工具、队列、额外 DB／网络或异步服务。此处不提供跨系统事务或撤销外部副作用的保证，也未验收生产并发性能。
 
@@ -102,13 +102,30 @@ v2 Dispatcher 的任务读取与 claim 锁内的 task／owner 绑定均使用原
 
 ### 在受理事务外读取当前装配材料（v4 §4／§6）
 
-需要查询当前模型配置与制品时，受信组合可改装配异步 `framework_submission_loader(session, execution_request, command)`，与同步 preparer 互斥，默认仍未安装。`FrameworkReleaseSubmissionLoader` 在工作线程中复用真实 Agent／Model Registry 的选模规则和 `get_runtime_config()`，再调用原 `prepare_release_submission()`；每次新意图读取当前材料，不使用启动缓存。模式集合、namespace、调用／Token 上限和截止时长必须由可信组合显式提供，没有自行推导的生产默认。未命中模式返回 None，不读取模型或制品。
+需要查询当前模型配置与制品时，受信组合可改装配异步 `framework_submission_loader(session, execution_request, command)`，与同步 preparer 互斥，默认策略为空时返回 None。`FrameworkReleaseSubmissionLoader` 在工作线程中复用真实 Agent／Model Registry 的选模规则和 `get_runtime_config()`，再调用原 `prepare_release_submission()`；每次新意图读取当前材料，不使用启动缓存。模式集合、namespace、调用／Token 上限和截止时长必须由可信组合提供，没有自行推导的生产限额。未命中模式返回 None，不读取模型或制品。
 
 Dispatcher 先无锁只读查询原 API 消息回执；已有相同请求直接返回，冲突仍 409，不再依赖当前材料源。未命中才读取材料，且不持有 Session 行锁、不写受理事实、不执行模型或工具。材料读取失败后只再查询一次并发提交回执；仍不存在则明确失败，不静默回退 legacy。候选若与原 payload 的显式模型 key 不同，受理前拒绝，避免先返回 202 再被 Worker 的冻结根模型规则拒绝；继承的 Session 偏好不冒充显式输入，仍允许 Registry 原有选择策略。
 
 读取成功不授予受理权：原 `submit_prepared_message()` 在 Session 行锁内重新核对幂等、当前新接入开关、候选能力及全部既有事务约束，只提交胜出的绑定／预算／任务／消息／outbox。并发候选不能替换原材料；关闭开关可丢弃未提交候选，但不撤销已提交绑定。读取期间取消后，即使只读工作线程随后结束，也不产生受理事实。该两阶段边界不是 MySQL／PG 分布式事务，配置在采集期间变化仍以最终捕获并入库的参数原件为准，执行端继续核对当前授权与原指纹。
 
-新增成功／回执复用日志为 `framework_submission_materials_loaded`／`agent_message_loaded_admission_reused`；失败 `agent_message_material_loading_failed` 只附任务身份和错误类型，不输出配置、请求或源异常正文。`test_framework_submission_loading.py` 验证真实 PG 行锁、并发、失败、取消、关闭和重试；`test_framework_release_binding.py` 的 external 参数用真实 Registry 加受控配置存储端口接通原 HTTP→Worker→官方框架与本地合成 HTTP。不是 MySQL 实库、付费供应商或完整 main 启动验收，生产入口和配置开关不变，结果见实施记录 §175。
+新增成功／回执复用日志为 `framework_submission_materials_loaded`／`agent_message_loaded_admission_reused`；失败 `agent_message_material_loading_failed` 只附任务身份和错误类型，不输出配置、请求或源异常正文。`test_framework_submission_loading.py` 验证真实 PG 行锁、并发、失败、取消、关闭和重试；`test_framework_release_binding.py` 的 external 参数用真实 Registry 加受控配置存储端口接通原 HTTP→Worker→官方框架与本地合成 HTTP。原装配子步结果见实施记录 §175；后续 main 可选组合见下节，仍不代表 MySQL 实库、付费供应商或完整 main 启动验收。
+
+### main 的可选服务端受理策略（v4 §4／§14.1–14.2）
+
+`deep_agents.message_submission_policy` 默认 None，不因安装依赖、配置制品或开启运行能力就自动创建新绑定。非空时，以下字段全部必填，没有内置生产数值；未知字段拒绝，不静默忽略：
+
+| 环境变量（既有 Settings 嵌套规则） | 约束／含义 |
+| --- | --- |
+| `DEEP_AGENTS__MESSAGE_SUBMISSION_POLICY__CHECKPOINT_NAMESPACE` | 非空且非纯空白，最长 255 字符；逻辑 namespace，不替代物理 PostgreSQL schema |
+| `DEEP_AGENTS__MESSAGE_SUBMISSION_POLICY__MAX_CALLS` | 1–100000；原根预算的总调用上限 |
+| `DEEP_AGENTS__MESSAGE_SUBMISSION_POLICY__MAX_TOKENS` | 1–1000000000000；原根预算的总 Token 上限 |
+| `DEEP_AGENTS__MESSAGE_SUBMISSION_POLICY__DEADLINE_SECONDS` | 有限正数；从任务创建时刻计算原根截止时间，排队／采集不会刷新它 |
+
+策略要求 `enabled=true`、`checkpoint_enabled=true` 和原成对制品配置；缺项在 Settings 校验时拒绝。`new_turns_enabled` 独立，可保持 false 以停止新接入而保留配置与存量运行能力。模式集合复用原 `pilot_mode_keys`，不新建第二份白名单；配置并不是该模式质量／兼容部署已验收的证明，发布前仍须完成原发布门。
+
+main 在原 Dispatcher 构造处调用 `FrameworkReleaseSubmissionLoader.from_configuration()`，使用启动预检返回的能力与完整制品引用、当前真实 Agent／Model Registry 和显式策略。未配置返回 None；能力缺失／无引用／不可运行时明确拒绝组合，不猜测源码版本、制品或预算。工厂不读取模型配置、不执行模型、不写数据库，当前材料仍到每个新消息受理前才读取。CLI 复用 main lifespan，没有另一套策略解析。仅移除策略停止生成新绑定，不会取消存量；无绑定执行仍受原 Runtime 路由开关控制。
+
+组合日志 `framework_submission_unconfigured`／`framework_submission_configured`／`framework_submission_configuration_failed` 仅记录既有制品身份或错误类型，不输出路径、策略原件和认证。验证由 `test_framework_submission_configuration.py` 的配置／环境／工厂与 main AST 审计、原生命周期和预检测试、原完整 HTTP external 用例共同覆盖。HTTP 用例使用真实配置预检与同一组合工厂，但应用资源仍手动装配，不冒称完整 main lifespan、MySQL 模型配置链路或 E4 已通过。另有已运行本机 MySQL 的只读 SELECT 1／连接池归属清理验收，不代替配置表或正式受理验收。实际结果和剩余限制见实施记录 §176；没有修改实际 `.env` 或启用生产策略。
 
 ### 消费受理时的根模型选择（v4 §4／§6）
 

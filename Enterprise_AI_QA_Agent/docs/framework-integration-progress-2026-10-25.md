@@ -8074,3 +8074,56 @@ $env:PYTHONIOENCODING='utf-8'
 v4 B／§4、§6 → 本节 → Dispatcher、task store、新装配服务、两个测试模块、原控制说明与本记录共 7 文件 → 本节红绿和最终 258 项 → 独立提交 `【feat】在受理事务外装配模型与制品材料`，ID 见 Git 历史与交付；不推送、不建 PR，不包含 v3 草稿、认证、日志或测试制品。新增测试受仓库既有忽略规则覆盖，只对该已审阅文件显式纳入跟踪，不修改忽略规则。
 
 本步完成显式、默认未安装的当前材料装配边界及隔离链路，不代表正式生产发布、B 或全系统完成。仍需可信生产限额／模式发布策略与 main 组合、MySQL 实库及正式项目／用例版本冻结验收、全部旧读者升级或隔离、完整有效输入／格式／行为审计、独立制品安装／部署、备份恢复和灰度排空。§159／160 时间异常及 §166 子进程 RuntimeError 仍未定位；完整 A2/A3/B/C/D/E/F、H01–H12、真实供应商／embedding／RustFS／领域 Runner、官方 saver conformance、全前后端、E3/E4 继续保留 v4 原出口，整体 goal 继续 active。
+
+## 176. B／§4、§6，F／§14.1–14.2：将显式受理策略接入原 main 组合（2026-11-01）
+
+### 依据、范围与实现
+
+续接 `128b4b880`／§175；上一目标轮有实现、实测和提交，判定为 progress。核对当前 Git、v4、新装配／原 main／CLI、配置与预检、原完整 HTTP 和生命周期调用链。v3 草稿仍为原 SHA256 `8A43E94160767A0DE20740F2CB30782F06322CBC3467076DFCB120D4EFDF1AD4`，不修改／提交。旧审批、messages、结果恢复、模型选取消费和唯一投影链不重做。
+
+§175 已有每请求材料采集，但真实 main 没有组合端口，也没有可信显式根限额来源。依据原 `DeepAgentsConfig`／Settings 嵌套环境解析、`FrameworkWorkerCapabilities.from_configuration()` 的可选预检模式 → 增加可选服务端策略，不从旧子代理限制猜测根预算；依据原 main 的 Dispatcher 构造和真实 Registry → 原位装配同一 loader，不增新入口、队列或调度层。同步 preparer 继续不在 main 安装。本地《Agent轨迹与协议鲁棒性》的权限／并发轨迹及《模型升级与微调回归测试》的版本配置身份要求 → 保留原预算、请求、实际调用和重复投递断言，不以配置解析或 AST 代替实际链路。
+
+- `core/config.py` 新增不可变、未知字段拒绝的 `FrameworkMessageSubmissionPolicy`；`DeepAgentsConfig.message_submission_policy` 默认 None。namespace、max_calls、max_tokens、deadline_seconds 全部必填；长度和数值范围对齐原 binding／预算，截止时长必须有限且为正。非空策略要求原 enabled、checkpoint_enabled 和成对制品配置；new_turns_enabled 仍独立，不因配置策略强制开启新流量。
+- 原 loader 新增 `from_configuration()`，消费启动已核验能力及完整引用、原 Agent／Model Registry 和显式策略，模式集合复用原 pilot_mode_keys 并复制为 frozenset。缺策略返回 None；能力缺失、无制品身份或不可运行明确失败。工厂不读模型配置、不执行模型、不写库；限额／模式在组合时捕获，模型配置仍每新请求采集，预算入库后不因策略变化重置。
+- main 在原 Dispatcher 构造处调用该工厂；原 v2 CLI 继续复用 main lifespan，没有重复配置解析或新公共参数。只读当前实际配置确认 policy 不存在、enabled=false、checkpoint_enabled=false；new_turns_enabled=true 不会越过运行能力和空策略。未修改 `.env`、配置生产策略或启动后端服务。
+- 增加 `framework_submission_unconfigured`／`framework_submission_configured`／`framework_submission_configuration_failed` 日志，只带既有制品身份或错误类型，不输出配置、路径、认证或原异常。搜索全部新字段／工厂消费方；这是服务端配置契约，不增加公开请求字段、持久格式、DDL 或前端 DTO。旧程序可能忽略新设置，设置了环境变量不能代替版本、兼容读者和原发布门核验。
+
+### TDD、实际失败及夹具根因
+
+1. 新配置／环境／工厂／main 接线模块修改源码前实际 **25 failed，4.46 秒**：缺少 policy／工厂和 main 关键字，非法／缺项策略被旧配置忽略。实现后同模块实际 **25 passed，2.51 秒**。
+2. 将原完整 HTTP external 用例改用真实 `DeepAgentsConfig`、引用文件、安装预检及与 main 相同的组合工厂，保留真实 PG／Redis、原 outbox／Worker、官方框架／模型对象与本地 HTTP、统一上下文、预算／图输入／原应用结果。首轮选组实际 **1 failed、31 passed、67 deselected，143.12 秒**；external-auto 的执行期配置读取被测试 `list_active()` 注入的 `FOR UPDATE NOWAIT` 拒绝，任务 failed。
+3. 堆栈明确落在测试 helper，而非真实 MySQL 读取：旧夹具把“采集不持 Session 受理行锁”扩成所有执行期配置读取均需抢 PG 行锁。原失败未采集 pg_locks，不声称已经识别当时具体持锁连接；合法执行期 Session 事务（例如心跳）本就可能持有该行。新增确定性对照：HTTP 受理完成后由另一连接明确持有该行锁，再读取模型配置，旧夹具实际 **1 failed、73 deselected，55.58 秒**，稳定复现同一额外锁依赖。
+4. 仅修正夹具阶段归属：材料采集的每次配置读取仍严格 NOWAIT 取得 Session 行锁，并显式断言读阶段非空且全部为 admission；执行期不额外抢与配置无关的 PG 锁，新增持锁对照仍必须通过。用 Event 覆盖实际只读工作线程的整个采集区间并 finally 清理，不改生产心跳、不重试锁、不忽略模型／messages／资产断言。原 external-auto 对照实际 **1 passed、73 deselected，52.67 秒**。这是夹具根因修复，不是生产恢复能力或“所有执行期均无 Session 锁”的证明。
+
+### 最终源码回归与证据边界
+
+```powershell
+# cwd: Agent_Server；固定 .venv-framework-v2，复用已运行 PG／Redis
+$env:RUN_LIVE_POSTGRES_TESTS='1'
+$env:RUN_LIVE_REDIS_TESTS='1'
+$env:RUN_LIVE_DOCKER_TESTS='0'
+$env:RUN_LIVE_MYSQL_TESTS='0'
+$env:PYTHONIOENCODING='utf-8'
+..\.venv-framework-v2\Scripts\python.exe -u -m pytest tests/test_framework_submission_configuration.py tests/test_framework_submission_loading.py tests/test_framework_release_binding.py tests/test_agent_task_dispatch.py tests/test_framework_model_admission.py tests/test_framework_message_stages.py tests/test_framework_route_rollback.py tests/test_framework_model_reader_admission.py tests/test_framework_release_startup.py tests/test_framework_release_workers.py tests/test_lifespan_resource_cleanup.py -q -rs --tb=short
+# 291 passed，1 skipped，1106.45 秒，exit 0，无 deselect
+```
+
+唯一 skip 是原 `test_lifespan_disposes_only_last_owners_sql_pool[mysql]`，原因是未开启 RUN_LIVE_MYSQL_TESTS，不能称该组合“无跳过”。随后只读检查现有 Docker 容器／端口及 Settings 中已配置的 loopback MySQL TCP，确认可连接，没有启动或重启任何服务；阅读原用例确认只执行 SELECT 1 和本进程连接池归属／释放检查，不读写业务表。对**同一最终源码**启用该测试并完整重跑清理模块：
+
+```powershell
+$env:RUN_LIVE_MYSQL_TESTS='1'
+..\.venv-framework-v2\Scripts\python.exe -u -m pytest tests/test_lifespan_resource_cleanup.py -q -rs --tb=short
+# 9 passed，6.40 秒，exit 0，无 skip／deselect；包括真实 PG 和 MySQL 分支
+```
+
+两组有重复覆盖，不相加计数，不改写原组的 skip。新增配置和 HTTP 三种选模均在最终组通过；只读 MySQL 池验收不等于真实模型配置表、受理装配或完整 main 已通过。配置与工厂测试不访问实际 `.env`，环境解析使用隔离 Probe；其余原实库 Harness／附加配置探测仍按原 Settings 加载 `.env`，未用工具直接打开、输出或修改实际认证内容。全部已启动 pytest 均获得真实终态，无测试后台遗留。测试期间归档覆盖的生产源码不变，只更新不在源码归档中的说明／记录。
+
+原完整 HTTP 的 captured／external、explicit／auto／受理后偏好变化均保留。external 现在走真实配置预检和同一 main 工厂，不是硬编码根模型准备；实际配置存储端口仍受控，非 MySQL 模型表，模型为本地合成回答／usage，检索等端口受控且 Session 无正式项目。未发领域工具效果，不冒称正式项目质量、真实供应商或 E3。main 接线是 AST 审计＋实际工厂／HTTP 组合验证，不是完整资源初始化；原生命周期测试省略业务初始化。归档恢复进程仍复用当前 venv，不是独立安装、完整部署或 E4。
+
+根目录 compileall（src／tests）与 git diff --check 实际 exit 0；独立 ruff／mypy／build／wheel／setuptools 经 find_spec 确认未安装，未执行独立 lint／typecheck／构建安装，不安装依赖。前端无变化、未重跑。只读核对 CLI 继续导入 main app／使用其 lifespan；主应用可选消费策略的源码已改变，不能再用 §175 的“main 不含异步准备关键字”历史断言代表当前代码。未启动／重启 PG／Redis／MySQL／容器，未调用付费模型、扫描目标或改生产配置；只清理本轮 fixture 自有资源，不处理 §158 未归属残留。
+
+### 提交对应与剩余出口
+
+v4 B／§4、§6，F／§14.1–14.2 → 本节 → core 配置、原 main、原 loader、原完整 HTTP 测试、新配置测试、原控制说明和本记录共 7 文件 → 本节红绿、最终 291＋1 skip 及清理模块 9 passed → 独立提交 `【feat】将消息受理策略接入应用启动`，ID 见 Git 历史和交付，不推送／建 PR；新增测试只对该文件显式纳入跟踪，不改忽略规则，不混入 v3 草稿或认证／日志／制品。
+
+本步具备真实 main 的默认关闭可选组合，不是仅测试 app 具备端口，但不代表生产发布或 B／F 完成。限额具体数值、模式质量／发布策略、实际模型配置表与正式项目／用例版本冻结、全资源 main 启动、全部旧读者升级或隔离、完整有效输入／格式／行为审计、双制品独立安装／部署、备份恢复与灰度排空仍待验收。§159／160 时间异常及 §166 子进程 RuntimeError 未定位；完整 A2/A3/B/C/D/E/F、H01–H12、真实供应商／embedding／RustFS／领域 Runner、官方 saver conformance、全前后端、E3/E4 继续保留 v4 原出口，整体 goal 继续 active。
