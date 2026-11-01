@@ -231,7 +231,23 @@ bound Runtime 初始状态只查询 ExecutionRequest 的明确 key，不再回�
 
 日志 `controlled_case_admission_committed`／`reused`／`failed` 仅保存身份、固定失败阶段和摘要；原 RunItem attempt 用既有 `execution_id` 渲染，不冒充 AgentTask `attempt_id`。事件为通用字符串类型 `test_run.case_admitted`，payload 显式携原 RunItem attempt；不制造用户消息或 message-stage。协程等待者取消不能停止 `to_thread` 中的 SQL，日志 `controlled_case_admission_waiter_cancelled` 明确 `admission_receipt_unknown`，不谎称回滚、不自动重跑命令；重试只核对原持久回执。
 
-`tests/test_controlled_case_admission.py` 的正式草稿／评审／启用、Suite／计划 Run、领取／start、受理和 Outbox 使用真实 PostgreSQL；规划模型、配置和对象后端仍为明确替身。原 Relay 真实发布到隔离 Redis，当前 Worker 两次读取实际 reference-only Outbox 后仍在 claim 前拒绝 langgraph。冷进程只验证导入／codec，不冒称独立执行进程验收。实际验证见实施记录 §186；完整服务器上下文装配、reference 与持久原件的执行前核对、双租约 claim／fence、RuntimeTurnResult／唯一 finalizer、强杀和真实领域链路仍待实现／验收。
+`tests/test_controlled_case_admission.py` 的正式草稿／评审／启用、Suite／计划 Run、领取／start、受理和 Outbox 使用真实 PostgreSQL；规划模型、配置和对象后端仍为明确替身。原 Relay 真实发布到隔离 Redis，默认 Worker 两次读取实际 reference-only Outbox 后仍在 claim 前拒绝 langgraph。冷进程只验证导入／codec，不冒称独立执行进程验收。受理验证见实施记录 §186；后续内部引用核对／双租约见下节与 §187。完整服务器上下文装配、实际受控运行与 RuntimeTurnResult／唯一 finalizer、强杀和真实领域链路仍待实现／验收。
+
+### 内部正式用例双租约领取与写入 fence（v4 E／§8、§12.1）
+
+`PostgresAgentTaskStore.claim_controlled_case()` 是未装配的内部执行准入口，复用原 claim／Attempt／事件事务，不创建第二个调度器。仅接受 reference-only 命令；在 Session 锁内严格比较持久 task 身份、完整 case／graph 输入、原 RunItem checkpoint、plan pin、输入／提交摘要和根预算。未知输入／预算格式沿原兼容性等待分类，损坏／漂移不领取；不重新查询、分类或生成当前 Prompt 替换原件。通用 claim 不能绕过该端口直接领取 case。
+
+新增 `FrameworkWorkerCapabilities.controlled_case_available` 默认 false，仅内部 Harness 显式提供 true；`from_artifact`／`from_configuration`／main／CLI 未启用。即使提供此能力，当前 Dispatcher 仍不走专用 case claim／执行／finalizer，不能据此开放生产 Worker。完整领域执行、正式结果投影和滚动制品验收仍待完成。
+
+claim 沿 Session → 同一物理 Run 表的计划共享投影锁 → Item → 原 Attempt → runtime owner → task 的锁顺序，取得现有模型账本兼容读锁后，以数据库现场时间复核原 RunItem lease／deadline，再原子生成独立 AgentTask attempt／token／epoch。原 RunItem attempt、租约、冻结输入和预算不重置、不续期。两项并发只允许一次领取。原 running task 已失去自身 owner 时仍沿原逻辑进入 recovery_required，不重新运行图。
+
+Worker 内存中的 `RuntimeExecutionOwner.controlled_case_lease` 捕获原 RunItem 身份、attempt_no、worker、lease capability 和输入摘要，始终从序列化与 repr 排除；不进入 Redis、checkpoint source、图状态或公开 TaskRecord。剥离这个字段不能继续写正式 case；source 仍只读，不是执行许可。两个 attempt／token／worker 各有独立含义，不相互冒充。
+
+既有 `assert_runtime_owner()` 对正式 case 在同连接取得业务锁，再取 runtime owner 锁，用同一个锁后 DB 时间检查两项 lease。原官方 saver／pending writes、模型账本以及其他调用此 owner 端口的事务共用此规则；不在图运行期间持锁。saver 的 checkpoint-only search_path 下，业务查询及计划锁的 regclass 均明确使用 public 物理表；不换成另一个 advisory 锁资源。双租约 heartbeat 也沿同连接，原子更新 Session／runtime owner／RunItem 的到期时间，任一步失败全部回滚，任一 lease 已失效都不复活。
+
+终态重复投递严格读原受理身份／原件，仅返回没有 runtime_owner 的回执；Run 已取消不应误杀该只读分支，但绝不借此授予执行权。未实现 case 的唯一应用 finalizer 前，通用 finish 禁止将它标成 completed，并留下 `controlled_case_finalizer_required`；失败／取消／对账沿原终态规则。锁等待复用原 SQLSTATE 55P03 → TaskDeferred 分类；协程等待者取消记 `claim_receipt_unknown`，不谎称同步 SQL 已停止，不自动重领。
+
+实际红绿与验证范围见实施记录 §187。真实 PG 正式来源、隔离 Redis、官方 saver、模型账本预留属于本轮范围；没有实际模型 HTTP／领域 Runner、受控图独立 Worker 强杀或正式结果 finalizer 验收。数据库 fence 不能撤销已发送的外部操作，未知效果仍需原 journal／停止回执或人工对账。
 
 ### 原路由与恢复验证
 

@@ -99,6 +99,19 @@ class RuntimeBinding(BaseModel):
         return hashlib.sha256(encoded.encode("utf-8")).hexdigest()
 
 
+class ControlledCaseExecutionLease(BaseModel):
+    """Captured RunItem authority; never a checkpoint source or queue payload."""
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    run_id: str = Field(min_length=1)
+    run_item_id: str = Field(min_length=1)
+    run_item_execution_attempt_id: str = Field(min_length=1)
+    attempt_no: int = Field(ge=1, strict=True)
+    worker_id: str = Field(min_length=1)
+    lease_token: str = Field(min_length=1, repr=False)
+    input_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+
+
 class RuntimeExecutionOwner(BaseModel):
     """Worker-only authority captured once at claim, never graph state."""
 
@@ -109,6 +122,9 @@ class RuntimeExecutionOwner(BaseModel):
     task_id: str
     attempt_id: str
     worker_id: str
+    # Worker memory only. The original producer source deliberately contains
+    # neither this second authority nor either lease capability.
+    controlled_case_lease: ControlledCaseExecutionLease | None = Field(default=None, exclude=True, repr=False)
 
 
 class RuntimeCheckpointSource(BaseModel):

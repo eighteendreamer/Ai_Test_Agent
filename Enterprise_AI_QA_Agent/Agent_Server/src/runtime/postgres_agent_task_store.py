@@ -10,7 +10,7 @@ from collections.abc import Callable
 import hashlib
 import json
 import logging
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 from uuid import uuid4
 
@@ -305,9 +305,13 @@ class PostgresAgentTaskStore:
     async def claim(self, task_id: str, *, worker_id: str,
                     expected_binding: RuntimeBinding | None = None,
                     framework_capabilities=None, check_model_ledger=False) -> AgentTaskExecution:
+        return await self._claim_execution(task_id, worker_id, expected_binding, framework_capabilities, check_model_ledger)
+
+    async def _claim_execution(self, task_id, worker_id, expected_binding, framework_capabilities, check_model_ledger,
+                               case_command=None):
         try:
             return await asyncio.to_thread(self._claim_sync, task_id, worker_id, expected_binding,
-                framework_capabilities, check_model_ledger)
+                framework_capabilities, check_model_ledger, case_command)
         except DBAPIError as exc:
             if expected_binding is None or getattr(exc.orig, "sqlstate", None) != "55P03":
                 raise
@@ -317,6 +321,25 @@ class PostgresAgentTaskStore:
 
     async def renew_framework_execution(self, task: AgentTaskExecution, lease_seconds: int) -> bool:
         return await asyncio.to_thread(self._renew_framework_execution_sync, task, lease_seconds)
+
+    async def claim_controlled_case(self, delivery, *, worker_id: str, framework_capabilities) -> AgentTaskExecution:
+        """Internal case port; the production dispatcher is not enabled by it."""
+        command = framework_capabilities.require_command_format(delivery)
+        try:
+            task = await self._claim_execution(command.task_id, worker_id,
+                command.runtime_binding, framework_capabilities, True, command)
+        except asyncio.CancelledError:
+            logger.warning("controlled_case_claim_waiter_cancelled", extra={"task_id": command.task_id,
+                "binding_id": command.runtime_binding.binding_id, "recovery_reason": "claim_receipt_unknown"})
+            raise
+        except Exception as exc:
+            logger.warning("controlled_case_claim_rejected", extra={"task_id": command.task_id,
+                "binding_id": command.runtime_binding.binding_id, "error_type": type(exc).__name__})
+            raise
+        logger.info("controlled_case_claim_observed", extra={"task_id": task.id, "attempt_id": task.attempt_id,
+            "binding_id": command.runtime_binding.binding_id, "status": task.status,
+            "execution_id": command.case_execution_reference.run_item_execution_attempt_id})
+        return task
 
     async def begin(
         self,
@@ -1290,7 +1313,8 @@ class PostgresAgentTaskStore:
         with postgres_connect(self._settings) as conn, conn.cursor() as cur:
             configure_runtime_owner_transaction(cur, self._settings)
             try:
-                assert_runtime_owner(cur, self._settings, task.runtime_owner)
+                case = assert_runtime_owner(cur, self._settings, task.runtime_owner,
+                    states=("claimed", "running") if task.runtime_owner.controlled_case_lease is not None else ("running",))
             except ContinuationLeaseLostError:
                 return False
             cur.execute(f"""UPDATE {self._session_table} SET metadata=metadata || jsonb_build_object(
@@ -1300,9 +1324,17 @@ class PostgresAgentTaskStore:
             expires_at = cur.fetchone()["expires_at"]
             cur.execute(f"UPDATE {runtime_owner_table(self._settings)} SET expires_at=%s WHERE binding_id=%s",
                 (expires_at, task.runtime_binding.binding_id))
+            if case is not None:
+                case.store._write_item(cur, case.item.model_copy(update={"lease_expires_at": expires_at,
+                    "updated_at": expires_at - timedelta(seconds=lease_seconds)}))
+        if case is not None:
+            logger.info("controlled_case_execution_renewed", extra={"task_id": task.id,
+                "attempt_id": task.attempt_id, "execution_id": case.attempt.id,
+                "run_id": case.lease.run_id, "run_item_id": case.item.id})
         return True
 
-    def _claim_sync(self, task_id, worker_id, expected_binding=None, framework_capabilities=None, check_model_ledger=False):
+    def _claim_sync(self, task_id, worker_id, expected_binding=None, framework_capabilities=None, check_model_ledger=False,
+                    case_command=None):
         if framework_capabilities is not None and expected_binding is None:
             raise ValueError("Framework compatibility requires a framework binding")
         if check_model_ledger and framework_capabilities is None:
@@ -1321,6 +1353,11 @@ class PostgresAgentTaskStore:
             if identity is None:
                 raise KeyError(task_id)
             session = self._lock_session(cur, identity["session_id"])
+            case = None
+            if case_command is not None:
+                from src.runtime.controlled_case_execution import prepare_case_claim
+
+                case = prepare_case_claim(cur, self, case_command, framework_capabilities)
             binding_reader = (framework_capabilities.require_binding_format
                 if framework_capabilities is not None else RuntimeBinding.model_validate)
             try:
@@ -1336,6 +1373,8 @@ class PostgresAgentTaskStore:
                 raise
             if saved_binding != expected_binding:
                 raise ValueError("Agent claim runtime binding does not match the durable task")
+            if row["operation"] == "case_execute" and case is None:
+                raise ValueError("Controlled case claim requires its reference and original RunItem lease")
             if framework_capabilities is not None:
                 try:
                     framework_capabilities.require_release(saved_binding)
@@ -1518,6 +1557,11 @@ class PostgresAgentTaskStore:
             )
             if cur.fetchone():
                 raise TaskDeferred("An earlier session input is pending")
+            if case is not None:
+                from src.runtime.controlled_case_execution import require_case_submission
+
+                cur.execute("SELECT clock_timestamp() AS now")
+                require_case_submission(cur, self, row, case, cur.fetchone()["now"])
             token, attempt_id = uuid4().hex, str(uuid4())
             cur.execute(f"""UPDATE {self._tasks} SET status='claimed', attempt_no=attempt_no+1,
                 attempt_id=%s, lease_token=%s, worker_id=%s, waiting_reason=NULL, updated_at=NOW()
@@ -1549,7 +1593,8 @@ class PostgresAgentTaskStore:
                     (token, task_id, attempt_id, worker_id, row["session_id"], saved_binding.binding_id))
                 row = {**row, "runtime_owner": RuntimeExecutionOwner(
                     binding=saved_binding, owner_epoch=cur.fetchone()["owner_epoch"],
-                    owner_token=token, task_id=task_id, attempt_id=attempt_id, worker_id=worker_id)}
+                    owner_token=token, task_id=task_id, attempt_id=attempt_id, worker_id=worker_id,
+                    controlled_case_lease=case.lease if case is not None else None)}
                 if row["operation"] == "approval_recover":
                     from src.runtime.framework_approval_finalization import is_finalization_task, adopt_finalization_owner
                     from src.runtime.framework_approval_settlement import is_settlement_task, adopt_settlement_owner
@@ -1591,6 +1636,11 @@ class PostgresAgentTaskStore:
                 raise ContinuationLeaseLostError("Agent task attempt is already settled")
             if status in {"running", "waiting_resource"} and row["status"] != "claimed":
                 raise ValueError("Only a claimed task can start or wait for admission")
+            if row["operation"] == "case_execute" and status == "completed":
+                logger.warning("controlled_case_finalizer_required", extra={"task_id": task.id,
+                    "attempt_id": task.attempt_id, "binding_id": task.runtime_binding.binding_id,
+                    "recovery_reason": "controlled_case_application_projection_unavailable"})
+                raise ValueError("Controlled case completion requires its unique application finalizer")
             if (task.runtime_binding is not None and row["operation"] in {"message", "message_recover", "approval_resume", "approval_recover"}
                 and status == "completed"):
                 from src.runtime.framework_message_recovery import _stage, require_projected_settlement

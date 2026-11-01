@@ -8727,3 +8727,70 @@ v4 E／§9、§12.1 → 本节 → 新受理器／checkpoint codec、RunStore �
 下一步是读取 reference 与完整持久原件的执行前核对，以及原 RunItem 与 AgentTask 独立 attempt 的双租约 claim／heartbeat／fencing，再接受控 RuntimeTurnResult 和唯一 finalizer。不能把受理或读回回执当已执行，不能让旧 lease、继承 checkpoint 或未知效果重跑原命令。完整有效输入／逐模式质量、剩余 A2/A3/B/C/D/E/F、H01–H12、真实供应商／embedding／RustFS／领域 Runner、全资源 main、E4 双制品／备份恢复继续保留。整体 goal 继续 active；没有启动／重启服务、运行 Docker、付费调用、访问外部目标或改变 .env／生产路由，仅清理本轮具名隔离测试资源。
 
 整体剩余仍为 §184 的约 4–8 周有效开发／验收风险粗估，供应商／目标授权、环境准备和人工发布等待另计；首个正式 case 端到端与 E3 清单收口后重估。本节没有足够真实领域验收依据来缩短该估算；v4 排除的六个占位模式新功能仍不在此工期内。
+
+## 187. E／§8、§12.1：正式用例双租约 claim、heartbeat 与数据库写入 fence（2026-11-01）
+
+### 续接与依据 → 本轮采用方式
+
+上一轮实际提交 e343969a7／§186，属于 progress。本轮重新检查 Git、v4 §8／9／12.1、§52／53 与最新记录和实际调用链；用户 v3 草稿仍保留原 SHA256，不修改或纳入。审批原生终态／messages 的既有历史根因和后续规范不撤销，§181 四个未知失败与 §159／160／166 异常继续保留，不以本轮无关绿色结果代替其定位。
+
+- 原 PostgresAgentTaskStore._claim_sync／renew_framework_execution、Session → owner → task 锁序 → 在其同一事务内插入原 RunItem 业务锁和校验，共用原 Attempt、事件与结算，不复制 claim、不另建 Worker／队列。
+- 原 controlled_case_admission、read_admission_checkpoint、完整输入严格 codec 与模型账本 freeze_submission 摘要规则 → 只读原 PostgreSQL 原件，严格比较投递引用、正式身份、pin、输入与提交摘要、原根预算；不重新准备当前上下文／Prompt，不把 Redis 正文当事实。
+- 原 plan_revision_lock 的物理 regclass／OID 资源、FencedPostgresSaver 的 public 业务 schema、assert_runtime_owner 的锁后现场时间 → 同一业务锁顺序、同一 DB 连接检查两项独立租约；原官方 saver 和账本不换实现。
+- 本地《Agent轨迹与协议鲁棒性》原文的结果＋轨迹、幂等、超时与权限边界 → 以真实正式来源、完整数据库摘要、锁竞争、官方 checkpoint／pending writes、实际模型账本预留检查状态与无副作用，不以调用次数替身代表数据库执行。
+
+本轮只推进内部正式 case 的执行准入和数据库写权；不装配 main／CLI／生产 Dispatcher，不调用图／模型供应商／领域 Runner，不改变正式结果 finalizer。当前 8 文件范围：新 runtime helper、新专项，原 task store／runtime owner／worker capabilities／runtime binding，原控制说明与本记录。
+
+### 实现与契约边界
+
+新增 PostgresAgentTaskStore.claim_controlled_case()，只接受严格 reference-only v2 delivery。默认 FrameworkWorkerCapabilities.controlled_case_available=False，只有内部测试显式启用；原 from_artifact／from_configuration／main／CLI 均未赋 true。即使能力为 true，原 Dispatcher 仍走普通 claim，因此不能绕过新专用端口，且没有受控 case 运行适配／结果 finalizer；本节不是开放 Writer／Worker。
+
+新增 runtime/controlled_case_execution.py，复用原 RunStore serializer、plan lock、checkpoint codec、input codec 和预算规则。锁顺序 Session → 同一物理 Run 的计划共享锁 → Item → 原 Attempt → runtime owner → task；原模型账本兼容检查取得读锁后，才用 DB clock_timestamp() 核验原 RunItem 到期时间与根 deadline，再生成独立 AgentTask attempt／token／epoch。原 RunItem 不重新领取或延长，原 Attempt、冻结输入、预算、事件来源和历史结果不重置。未知输入／预算版本或额外格式沿原兼容性 TaskDeferred，普通摘要／身份矛盾拒绝，无部分领取事实。
+
+RuntimeExecutionOwner 新增 worker-only controlled_case_lease，捕获原 run／item／独立 run_item_execution_attempt_id、attempt_no、RunItem worker／lease capability、输入摘要；从 repr 和所有 model_dump 排除，不进入 checkpoint source、队列、图状态或公开 TaskRecord。source 保持原无 token 读者格式；序列化再构造的 owner 不能因此获得第二项写权。没有变更 RuntimeBinding fingerprint、数据库 DDL、公开 DTO 或前端事件 union。
+
+原 assert_runtime_owner 对正式 case 先获取上述业务锁，再锁 runtime owner，用同一个锁后 DB 时间复核两项租约。原 saver／pending writes、模型账本和其他既有 owner 写事务共享这条路径；原非 case Deep Agents 不增加业务表查询，已有非正式 direct graph Harness 保持原合同。新 RunItem attempt 即使继承 checkpoint，不能继承旧 AgentTask 的执行权。原 Session／task 的 token、worker、attempt、epoch 与 RunItem 各自独立，不混同。
+
+原 heartbeat 在同连接原子续 Session／runtime owner／RunItem，仍检查两项原租约，任一失效返回 false、不复活；RunItem 写失败使整笔回滚，不留下单侧续期。仅对携真实 case lease 的 owner 允许 claimed 状态 heartbeat，非 case 保留原 running 规则。成功日志在提交之后，不输出任一 token。SQL 锁超时共用原 55P03 → TaskDeferred 包装，取消协程等待者明确 claim_receipt_unknown，不谎称同步 SQL 停止、不会自动重跑。
+
+running task 自身 owner 失效后保留原 recovery_required／execution_owner_expired 结算，不新增 attempt、不自动执行原命令。终态重复投递只核对原受理身份／原件，返回没有 runtime_owner 的回执；Run 取消不会误杀这条只读分支，也不因此授予执行权。在 case 唯一应用 finalizer 未接入之前，通用 finish 禁止将它标成 completed，固定日志 controlled_case_finalizer_required；不能用 AgentTask 完成代替正式结果／证据入库。
+
+### TDD 与真实失败记录
+
+真实 PG 草稿→评审→启用→计划 Suite／Run→原 claim／start→§186 原子受理完成后，首条红测实际 **1 failed，11.37 秒**：缺 claim_controlled_case 属性。首实现单项实际 **1 passed，9.98 秒**。工具第一次多文件 patch 因重复目标路径被原子拒绝，没有源码部分写入；随后合并该目标修改后重试，不当作功能失败或测试通过。
+
+扩大专项实际 **1 failed、13 passed，59.11 秒**：在官方 saver 的 checkpoint-only search_path 下，计划锁仍用未限定 regclass，真实 UndefinedTable。修复为沿原支持别名的物理 OID 锁端口传 public 限定表名，与应用默认 search_path 仍锁同一资源；未新增另一把 advisory 锁、未跳过计划锁。随后 finalizer 反例实际 **1 failed、16 deselected，9.76 秒**：通用 finish 会错误允许 case completed。补该未实现投影的明确出口，不能伪造应用收尾成功。
+
+中间专项实际 **21 passed，80.13 秒**，是后续补测前结果。新增真实 owner 行 50ms 锁竞争反例实际 **1 failed、21 deselected，10.83 秒**：新异步入口绕过原 claim 的 DBAPIError 分类，抛 OperationalError 而非 TaskDeferred。提取原小型异步包装为唯一 _claim_execution，普通和专用入口共用，不复制 catch 分支。新增终态后取消 Run 的只读反例实际 **1 failed、22 deselected，10.55 秒**：错误要求终态回执仍有活跃原业务租约。区分“执行权”与“回执核对”，只有严格终态分支不要求活跃状态，始终不返回 runtime_owner／不写数据库；普通首次领取和 owner 写口没有放宽。
+
+四模块中间回归实际 **106 passed，287.20 秒，无 skip／deselect**：test_controlled_case_execution_lease.py、test_controlled_case_admission.py、test_runtime_binding_persistence.py、test_framework_checkpoint_fencing.py。其后补了源读者不含租约、真实模型预留正例、实际 RunItem 后继拒绝旧写权及精确类型，不能用此中间成绩代替最终源码结果。
+
+### 最终源码验证
+
+固定 E:\MiniConda3\envs\Agent\python.exe；运行前 scripts/clear_uv_environment.ps1 -ProcessOnly，PYTHONIOENCODING=utf-8，PG／Redis opt-in=1、Docker／MySQL=0，QA_FRAMEWORK_WORKER_DIAGNOSTICS=1，不调用 UV。最终八模块实际 **512 passed，444.61 秒，exit 0，无 skip／deselect**，新专项共 25 项：
+
+~~~powershell
+# cwd: Agent_Server
+& E:\MiniConda3\envs\Agent\python.exe -u -m pytest tests/test_controlled_case_execution_lease.py tests/test_controlled_case_admission.py tests/test_runtime_binding_persistence.py tests/test_framework_checkpoint_fencing.py tests/test_framework_model_calls.py tests/test_agent_task_dispatch.py tests/test_agent_v2_worker_contract.py tests/test_runtime_binding_contract.py -q -x -rs --tb=short --log-level=INFO
+~~~
+
+运行前后 src 聚合 SHA256（按相对 src 的 Python 路径 UTF-8＋NUL＋原字节＋NUL 排序）均为 ac2dc20ceb0e01d80c33e88e53f709bdd04f537adb52cf812953efb2100c48de；新专项 SHA256 均为 75e8111cbe5773807575aef3ab876a8f3c23af86d0f4ffea5a24af1afcb73bf4。测试期间未改 Python 源码／测试。新 Python compileall -q src tests、pip check、git diff --check 实际 exit 0，只有既有 LF→CRLF 提示；前端 npm.cmd run typecheck 实际 exit 0。新环境 ruff／mypy 再查仍不可用，没有安装／升级依赖，不声称 backend lint／typecheck 通过。未运行全量前后端、前端 build／浏览器验收。
+
+同一最终源码再跑五模块实际 **197 passed，199.97 秒，exit 0，无 skip／deselect**，核对输入、模型账本读者与默认路由／制品兼容；两组模块有重叠，不相加为独立覆盖数：
+
+~~~powershell
+# 同上解释器、工作目录、PG／Redis=1 和其他环境边界。
+& E:\MiniConda3\envs\Agent\python.exe -u -m pytest tests/test_framework_model_reader_admission.py tests/test_framework_release_archive.py tests/test_controlled_case_task_input.py tests/test_framework_model_admission.py tests/test_framework_route_rollback.py -q -x -rs --tb=short --log-level=INFO
+~~~
+
+随后显式置 PG／Redis／Docker／MySQL opt-in 全部为 0，单跑 test_controlled_case_execution_lease.py 实际 **25 skipped，6.66 秒，exit 0**，只证明新专项的既有授权／服务边界生效，不计通过。上述两组及 opt-out 之后重新断言源码／专项指纹与运行前完全一致。全部运行 handle 均已取得终态，没有以观察超时重开同一测试。
+
+正式来源、任务／原件／预算／事件／attempt、并发／回滚使用真实隔离 PostgreSQL；原 Harness 使用隔离 Redis。规划模型、配置与文档对象后端仍是显式替身。官方 PostgresSaver 实际写 checkpoint／pending writes 后，独立失去任一租约及剥离 case authority 均拒绝迟到写；真实模型账本只预留，不发送供应商请求。没有执行受控图、付费供应商／embedding／RustFS／外部目标／领域 Runner／独立 case Worker 强杀／全资源 main／E4 双制品或备份恢复，不能据公共 owner 端口接线宣称所有领域外部效果均已 fenced。
+
+### 对应、剩余出口与工期
+
+v4 E／§8、§12.1 → 本节 → 上述 8 文件 → 红绿与最终回归 → 本节与代码同一独立中文 commit 交付，提交状态及 ID 以 Git 历史与交付为准。最终相关验证已通过；提交前审查 status／diff／暂存范围，只强制纳入新测试这个具体被忽略文件，不改 ignore，不纳入用户 v3／认证／日志／制品，不推送或建 PR。下述实际受控执行、应用投影和正式部署仍为待实现／待环境验收，不借本子步提交更改其状态。
+
+下一步继续把完整正式 case 输入接入实际受控运行与 RuntimeTurnResult 确定性资产、原生终态／模型与 ToolJob 事实、现有唯一 Session finalizer 及正式 RunItem 完成事务，然后兼容 Worker／main、独立进程故障和真实领域验收。当前双租约检查不是执行成功或外部停止证明，不允许绕过原证据／Assessment／Verification 判通过。剩余 A2/A3/B/C/D/E/F、完整有效输入／逐模式质量、H01–H12 与历史异常保留，整体 goal 继续 active。
+
+没有启动／重启服务、运行 Docker、调用付费模型、访问外部目标或改实际 .env／生产路由；仅原 fixture 清理本轮具名隔离资源。整体剩余仍粗估 4–8 周有效开发／验收，供应商／目标授权、环境与人工发布等待另计，不把本轮子步视为整个项目完成，不把 v4 排除的六个占位模式新功能纳入估算。

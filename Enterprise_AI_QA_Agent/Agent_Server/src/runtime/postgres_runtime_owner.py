@@ -80,7 +80,7 @@ def lock_owner_row(cur, settings, binding: RuntimeBinding, *, binding_reader=Run
 
 
 def assert_runtime_owner(cur, settings, owner: RuntimeExecutionOwner, *,
-                         states=("running",), schema: str = "") -> None:
+                         states=("running",), schema: str = ""):
     """Lock before reading the clock; keep these locks through the actual write.
 
     The saver pool has a checkpoint-only search_path. Business tables currently
@@ -91,12 +91,19 @@ def assert_runtime_owner(cur, settings, owner: RuntimeExecutionOwner, *,
     cur.execute(f"SELECT metadata FROM {schema}{settings.database.postgres_session_table} WHERE id=%s FOR UPDATE",
         (owner.binding.session_id,))
     session = cur.fetchone()
+    case = None
+    if owner.binding.runtime_kind == "langgraph" or owner.controlled_case_lease is not None:
+        from src.runtime.controlled_case_execution import lock_case_owner, require_case_live
+
+        case = lock_case_owner(cur, settings, owner, schema=schema)
     cur.execute(f"SELECT * FROM {schema}{runtime_owner_table(settings)} WHERE binding_id=%s FOR UPDATE",
         (owner.binding.binding_id,))
     saved = cur.fetchone()
     locked = perf_counter()
     cur.execute("SELECT clock_timestamp() AS now")
     now = cur.fetchone()["now"]
+    if case is not None:
+        require_case_live(case, now)
     metadata = session["metadata"] if session else {}
     # PostgreSQL parses and compares the lease after lock acquisition, avoiding
     # transaction-start NOW() and a pre-wait lease observation.
@@ -137,3 +144,4 @@ def assert_runtime_owner(cur, settings, owner: RuntimeExecutionOwner, *,
             "authority_lock_seconds": locked-started, "authority_check_seconds": perf_counter()-started,
         })
         raise ContinuationLeaseLostError("Framework execution owner is no longer active")
+    return case

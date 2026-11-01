@@ -44,6 +44,7 @@ class FrameworkWorkerCapabilities:
     model_call_max_version: int = 3
     release_reference: FrameworkReleaseReference | None = None
     model_budget_max_version: int = 2
+    controlled_case_available: bool = False
 
     @classmethod
     def from_artifact(cls, *, deepagents_available: bool):
@@ -112,6 +113,9 @@ class FrameworkWorkerCapabilities:
             raise TaskDeferred("framework_state_schema_unavailable")
         if binding.dependency_lock_sha256.lower() != self.dependency_lock_sha256.lower():
             raise TaskDeferred("framework_dependency_artifact_unavailable")
+        if (binding.runtime_kind == "langgraph" and operation == "case_execute"
+            and self.controlled_case_available):
+            return
         if binding.runtime_kind != "deepagents":
             raise TaskDeferred("framework_runtime_kind_unavailable")
         if not self.deepagents_available:
