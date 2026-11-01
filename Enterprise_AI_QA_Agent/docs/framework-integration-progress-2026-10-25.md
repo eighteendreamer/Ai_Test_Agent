@@ -8231,3 +8231,63 @@ $env:PYTHONIOENCODING='utf-8'
 v4 B／§4、§6 → 本节 → 新 MySQL 受理测试、原控制说明与本记录共 3 文件 → 本节夹具红绿、14 项首轮和最终 209 项扩大组 → 独立提交 `【test】验证真实模型配置只读受理与故障幂等`，ID 见 Git 历史和交付；不推送、不建 PR。测试被原忽略规则排除，仅对审阅过的具体新文件显式纳入跟踪，不改忽略规则、不混入用户 v3 草稿、认证／日志或测试制品。
 
 正式 AgentCase／RunItem 的新框架执行、实际配置的供应商发送、完整 main 全资源启动、模式质量与完整有效输入审计、全部旧读者升级或隔离、双制品独立安装／部署、备份恢复与排空继续待验收；本步真实 MySQL 读取不替代这些出口。§159／160 时间异常与 §166 子进程 RuntimeError 仍未定位，不能用本步绿色撤销历史失败。v4 A2/A3/B/C/D/E/F、H01–H12、真实供应商／embedding／RustFS／领域 Runner、官方 saver conformance、全前后端与 E3/E4 仍保留完整目标，goal 继续 active。
+
+## 179. E／§12.1：直接受控模型—工具回边内核与共享模型策略（2026-11-01）
+
+### 续接、架构缺口与依据 → 做法
+
+基线 `a5b149dc3`／§178，续接活跃 v4 goal、§52 及后续记录和本轮未提交实现。用户 v3 草稿 SHA256 保持 `8A43E94160767A0DE20740F2CB30782F06322CBC3467076DFCB120D4EFDF1AD4`，不改动、不暂存。原 §54 的 path-ordered Delta 修复与严格 messages 比较继续保留，没有通过忽略消息恢复旧失败。
+
+沿 `AgentCaseExecutionAdapter.execute()` → durable running intent → `SessionService.execute_case_turn()` 核对：正式 RunItem／attempt 及专用 Session 执行权仍走原入口，没有普通消息的 runtime_binding／AgentTask owner；原图只执行一次 model→tools→finalizer，多轮由 legacy 外循环负责。这是受控图职责缺口，不是再加一个循环或将两种 owner 直接混用即可修复。本步先实现可独立验证的图内核，**没有宣称正式用例生产入口、main／Runtime／Worker 或唯一结果 finalizer 已迁移**。
+
+- 固定 `langchain==1.4.6` 的 `agents/factory.py`：官方 ModelRequest／ModelResponse、bind_tools／ainvoke 与 `Send("tools", [call])` 扇出 → 直接 `StateGraph(MessagesState)`，图持有 model→逐调用工具／审批→model 回边；不复制工具执行、消息 reducer、interrupt 或恢复引擎。
+- 固定 `langgraph==1.2.12` 的 `prebuilt/tool_node.py`、`graph/message.py` 和官方 HITL `interrupt_mode="per_call"` → ToolRuntime 从原生 channels 取完整源消息；异常不吞为观察；逐调用恢复复用官方机制与原 fenced saver。
+- 原 `FrameworkModelCallMiddleware`／`FrameworkModelCallPolicy`／根账本 → 将主包装器及 Google client helper 原样移至 `application/models/framework_model_middleware.py`，Deep Agents 旧模块保留同一类的兼容 import，摘要／命名子代理组合不改。AST 实际比较两段移出实现与 HEAD 完全相同，不引入另一套模型账本、默认重试、传输或依赖。
+- 本地 `better-harness/models/agent-work-loop.md` 的同一 episode／真实交付边界要求，以及课程《Agent轨迹与协议鲁棒性》的工具轨迹、权限、幂等、超时和半成功链路 → 同一内核调用核对实际 HTTP、根调用、工具效果与 native messages，不把不同链路结果拼接成正式验收。
+
+### 实现、错误可见性与测试边界
+
+新增 `src/graph/controlled_case.py::build_controlled_case_graph()`。构建只接受匹配的 LangGraph owner／model policy／captured saver；该一致性不是当前执行权证明，原端口继续实时 fencing。调用方须提供已冻结输入和已治理工具，在原根 scope 以 sync durability 调用。没有修改 RuntimeBinding schema、公开 DTO／路由、生产配置、版本能力上界或数据库迁移，也不删除 legacy 外循环。
+
+图为 `START→model→Send(tools)／END`、`tools→model`；工具节点 `handle_tool_errors=False`，失租异常外抛，取消不进入下一次模型。原预算在每次实际请求前判断，unknown 及已结算位置不能经 native continue 自动重发。新增日志仅有限身份／数量／异常类型，不输出消息、配置或认证。图不拥有正式用例版本、RunItem 领取、业务决议权限、领域执行器或 Assessment／Verification 裁决。
+
+`tests/test_framework_model_policy.py::governed()` 仅扩展显式 binding overrides，旧调用默认不变。新 `tests/test_controlled_case_graph.py` 复用真实 PG task claim／owner／根预算、官方模型到本地合成 HTTP 和原 fenced provider，手动组合内核；这不是兼容 Worker 消费 langgraph 的证据。四种协议严格比较 returned 与 native messages，保留 Anthropic signature／Google thoughtSignature；A/B 同批只恢复 B、重建图后 A 身份不变，最终 ToolMessage 顺序仍为 A/B。原测试 callback 只证明原生身份与效果次数，不冒充业务治理。
+
+另补 safe／ask 两个原应用工具桥参数组：复用 `RuntimeService._build_deep_agent_business_tools()`、原 Permission／Governance、真实隔离 PG ToolJob、审批投影和 `ToolRuntimeService`；ask 分支先保存原生 interrupt，再创建原业务审批／等待作业，在本轮隔离表写 approved 并排入原 journal，重建图后恢复。逐项核对同一个 job／call／approval、开始结束时间、结果投影原件和严格 native messages、实际 handler 恰好一次。handler 仍是合成 callback，不执行 Docker／网络目标；公开审批 HTTP、正式 RunItem 与应用终态收尾不在该参数组内。独立失租反例实际将原 Session 执行租约到期，已捕获 saver 不再允许图写入，零 HTTP、根账本不变。
+
+### TDD、真实失败与根因
+
+1. 模块不存在时实际 **13 failed，50.74 秒**，均为 `ModuleNotFoundError: src.graph.controlled_case`。这是新行为红测，不虚构生产现存故障。
+2. 首个内核实现实际 **1 failed、12 passed，50.53 秒**。Responses 分支在 after_model 收到 ToolMessage 而非 AIMessage，报 `AttributeError: ToolMessage has no attribute tool_calls`；不能只给 after_model 加类型分支绕过。
+3. 实际失败样本的首个带工具响应与终结响应都用 `resp_fixture`；官方 `add_messages` 按相同 ID 替换第一次 AI，工具源消息丢失。正例首响应改为不同的固定 ID `resp_fixture_tool_call`，原重复 ID 样本保留为负例；未弱化消息或效果断言。专跑新负例及组合约束时实际 **1 failed、5 passed、13 deselected，9.11 秒**，要求受控拒绝但仍出现 AttributeError，证明不只是预期数据问题。
+4. 在共享策略保存并结算原响应之后、reducer 之前，拒绝与输入消息身份相同的新 AIMessage；保留原 source AI、匹配 ToolMessage 和两次 completed 账本，不修改官方 reducer、不换随机 ID、不重发。此本地协议约束的来源及上游无对应检查已在代码注释标记；只拦截确定发生的身份重写。负例再次 native continue 进入原禁止重试规则，消息、调用次数、效果及账本原件完全不变。
+5. 加约束及身份／拓扑断言后的新模块实际 **20 passed，52.66 秒**；加入真实工具桥及租约到期三个用例后，实际 **23 passed，66.58 秒，exit 0**。这两次是阶段性验证，不代替后续最终源码回归。
+
+### 扩大回归、证据范围与剩余出口
+
+```powershell
+# cwd: Agent_Server；固定 .venv-framework-v2，沿用已运行 PG／Redis
+$env:RUN_LIVE_POSTGRES_TESTS='1'
+$env:RUN_LIVE_REDIS_TESTS='1'
+$env:RUN_LIVE_DOCKER_TESTS='0'
+$env:RUN_LIVE_MYSQL_TESTS='0'
+$env:PYTHONIOENCODING='utf-8'
+..\.venv-framework-v2\Scripts\python.exe -u -m pytest tests/test_controlled_case_graph.py tests/test_framework_model_policy.py tests/test_framework_chat_models.py tests/test_framework_model_positions.py tests/test_framework_model_evidence.py tests/test_framework_model_evidence_cancellation.py tests/test_framework_model_dto.py tests/test_framework_tool_bridge.py tests/test_framework_checkpoint_fencing.py tests/test_deep_agent_runtime_adapter.py tests/test_agent_case_session.py tests/test_agent_case_execution.py tests/test_agent_case_assessment.py tests/test_agent_case_context.py tests/test_agent_case_receipt_correction.py -q -rs --tb=short
+# 445 passed、38 skipped，864.47 秒，exit 0，无 failed／deselect
+```
+
+十五模块覆盖共享模型主调用／摘要／子代理、四协议／streaming、预算／unknown／证据／DTO、旧工具桥、Delta 与 owner fencing、Deep Agents adapter，以及原 AgentCase 的非 live 固定用例／结果链。**38 项不是通过**：原用例明确要求 opt-in 的组合 PG／MySQL／RustFS、公开计划 Worker 或实际配置模型，本轮未启用其专用开关；不以 skip 推断服务故障，也不为消除 skip 擅自开启真实模型／组合环境。这不是全系统全量测试、独立进程 E2 或真实供应商 E3。
+
+扩大组收集时新模块为 23 项；运行期间仅为协议保护补来源注释，实际 AST 比较证明执行语法树不变，没有改动生产行为。另补纯测试，使用当前 Worker 支持的版本及真实依赖摘要后，`langgraph` 精确返回 `framework_runtime_kind_unavailable`，只改为 deepagents 时同一组合可准入，排除因测试版本未知而误称 kind 拒绝的证据混淆；这项后增断言须看下列新模块最终复验，不声称已包含在扩大组中。
+
+保持同一 live 开关，最终源码执行 `..\.venv-framework-v2\Scripts\python.exe -u -m pytest tests/test_controlled_case_graph.py -q -rs --tb=short`，实际 **24 passed，89.15 秒，exit 0，无 skip／deselect**，包括该后增 Worker 反例及来源注释后的完整内核／工具链。另将四个 RUN_LIVE 开关显式全部置 0，重跑同一命令，实际 **7 passed、17 skipped，11.27 秒，exit 0**；17 项均明确要求 PG／Redis，纯组合／兼容测试仍可运行。两者与扩大组重叠，不相加，也不以关闭 live 的 skip 代替真实环境验证。全部已启动 pytest 均已观察至终态，无遗留运行测试。
+
+根目录 `.venv-framework-v2\Scripts\python.exe -m compileall -q Agent_Server/src Agent_Server/tests` 和 `git diff --check` 实际 exit 0，明确输出 compileall_ok／diff_check_ok。find_spec 确认 ruff／mypy／build／wheel／setuptools 均未安装，未跑独立 lint／typecheck／build，不新增依赖。前端无修改、未重跑；控制说明同步内核调用前提、日志、协议失败和未放行边界，没有新增公共契约消费方。
+
+新文件纳入暂存后，首次 `git diff --cached --check` 实际 exit 2，指出共享 middleware 文件 EOF 多余空行；删除该多余空行，实际 AST 比较证明无执行语义变化，随后重新 compileall 并复查完整暂存 diff。不把尚未跟踪文件未被普通 diff 检查覆盖的早期结果冒充完整检查。
+
+实库 Harness 仍由原 Settings 自动加载后端 `.env`，没有直接打开、输出或修改实际认证文件。只创建并清理本轮随机 PG 表／schema／夹具 Redis key，不处理 §158 未归属共享残留，不修改业务项目／用例数据。不启动或重启容器／服务，不拉镜像，不访问目标、不调用付费模型、不启用生产路由。隔离工具 callback 不证明实际 Docker 进程停止或领域 Runner 正确；本步没有新增这种声明。
+
+v4 E／§12.1 → 本节 → 共享模型包装器／旧 import 兼容、直接图内核、原夹具扩展／新测试、原控制说明与本记录，共 7 文件 → 本节红绿／扩大回归及最终复验 → 独立提交 `【feat】新增共享策略驱动的受控图内核`，ID 见 Git 历史与交付；不推送、不建 PR。仅对审阅过的新测试显式加入跟踪，不修改忽略规则、不混入用户 v3 草稿或认证／日志／测试制品。
+
+当前内核可以在上述组合下独立执行；正式 RunItem／AgentTask 双归属与 frozen AgentCase 输入、专用 RuntimeTurnResult／原件消费和唯一 finalizer、兼容 Worker／发布制品契约、main 路由仍待后续接通验证。不得提前移除 legacy 外循环或宣称 Assessment／Verification passed。完整 v4 A2/A3/B/C/D/E/F、H01–H12、模式质量／有效输入审计、全部旧读者、全资源启动、真实供应商／embedding／RustFS／领域 Runner、双制品独立安装／部署、备份恢复与 E3/E4 继续保留；§159／160 时间异常和 §166 子进程 RuntimeError 未由本组定位或撤销，整体 goal 继续 active。

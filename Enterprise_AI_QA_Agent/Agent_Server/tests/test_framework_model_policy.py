@@ -23,13 +23,14 @@ from tests.test_runtime_binding_persistence import make_binding, make_command, m
 
 
 @asynccontextmanager
-async def governed(h, config, *, begin_execution=True, **limits):
+async def governed(h, config, *, begin_execution=True, binding_overrides=None, **limits):
     from src.application.models.framework_model_call_policy import FrameworkModelCallPolicy, model_config_fingerprint
 
     h.calls = PostgresFrameworkModelCalls(h.settings)
     await h.calls.initialize()
     fingerprint = model_config_fingerprint(config)
-    h.binding = make_binding(h.session_id, f"turn-{uuid4().hex}", model_config_fingerprint=fingerprint)
+    h.binding = make_binding(h.session_id, f"turn-{uuid4().hex}", model_config_fingerprint=fingerprint,
+        **(binding_overrides or {}))
     task = await h.tasks.submit_v2(make_command(h, h.binding), make_payload(), make_message(h, h.binding),
         idempotency_key=uuid4().hex)
     h.owner = await h.tasks.claim(task.id, worker_id="governed-model", expected_binding=h.binding)

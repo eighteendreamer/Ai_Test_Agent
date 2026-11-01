@@ -159,6 +159,18 @@ bound Runtime 初始状态只查询 ExecutionRequest 的明确 key，不再回�
 
 验证落点：`test_framework_release_binding.py` 原 HTTP→PG／Redis→完整上下文官方框架链路覆盖 explicit／auto／受理后偏好变化；`test_framework_message_stages.py` 核对原 payload／摘要不变与显式冲突拒绝；`test_framework_orchestrating_recovery.py` 覆盖 v2 的 skip／未预留／ready／completed；`test_framework_orchestrated_message_recovery.py` 明确禁止已冻结请求恢复时重新读取选模策略；`test_framework_turn_context.py` 区分 bound 无 fallback 与 unbound 原行为。该消费修复的结果和证据边界见实施记录 §174；后续 main／CLI 默认关闭的可选写者组合见 §176 及本说明对应小节，不以消费修复或可选接线代替生产发布。
 
+### 直接受控图内核（v4 E／§12.1；尚未开放执行路由）
+
+`src/graph/controlled_case.py::build_controlled_case_graph()` 直接构建 `START → model → tools → model／END`，由图持有条件回边，不再依靠图外循环完成该内核的多次模型调用。这里没有替换 legacy 图、正式 AgentCase 的外层执行器或主应用组合。`RuntimeService` 与 `FrameworkWorkerCapabilities` 仍不放行 `langgraph`；测试专用版本 `controlled-kernel-test` 不是发布版本，不能用于生产准入。
+
+调用方必须提供已冻结的 Prompt／输入、已治理的 LangChain 工具、当前执行 owner、同一 owner 捕获的 fenced saver 和共享模型策略，并在原根执行 scope 内以 `durability="sync"` 执行。构建时的 owner／kind／policy／saver 一致性检查不是实时授权证明；原模型、工具及 saver 边界继续检查实际执行权与预算。内核不会自己 claim RunItem／AgentTask、创建业务审批、收尾应用结果或决定 Assessment／Verification。
+
+模型请求复用从原 Deep Agents 模块原样移出的 `src/application/models/framework_model_middleware.py::FrameworkModelCallMiddleware`；旧 import 路径保留为同一个类。主调用、摘要及子代理的原组合不变，没有另一套预算／传输／重试机制。工具扇出复用固定 SDK 的 `Send`／`ToolNode`、原生逐调用 HITL 和消息 reducer；`handle_tool_errors=False` 保证执行权错误外抛，不作为普通工具观察继续请求模型。
+
+官方 `add_messages` 会用相同消息 ID 替换旧消息。真实捕获的重复 Responses ID 样本曾导致 source AI 被替换、ToolMessage 失配；内核在共享策略保存并结算原响应后、进入 reducer 前拒绝与输入重复的 AIMessage.id，保留原 source／工具链和已结算账本，不随机更换身份、不改 reducer、不自动重发。日志为 `controlled_case_graph_composition_rejected`、`controlled_case_graph_built`、`controlled_case_model_returned`／`controlled_case_model_failed`，不记录原消息或配置正文。
+
+`tests/test_controlled_case_graph.py` 验证四种官方模型协议到本地合成 HTTP、真实隔离 PG 根账本／saver、同批 A/B 的逐项审批与严格 native messages 对比、预算回边、未知响应不重发、取消及失租。原应用工具桥的独立参数组复用真实 `ToolGovernanceService`／审批投影／`ToolRuntimeService`／PG ToolJob 和结果原件，handler 仍是测试 callback；审批决议直接写本轮隔离记录，不代表公开审批 HTTP 或正式 RunItem 入口已接通。回执文本不等于领域测试通过，详见实施记录 §179 的真实结果与剩余出口。
+
 ### 原路由与恢复验证
 
 关闭新选路时记录 `deep_agent_new_turn_route_disabled`，带 `session_id`、`turn_id` 和 `recovery_reason=new_turn_admission_disabled`；这是路由决定，不是取消/停止回执。
