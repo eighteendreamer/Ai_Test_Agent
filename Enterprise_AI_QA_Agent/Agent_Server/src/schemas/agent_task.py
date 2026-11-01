@@ -4,8 +4,9 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
+from src.schemas.controlled_case_task_input import ControlledCaseTaskInputAsset, parse_controlled_case_task_input
 from src.schemas.session import ConversationResponse
 from src.schemas.runtime_binding import RuntimeBinding, RuntimeExecutionOwner
 
@@ -30,7 +31,7 @@ LegacyAgentTaskOperation = Literal[
     "coordinator_child",
     "coordinator_resume",
 ]
-AgentTaskOperation = Literal[LegacyAgentTaskOperation, "framework_reconcile", "approval_recover", "message_recover"]
+AgentTaskOperation = Literal[LegacyAgentTaskOperation, "framework_reconcile", "approval_recover", "message_recover", "case_execute"]
 TERMINAL_AGENT_TASK_STATUSES = frozenset(
     {"completed", "interrupted", "failed", "cancelled", "recovery_required"}
 )
@@ -87,6 +88,12 @@ class AgentTaskCommandV2(BaseModel):
     priority: int = Field(default=50, ge=0, le=100)
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     payload: dict[str, Any] = Field(default_factory=dict)
+    case_execution_input: ControlledCaseTaskInputAsset | None = Field(default=None, exclude_if=lambda value: value is None)
+
+    @field_validator("case_execution_input", mode="before")
+    @classmethod
+    def read_case_execution_input(cls, value):
+        return parse_controlled_case_task_input(value) if value is not None else None
 
     @model_validator(mode="after")
     def validate_binding_identity(self):
@@ -96,6 +103,18 @@ class AgentTaskCommandV2(BaseModel):
             raise ValueError("runtime binding turn_id does not match command")
         if self.runtime_binding.runtime_kind == "legacy":
             raise ValueError("v2 commands cannot use a legacy runtime binding")
+        asset = self.case_execution_input
+        if self.operation == "case_execute":
+            if asset is None:
+                raise ValueError("case_execute requires its original frozen case input")
+            if (self.task_type != "agent_turn" or self.runtime_binding.runtime_kind != "langgraph"
+                or self.runtime_binding != asset.graph_input.binding or self.trace_id != asset.graph_input.trace_id
+                or (self.project_id, self.run_id, self.run_item_id, self.reference_id)
+                != (asset.context.project_id, asset.context.run_id, asset.context.run_item_id, asset.case_version_id)
+                or any(value is not None for value in (self.attempt_id, self.worker_id, self.resource_id)) or self.payload):
+                raise ValueError("case_execute command differs from its frozen scope or carries a second execution identity/input")
+        elif asset is not None:
+            raise ValueError("Only case_execute may carry frozen case input")
         return self
 
 

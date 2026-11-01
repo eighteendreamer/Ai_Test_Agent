@@ -15,7 +15,6 @@ from langchain.agents.middleware.human_in_the_loop import DecisionType
 from langchain_core.utils.function_calling import convert_to_openai_tool
 from pydantic import BaseModel, ConfigDict, Field, StrictBool, model_validator
 
-from src.application.deep_agents.framework_transcript import deserialize_messages, serialize_messages
 from src.schemas.framework_approval import approval_value_hash
 from src.schemas.runtime_binding import RuntimeBinding
 
@@ -54,6 +53,10 @@ class ControlledCaseGraphInputAsset(BaseModel):
 
     @model_validator(mode="after")
     def verify_original(self):
+        # Loading a command schema must not initialize the adapter package:
+        # its runtime ledger imports AgentTaskStatus again on cold Workers.
+        from src.application.deep_agents.framework_transcript import deserialize_messages, serialize_messages
+
         if self.asset_sha256 != approval_value_hash(self.model_dump(mode="json", exclude={"asset_sha256"})):
             raise ValueError("Controlled graph input digest differs from its frozen contents")
         if self.binding.runtime_kind != self.runtime_kind:

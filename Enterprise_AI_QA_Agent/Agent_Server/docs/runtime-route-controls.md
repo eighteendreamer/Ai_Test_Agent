@@ -205,6 +205,18 @@ bound Runtime 初始状态只查询 ExecutionRequest 的明确 key，不再回�
 
 本步仅为内部受控图 checkpoint metadata 增加上述引用，没有发布既有 message stage、AgentTask、RunItem 或 outbox 的新格式写者，也没有将 Deep Agents codec 偷换为 union。现有 Worker／Runtime 仍拒绝 langgraph；正式 RunItem 输入／上下文封存、AgentTask 自身 attempt 与 RunItem 原执行 attempt 的双归属、专用受理命令、投影和发布兼容能力仍须接通。`tests/test_controlled_case_graph_input.py` 的真实 PG／根账本和四种官方协议只连接本地合成 HTTP，工具为测试 callback；原生批准／拒绝不代表业务审批授权。结果和限制见实施记录 §183。
 
+### 正式用例输入与命令读者（v4 E／§9、§12.1；reader-first）
+
+`src/application/test_runs/controlled_case_preparation.py::prepare_controlled_case_input()` 只构建值：复用原 `execution_attempt()`、领取时计划 pin 校验和 `build_agent_case_context()`，核对调用者／正式条目／最新 attempt 的项目、用例版本、运行状态及租约身份，拒绝缺少原 pin、计划漂移、已有 checkpoint 或 recovered attempt 重新首次冻结。不读取当前计划来补历史 pin，不创建 Session／任务／outbox，不调用模型或工具；观察到租约字段相同不证明此刻仍持有执行权，同事务受理仍须锁定真实行、使用数据库时间并重验。
+
+新 `ControlledCaseTaskInputAsset` 为独立显式整数 schema 1，保存原正式 `AgentCaseExecutionContext`（含目标完整内容、执行说明、来源及已解析依赖）、原 `RunPlanSnapshotIdentity`、独立 `run_item_execution_attempt_id` 和上节受控 `graph_input`，用原规范 JSON 摘要覆盖全部内容。核对唯一正式目标／版本、plan_id 和沿用旧 AgentCase 的 UUID5 `case-run:{run}:{item}:{original_attempt}` Turn 规则。parser 对字典和已构造对象均重新校验、复制深层 JSON，不能把 frozen 模型当成深层不可变。摘要与自洽身份不是签名、正式来源授权或租约；本函数仍接受由服务器装配者提供的图请求，**不证明完整有效输入／Prompt／Skill／Memory 管道已接通**。
+
+原 `AgentTaskCommandV2` 增加内部 `case_execute` 操作及专用 `case_execution_input`，不新增队列或 v3 命令。case 只允许 `agent_turn`／`langgraph`，完整 binding、trace、project／run／item／version reference 必须匹配输入；禁止在公共 `attempt_id` 填入 RunItem attempt，禁止预填 worker／resource，也不接受第二份自由 payload。AgentTask 自身 attempt 仍应由其 claim 独立生成。其他操作不能携带 case 输入；缺省字段不输出 null，原 message wire 保持不变。公开 `AgentTaskRecord` 与前端只同步 operation 读者，不公开输入原件。
+
+原 `FrameworkWorkerCapabilities.require_command_format()` 直接复用严格 codec：新资产／嵌套 graph 的未来版本或额外字段沿原兼容性等待分类，普通摘要损坏仍是验证错误。能力准入仍拒绝 langgraph，旧 Worker stream 仍拒绝 v2，现有 `submit_v2()` message writer 仍拒绝 case 操作；没有正式业务写者、双租约 CAS／fencing、受控结果 finalizer 或 main 选路。版本制品的命令 JSON schema 会自然包含嵌套新定义，但定义库存不等于制品兼容执行能力。
+
+日志 `controlled_case_input_prepared`／`controlled_case_input_preparation_rejected` 只带标量身份、摘要或 error_type，不输出租约 token、完整 context／Prompt／工具／异常正文；成功摘要复用原 formatter 的 `artifact_id`，拒绝阶段复用固定 `recovery_reason`，不开放任意 extras。新专项 `tests/test_controlled_case_task_input.py` 的正式草稿→评审→启用→冻结计划→领取来源使用真实业务服务与内存存储，规划／对象后端为替身；真实 PG／Redis 组明确模拟未来任务／outbox 行，只验证读者拒领和事实无变化，不是正式 RunItem／AgentTask 同事务受理或实际执行验收。实际结果与剩余出口见实施记录 §185。
+
 ### 原路由与恢复验证
 
 关闭新选路时记录 `deep_agent_new_turn_route_disabled`，带 `session_id`、`turn_id` 和 `recovery_reason=new_turn_admission_disabled`；这是路由决定，不是取消/停止回执。

@@ -8589,3 +8589,58 @@ v4 F／§14.1 → 本节 → 新锁／清理脚本、根 metadata／README、制
 这是日常依赖管理迁移第一步，不是删除全部 UV 历史证据。运行时 dependency_lock_sha256 的 reader-first 演进、历史绑定／制品兼容、正式 case 双租约受理／结果 finalizer、剩余 A2/A3/B/C/D/E/F、H01–H12 与 E3/E4 仍在完整目标内。§181 四个未定位失败和 §159／160／166 历史异常不因本节绿色而撤销；没有启动／重启服务、Docker、扫描目标、付费模型或生产路由，没有修改实际 .env、删除共享残留。
 
 整个 v4 项目剩余时间目前只可给风险估算：以现有八种非占位运行形态、现有领域引擎和全部发布验收为边界，约 4–8 周有效开发／验收时间；真实供应商、目标授权、环境准备和人工发布窗口的等待另计。此为粗估而非交付承诺，首个正式 case 端到端及 E3 清单收口后重估；v4 明确排除六个占位模式新功能，不能把其产品化工期暗中计作本次完成。整体 goal 继续 active。
+
+
+## 185. E／§9、§12.1：正式用例冻结输入与专用命令读者（2026-11-01）
+
+### 续接与依据 → 做法
+
+环境迁移及制品夹具根因修复已独立提交 435d9cf7c／§184。本节续接 §183 后的 case 草稿，不重新实现既有 controlled graph／原生终态、审批或恢复链。正式 RunItem 来源、graph input、AgentTask 命令是三个边界；输入自洽不能替代正式业务受理与执行权。用户 v3 草稿仍保持 SHA256 8A43E94160767A0DE20740F2CB30782F06322CBC3467076DFCB120D4EFDF1AD4，不改动／暂存。
+
+依据 agent_case_context／plan_snapshot_identity 的既有固定版本、已解析依赖、领取计划 pin 和旧 AgentCase UUID5 Turn 规则 → 复用其领域校验并冻结原上下文；依据 §183 ControlledCaseGraphInputAsset／规范 JSON 摘要和独立 RunItem／AgentTask attempt 语义 → 新增专用输入资产，不借用公共 attempt_id；依据原 AgentTaskCommandV2 及 require_command_format 的严格分版读者 → 先加入新操作读者与消费类型，仍不安装任何 case writer／执行能力。本地《Agent轨迹与协议鲁棒性》的轨迹、幂等、权限及超时要求 → 核对源事实不变、重复拒领和冷进程 codec，而非仅断言返回文本。
+
+### 实现与跨层边界
+
+- 新 schemas/controlled_case_task_input.py：显式整数 schema 1，保存完整原 AgentCaseExecutionContext、RunPlanSnapshotIdentity、独立 run_item_execution_attempt_id、§183 graph_input 和全内容 SHA256。要求完整正式身份、唯一目标与用例固定版本／内容、计划引用和原 UUID5 case-run:{run}:{item}:{original_attempt} Turn 自洽。parser 对 raw 和预构造对象重新校验并 JSON 深拷贝，不将 frozen 模型当作深层不可变；内容摘要不是签名或正式来源证明。
+- 新 application/test_runs/controlled_case_preparation.py：复用 execution_attempt()、validate_claimed_plan_snapshot()、build_agent_case_context()、freeze_controlled_graph_input()；核对调用方／存储条目／最新 attempt 的 Run、版本、running 状态、attempt_no、worker、lease 身份。拒绝缺 pin、计划漂移、已有 checkpoint／recovered attempt 重新首次冻结。仅构造值，无数据库时间、锁、CAS、Session／任务／outbox 写入、模型或工具执行；观察到 lease 字段相同不能证明此刻仍有效。完整图请求仍由未来服务器装配者提供，不宣称已接通完整有效输入。
+- AgentTaskCommandV2 增加 case_execute 和专用 case_execution_input；case 限 agent_turn／langgraph，完整 binding／trace／project／run／item／version reference 与输入一致，payload 为空，公共 attempt_id／worker_id／resource_id 均为 None。其他操作不得携带 case 输入，缺省不输出 null，原 message wire 不变。原 legacy operation 不加 case；公开记录／前端 operation union 成对增加读者，不公开冻结输入正文。
+- 真实冷启动发现 schema → controlled graph codec → Deep Agents package __init__ → runtime ledger → 尚未初始化 AgentTaskStatus 的循环导入。只将 graph codec 的 framework_transcript helper import 移至实际验证内；保留完整原生消息校验，不改 SDK、reducer 或业务层错误分支。四种独立 import 及新进程完整 parse＋JSON schema inventory 均有覆盖，不能只靠已热加载的 pytest 进程。
+- 新准备日志成功／拒绝均只带有限身份、摘要／error_type；成功摘要通过既有 artifact_id 渲染，拒绝阶段用固定 recovery_reason，保留 ValueError／TypeError 和原错误语义，不输出消息、Prompt、lease token 或异常正文。固定原因覆盖原执行身份、双来源字段、已有执行、缺 pin、计划 pin、正式上下文、graph input 与最终 case 输入阶段；没有持久化新错误协议或额外恢复权限。
+- 搜索全部新增引用：新 codec／准备器、v2 command、原能力读者、前端类型、控制说明和测试；命令 JSON schema 会含嵌套输入定义，但格式库存不等于执行能力。原 Worker／Runtime 能力仍拒绝 langgraph，旧 stream 拒 v2，原 submit_v2() message writer 拒绝 case。没有 DDL／双租约受理／fencing／结果 finalizer／main 选路；不将手工模拟行称正式 writer。
+
+### TDD 与保留的失败事实
+
+环境切换前草稿的终态：缺新模块时 28 failed、1 passed，8.94 秒；首实现 29 passed，10.50 秒。扩充后 3 failed／41 passed，27.17 秒，夹具误改 computed fingerprint／提前构造无效 command；修正后 2 failed／42 passed，26.57 秒，因 Session 项目外键缺正式 PG Project。按既有独立 Project fixture 修正后 44 passed，51.78 秒。冷启动反例 3 failed／49 deselected，42.08 秒，真实暴露上述循环导入；移入验证函数后无 live 专项 51 passed、2 skipped，24.81 秒，早于最后完整冷 parse 用例。
+
+旧环境首次扩大八模块实际 4 failed、554 passed、29 errors，818.23 秒，涉及冷启动 Worker 与当前源码制品 fixture；修复后的另一次组出现至少两个 F，但用户暂停时 Ctrl-C／exit 1，没有最终汇总，不能记为通过或覆盖历史失败。旧环境另一组八模块 158 passed、57 skipped，456.21 秒，仍仅历史结果。之后旧环境 trampoline 已不可用，所有当前验证使用 E:\MiniConda3\envs\Agent\python.exe。
+
+新 Conda 前次五模块实际 462 passed，163.84 秒；独立 Worker 子集 4 passed、15 deselected，65.98 秒。原 release_binding 1 failed／17 passed，199.15 秒，真实并发 Session lock timeout；后续 §184 用 PG NOWAIT 定位并修复 captured 夹具边界，最终六模块 163 passed。以上结果不相加为独立覆盖，也不把旧／中断组记成当前源码全绿。
+
+本轮迁移提交后，迁移／制品／case 与命令五模块合组实际 **507 passed，276.83 秒，无 skip／deselect**。随后审阅发现新准备拒绝只有 ValueError 类型、成功摘要也未由原 formatter 渲染，不能只凭 caplog extras 宣称应用日志足够。加入真实失败版本／pin／lease 等拒绝阶段断言和原 ContextFilter／ContextFormatter 断言后，目标实际 **1 failed、53 deselected，10.09 秒**（recovery_reason 缺失）；只补阶段标量及原 artifact_id，不改接受／拒绝行为、不扩大日志白名单。
+
+最终五模块实际 **462 passed，161.29 秒，exit 0，无 skip／deselect**：
+
+~~~powershell
+# cwd: Agent_Server；PG／Redis=1，Docker／MySQL=0，诊断=1；同 §184 固定 Conda Python。
+& E:\MiniConda3\envs\Agent\python.exe -u -m pytest tests/test_controlled_case_task_input.py tests/test_agent_v2_worker_contract.py tests/test_runtime_binding_contract.py tests/test_runtime_binding_persistence.py tests/test_framework_model_reader_admission.py -q -x -rs --tb=short --log-level=INFO
+~~~
+
+同一最终源码的八模块实际 **158 passed、57 skipped，302.70 秒，exit 0**；57 项明确要求隔离实际 MySQL／RustFS／配置供应商及相应 PG 夹具，不能计为通过。随后原独立 Worker 子集实际 **4 passed、15 deselected，60.71 秒，exit 0**；15 项为明确未选取的其他派发测试，不称整文件全绿。全部已启动测试均观察到终态。
+
+~~~powershell
+# 同上固定 Python、PG／Redis=1、Docker／MySQL=0；无源码／测试运行中修改。
+& E:\MiniConda3\envs\Agent\python.exe -u -m pytest tests/test_controlled_case_graph_input.py tests/test_controlled_case_adapter.py tests/test_controlled_case_native_reader.py tests/test_agent_case_context.py tests/test_agent_case_execution.py tests/test_agent_case_session.py tests/test_case_plan_run_creation.py tests/test_run_plan_projection_lock.py -q -x -rs --tb=short --log-level=INFO
+& E:\MiniConda3\envs\Agent\python.exe -u -m pytest tests/test_agent_task_dispatch.py -k 'separate_worker_process or killed_worker_pending' -q -x -rs --tb=short --log-level=INFO
+~~~
+
+再将四个 RUN_LIVE 开关显式全部置 0，新专项实际 **52 passed、2 skipped，22.86 秒，exit 0**；2 项为真实 PG／Redis 读者拒领测试，显式 opt-in 生效，不记为通过。最终生产源码聚合 SHA256 在上述五模块及八模块前后均为 4cc7cc330bda383611cb6cd457e2f02ae9ec0423c8c80c4d12346509e69085eb；新测试最终 SHA256 为 4534bbf2be37392ffb6f1613a46d43cb50bbc5e96cbada5e937e922defaef8f4。各组合有覆盖重叠，不相加为独立通过数。 最后在该最终源码重跑迁移专项＋原依赖契约两模块，实际 **18 passed，82.80 秒，exit 0**，验证当前快照新锁归档、无新锁兼容库存及原版本声明；不沿用日志修正前的制品测试代替这次验证。
+
+前端本轮 npm.cmd run typecheck 实际 exit 0；npm.cmd test -- sessionReceiptDedup.test.ts sessionQueue.test.ts SmokeTestingResultPanel.test.ts 实际 3 文件／8 passed，3.74 秒。新 Conda 的 compileall -q Agent_Server/src Agent_Server/tests、git diff --check 均实际通过；未安装 ruff／mypy，未跑独立后端 lint／typecheck，未跑全量前后端或真实领域目标验收。
+
+### 证据边界、提交与剩余出口
+
+正式草稿→评审→启用→冻结计划→领取来源使用真实业务服务和内存正式存储，planning／对象后端为替身；原 PG／Redis 专项明确模拟未来 task／outbox 行，仅验证两次拒领、attempt_no=0、完整事实摘要／Redis 内容不变、旧 message writer 仍拒 case。不是正式 RunItem／AgentTask 同事务受理或双租约执行验收。完整行比较先生成规范摘要，不在失败断言中泄露 lease token。冷进程与官方图／saver／本地合成 HTTP 不代表真实供应商、MySQL／RustFS 或领域 Runner。
+
+v4 E／§9、§12.1 → 本节 → 两个新生产文件、原 command／graph codec、专用测试、前端 operation 类型、原控制说明及本记录，共 8 文件 → 上述红绿与最终相关回归 → 独立中文 commit，ID 见 Git 历史与交付。提交前检查 status／diff／暂存范围及 diff --check；只强制加入已审阅的具体测试，不改忽略规则，不纳入认证／日志／制品或用户 v3 草稿，不推送／建 PR。
+
+下一步仍是正式 case 专用受理：按原业务锁顺序与数据库时间复核 RunItem 原 attempt 和 AgentTask 自身 attempt 的独立归属、冻结输入原件、并发 CAS 与失租 fence，再接入 RuntimeTurnResult／唯一 finalizer 和兼容 Worker。不能把读者定义当作正式执行已完成。完整有效上下文与模式质量、剩余 A2/A3/B/C/D/E/F、H01–H12、真实供应商／embedding／RustFS／领域 Runner、全资源 main、双制品 E4／备份恢复继续保留；§181／159／160／166 历史未定位项不撤销，整体 goal 继续 active。未启动／重启服务、运行 Docker、调用付费模型、访问外部目标或改实际 .env／生产路由；仅原 fixture 清理自身隔离资源，不处理无归属残留。整体工期仍为 §184 的 4–8 周风险粗估，不把当前子步用时当整个项目用时。
