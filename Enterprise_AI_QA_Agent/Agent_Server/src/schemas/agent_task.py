@@ -3,10 +3,13 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 from typing import Any, Literal
+from uuid import NAMESPACE_URL, uuid5
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-from src.schemas.controlled_case_task_input import ControlledCaseTaskInputAsset, parse_controlled_case_task_input
+from src.schemas.controlled_case_task_input import (
+    ControlledCaseTaskInputAsset, ControlledCaseTaskInputReference, parse_controlled_case_task_input,
+)
 from src.schemas.session import ConversationResponse
 from src.schemas.runtime_binding import RuntimeBinding, RuntimeExecutionOwner
 
@@ -89,6 +92,7 @@ class AgentTaskCommandV2(BaseModel):
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     payload: dict[str, Any] = Field(default_factory=dict)
     case_execution_input: ControlledCaseTaskInputAsset | None = Field(default=None, exclude_if=lambda value: value is None)
+    case_execution_reference: ControlledCaseTaskInputReference | None = Field(default=None, exclude_if=lambda value: value is None)
 
     @field_validator("case_execution_input", mode="before")
     @classmethod
@@ -103,17 +107,23 @@ class AgentTaskCommandV2(BaseModel):
             raise ValueError("runtime binding turn_id does not match command")
         if self.runtime_binding.runtime_kind == "legacy":
             raise ValueError("v2 commands cannot use a legacy runtime binding")
-        asset = self.case_execution_input
+        asset, reference = self.case_execution_input, self.case_execution_reference
         if self.operation == "case_execute":
-            if asset is None:
-                raise ValueError("case_execute requires its original frozen case input")
+            if (asset is None) == (reference is None):
+                raise ValueError("case_execute requires exactly one original frozen case input or delivery reference")
             if (self.task_type != "agent_turn" or self.runtime_binding.runtime_kind != "langgraph"
-                or self.runtime_binding != asset.graph_input.binding or self.trace_id != asset.graph_input.trace_id
-                or (self.project_id, self.run_id, self.run_item_id, self.reference_id)
-                != (asset.context.project_id, asset.context.run_id, asset.context.run_item_id, asset.case_version_id)
                 or any(value is not None for value in (self.attempt_id, self.worker_id, self.resource_id)) or self.payload):
                 raise ValueError("case_execute command differs from its frozen scope or carries a second execution identity/input")
-        elif asset is not None:
+            if asset is not None and (self.runtime_binding != asset.graph_input.binding
+                or self.trace_id != asset.graph_input.trace_id
+                or (self.project_id, self.run_id, self.run_item_id, self.reference_id)
+                != (asset.context.project_id, asset.context.run_id, asset.context.run_item_id, asset.case_version_id)):
+                raise ValueError("case_execute command differs from its frozen scope")
+            if reference is not None and (not all((self.project_id, self.run_id, self.run_item_id, self.reference_id))
+                or self.turn_id != str(uuid5(NAMESPACE_URL,
+                    f"case-run:{self.run_id}:{self.run_item_id}:{reference.run_item_execution_attempt_id}"))):
+                raise ValueError("case_execute delivery differs from its original RunItem turn or fixed scope")
+        elif asset is not None or reference is not None:
             raise ValueError("Only case_execute may carry frozen case input")
         return self
 

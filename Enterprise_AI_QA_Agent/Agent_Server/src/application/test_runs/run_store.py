@@ -30,6 +30,7 @@ from src.infrastructure.postgres_identifiers import (
 )
 from src.infrastructure.storage_utils import ensure_utc_datetime
 from src.schemas.session import ExecutionEvent, ToolApprovalRequest
+from src.schemas.controlled_case_admission import CONTROLLED_CASE_ADMISSION_KEY
 from src.schemas.suite_management import TestSuiteBundle
 from src.schemas.tool_job import ToolJobRecord
 from src.schemas.run_management import (
@@ -61,6 +62,16 @@ TERMINAL_ITEM_STATUSES = {
     "cancelled",
 }
 ACTIVE_ITEM_STATUSES = {"claimed", "running"}
+
+
+def require_generic_checkpoint_write(attempt: TestRunAttemptRecord, checkpoint_key: str) -> None:
+    # The reservation owns task/input/budget/outbox identities in one atomic
+    # writer. The generic checkpoint API cannot install or replace that fact.
+    if CONTROLLED_CASE_ADMISSION_KEY in {attempt.checkpoint_key, checkpoint_key}:
+        logger.warning("controlled_case_checkpoint_atomic_writer_required", extra={"run_id": attempt.run_id,
+            "run_item_id": attempt.run_item_id, "attempt_id": attempt.id,
+            "recovery_reason": "controlled_case_admission_reserved"})
+        raise ValueError("Controlled case admission checkpoint requires its atomic writer")
 
 
 class TestRunStore(Protocol):
@@ -900,6 +911,7 @@ class InMemoryTestRunStore:
         async with self._lock:
             item = self._require_active_lease(item_id, lease_token, now, {"claimed", "running"})
             attempt = self._active_attempt(item_id, lease_token)
+            require_generic_checkpoint_write(attempt, checkpoint_key)
             version = checkpoint_version or attempt.checkpoint_version + 1
             if version <= attempt.checkpoint_version:
                 raise ValueError(f"Checkpoint version must increase for run item: {item_id}")
@@ -2935,6 +2947,7 @@ class PostgresTestRunStore:
                 item = self._lock_item(cur, item_id)
                 self._validate_lease(item, lease_token, now, {"claimed", "running"})
                 attempt = self._lock_attempt(cur, item_id, lease_token)
+                require_generic_checkpoint_write(attempt, checkpoint_key)
                 version = checkpoint_version or attempt.checkpoint_version + 1
                 if version <= attempt.checkpoint_version:
                     raise ValueError(f"Checkpoint version must increase for run item: {item_id}")

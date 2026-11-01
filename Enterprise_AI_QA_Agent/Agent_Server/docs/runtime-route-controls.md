@@ -213,9 +213,25 @@ bound Runtime 初始状态只查询 ExecutionRequest 的明确 key，不再回�
 
 原 `AgentTaskCommandV2` 增加内部 `case_execute` 操作及专用 `case_execution_input`，不新增队列或 v3 命令。case 只允许 `agent_turn`／`langgraph`，完整 binding、trace、project／run／item／version reference 必须匹配输入；禁止在公共 `attempt_id` 填入 RunItem attempt，禁止预填 worker／resource，也不接受第二份自由 payload。AgentTask 自身 attempt 仍应由其 claim 独立生成。其他操作不能携带 case 输入；缺省字段不输出 null，原 message wire 保持不变。公开 `AgentTaskRecord` 与前端只同步 operation 读者，不公开输入原件。
 
-原 `FrameworkWorkerCapabilities.require_command_format()` 直接复用严格 codec：新资产／嵌套 graph 的未来版本或额外字段沿原兼容性等待分类，普通摘要损坏仍是验证错误。能力准入仍拒绝 langgraph，旧 Worker stream 仍拒绝 v2，现有 `submit_v2()` message writer 仍拒绝 case 操作；没有正式业务写者、双租约 CAS／fencing、受控结果 finalizer 或 main 选路。版本制品的命令 JSON schema 会自然包含嵌套新定义，但定义库存不等于制品兼容执行能力。
+原 `FrameworkWorkerCapabilities.require_command_format()` 直接复用严格 codec：新资产／嵌套 graph 的未来版本或额外字段沿原兼容性等待分类，普通摘要损坏仍是验证错误。能力准入仍拒绝 langgraph，旧 Worker stream 仍拒绝 v2，现有 `submit_v2()` message writer 仍拒绝 case 操作；生产尚未装配 case 写者、双租约 CAS／fencing、受控结果 finalizer 或 main 选路。下节新增的是未装配的内部受理端口，不是生产开放。版本制品的命令 JSON schema 会自然包含嵌套新定义，但定义库存不等于制品兼容执行能力。
 
 日志 `controlled_case_input_prepared`／`controlled_case_input_preparation_rejected` 只带标量身份、摘要或 error_type，不输出租约 token、完整 context／Prompt／工具／异常正文；成功摘要复用原 formatter 的 `artifact_id`，拒绝阶段复用固定 `recovery_reason`，不开放任意 extras。新专项 `tests/test_controlled_case_task_input.py` 的正式草稿→评审→启用→冻结计划→领取来源使用真实业务服务与内存存储，规划／对象后端为替身；真实 PG／Redis 组明确模拟未来任务／outbox 行，只验证读者拒领和事实无变化，不是正式 RunItem／AgentTask 同事务受理或实际执行验收。实际结果与剩余出口见实施记录 §185。
+
+### 内部正式用例原子受理（v4 E／§9、§12.1）
+
+`application/test_runs/controlled_case_admission.py::ControlledCaseAdmission.submit()` 接收完整冻结 case 命令、原 RunItem 的 lease token 和 schema 2 模型预算；仅受信服务端调用，**main／CLI／公共路由均未装配**。不会创建 Session、调用模型／图／工具、领取 AgentTask attempt，也不会延长 RunItem 租约。参与者复用原 PostgreSQL Run／Case／Task stores，连接身份用既有 `postgres_url()` 比较（不渲染认证），不把无关 Redis／MySQL 设置差异当成拒绝依据。
+
+事务沿既有 Session → 计划共享投影锁 → RunItem → 原 Attempt 顺序，读取并锁定正式固定版本，复用原领取 pin／归档读者和纯准备器重新构造完整输入，再与原资产摘要核对。保持原合法兼容路径：归档缺失但当前完整快照仍精确匹配 pin 可以复用；归档缺失且当前投影漂移拒绝。取得绑定／模型预算 owner 锁后，**再次以数据库 `clock_timestamp()` 的现场时间检查原 running 租约和预算截止**，然后在同一事务保存 task、完整 input、原 Attempt 关联、绑定／预算、事件和既有 Outbox；任一步失败整笔回滚，不使用事务开始的 `NOW()` 或调用者时间代替现场检查。
+
+`controlled_case_admission` 是新的保留 checkpoint key，原 Attempt 的 schema 1 关联保存正式身份、独立 `run_item_execution_attempt_id`、task、binding、plan pin、输入／提交摘要和数据库时间；严格读者不把继承 checkpoint 的新 Attempt 当作原执行。原内存／PG 通用 checkpoint 写口统一拒绝安装或覆盖此 key，必须走原子写者。其他旧 key 保持原行为，旧 AgentCase 遇到不同执行策略 checkpoint 仍走其既有显式对账分支。没有 DDL、历史回填、运行条目复用或旧失败覆盖。
+
+同一原 Attempt 的并发首次受理由原 Item／Attempt 锁串行化；幂等身份由该原 Attempt 派生，重试核对完整输入／绑定／预算和持久关联，不重新生成或覆盖任何原事实。丢 ACK、Run 取消或原 lease 已过期后可以读取已受理回执，但**回执不是执行授权**。继承原 checkpoint 的新 RunItem attempt 不得重新首次冻结／派发原执行，须按后续独立恢复协议对账；AgentTask 自身 attempt 仍保持 None／0，未来由兼容 Worker 生成。
+
+原完整 `case_execution_input` 形式继续可读，供内部首次受理使用；新增严格、互斥的 `case_execution_reference={run_item_execution_attempt_id,input_sha256}` 用于实际 Outbox／Redis 投递。投递不复制 Prompt、原生消息或业务 JSON；完整原件只在 PostgreSQL task input。非 case 操作不得携带任一形式，原 message wire 不增 null 字段。新参考字段对旧 extra=forbid 读者仍可能不兼容；未装配写者和当前 Worker 拒领测试不等于旧制品滚动部署已验收，不能据此打开写者。
+
+日志 `controlled_case_admission_committed`／`reused`／`failed` 仅保存身份、固定失败阶段和摘要；原 RunItem attempt 用既有 `execution_id` 渲染，不冒充 AgentTask `attempt_id`。事件为通用字符串类型 `test_run.case_admitted`，payload 显式携原 RunItem attempt；不制造用户消息或 message-stage。协程等待者取消不能停止 `to_thread` 中的 SQL，日志 `controlled_case_admission_waiter_cancelled` 明确 `admission_receipt_unknown`，不谎称回滚、不自动重跑命令；重试只核对原持久回执。
+
+`tests/test_controlled_case_admission.py` 的正式草稿／评审／启用、Suite／计划 Run、领取／start、受理和 Outbox 使用真实 PostgreSQL；规划模型、配置和对象后端仍为明确替身。原 Relay 真实发布到隔离 Redis，当前 Worker 两次读取实际 reference-only Outbox 后仍在 claim 前拒绝 langgraph。冷进程只验证导入／codec，不冒称独立执行进程验收。实际验证见实施记录 §186；完整服务器上下文装配、reference 与持久原件的执行前核对、双租约 claim／fence、RuntimeTurnResult／唯一 finalizer、强杀和真实领域链路仍待实现／验收。
 
 ### 原路由与恢复验证
 

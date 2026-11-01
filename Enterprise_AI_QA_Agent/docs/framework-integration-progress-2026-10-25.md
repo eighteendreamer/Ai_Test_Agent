@@ -8644,3 +8644,86 @@ v4 F／§14.1 → 本节 → 新锁／清理脚本、根 metadata／README、制
 v4 E／§9、§12.1 → 本节 → 两个新生产文件、原 command／graph codec、专用测试、前端 operation 类型、原控制说明及本记录，共 8 文件 → 上述红绿与最终相关回归 → 独立中文 commit，ID 见 Git 历史与交付。提交前检查 status／diff／暂存范围及 diff --check；只强制加入已审阅的具体测试，不改忽略规则，不纳入认证／日志／制品或用户 v3 草稿，不推送／建 PR。
 
 下一步仍是正式 case 专用受理：按原业务锁顺序与数据库时间复核 RunItem 原 attempt 和 AgentTask 自身 attempt 的独立归属、冻结输入原件、并发 CAS 与失租 fence，再接入 RuntimeTurnResult／唯一 finalizer 和兼容 Worker。不能把读者定义当作正式执行已完成。完整有效上下文与模式质量、剩余 A2/A3/B/C/D/E/F、H01–H12、真实供应商／embedding／RustFS／领域 Runner、全资源 main、双制品 E4／备份恢复继续保留；§181／159／160／166 历史未定位项不撤销，整体 goal 继续 active。未启动／重启服务、运行 Docker、调用付费模型、访问外部目标或改实际 .env／生产路由；仅原 fixture 清理自身隔离资源，不处理无归属残留。整体工期仍为 §184 的 4–8 周风险粗估，不把当前子步用时当整个项目用时。
+
+## 186. E／§9、§12.1：正式用例原子受理与身份引用投递（2026-11-01）
+
+### 续接、依据 → 做法与范围
+
+续接 cee67d058／§185。本轮先核对实际 Git 状态、§52／53 与最新记录、v4 和既有 RunStore／TaskStore 调用链。原生审批终态的历史比较与后续修复仍以原记录为准，不重新采用展示文本比较；§181 的四个未定位失败、§159／160／166 的历史异常没有撤销。用户 v3 草稿保持原 SHA256 8A43E94160767A0DE20740F2CB30782F06322CBC3467076DFCB120D4EFDF1AD4，不修改／暂存。
+
+- 依据 PostgresTestRunStore.commit_approval_wait 的 Session → Item → Attempt 事务顺序，以及 claim／cancel／revision 的既有 plan_projection_lock → 新内部受理复用 Session → 计划共享投影锁 → Item → 原 Attempt，再读取正式版本；不锁定／重算 Run 总计，不新建调度器或恢复总门卫。
+- 依据 _run_for_attempt_in_cursor／run_with_claimed_snapshot 的原归档 pin 与兼容读法 → 重新取得领取时上下文，不把当前计划补成历史。归档缺失但当前完整摘要仍匹配 pin 是既有合法分支，继续保留；缺失且当前漂移或原归档损坏则拒绝。
+- 依据原 TaskStore 事务、register_runtime_binding、模型账本 freeze_submission、Session event 与 PostgresTaskOutbox → 同连接原子保存全部受理事实，没有模型／工具／网络调用参与事务，也不制造用户消息或 message-stage。
+- 依据既有 identity-only Redis 边界与 v2 严格 codec → PostgreSQL 保存完整原件，Outbox／Redis 仅发送新增的严格输入引用；不把 Prompt、原生消息和业务 JSON 复制到队列。
+- 本地《Agent轨迹与协议鲁棒性》关于结果＋轨迹、幂等、权限及恢复的原文 → 新测试断言完整事实、并发次数、事务回滚、原 attempt、到期时点和未领取状态，不以返回文本或手工简化表证明正式受理。
+
+只实现未装配的内部受理端口、checkpoint 读者与保留写口、引用格式及对应回归。main／CLI／公共路由、Worker 执行能力、RunItem／AgentTask 双租约执行 fence、受控 RuntimeTurnResult／唯一 finalizer 均未接入，本节不是正式 case 端到端验收。
+
+### 实现与跨层契约
+
+新增 application/test_runs/controlled_case_admission.py::ControlledCaseAdmission.submit()：接收已冻结的完整 case 命令、独立原 RunItem lease token 和 schema 2 模型原件预算；进入线程前重新序列化／严格校验，切断调用者可变对象别名。PostgreSQL 连接身份复用既有 postgres_url() 对象比较，包括认证但不渲染；不比较无关 Redis／MySQL 配置，显式参与者表名仍由原 stores 持有。
+
+首次受理重核正式 Run、Item、原 Attempt、running／worker／attempt_no／token、原计划 pin、版本、完整上下文和冻结输入；已有 checkpoint 或 recovered attempt 不得再次首次冻结。Session 必须是归属相同正式项目／运行条目和模式的专用内部空会话，不挤占活跃或已有执行的 Session。根模型 key／fingerprint／provider／transport 与预算原件和图输入一致；不读取当前默认配置来替换原件，也不刷新预算。
+
+模型 binding／budget owner 锁取得之后，使用数据库 clock_timestamp() 的现场时间检查原 running 租约和预算截止，再写 task、既有 Outbox、原 Attempt checkpoint 与 test_run.case_admitted 事件。绑定／预算写入也在同事务；到期或任一步失败全部回滚。Task 状态为 queued、attempt_id=None、attempt_no=0，没有领取、续租、模型调用或领域结果写入。
+
+新增 schemas/controlled_case_admission.py：显式整数 schema 1 的原 Attempt 关联，包括正式身份、run_item_execution_attempt_id、task、binding、原 plan pin、输入／提交摘要和数据库时间。read_admission_checkpoint() 校验原 attempt／pin／时间与 checkpoint_version=1，不把继承者当原执行；checkpoint 不是执行许可。原内存／PG 通用 checkpoint 写口共用小型保留命名空间检查，拒绝安装或替换 controlled_case_admission，必须走其原子写者；其他旧 key 不变，旧 AgentCase 的已有“其他策略 checkpoint 需对账”分支不改。
+
+幂等身份由原 RunItem attempt 派生，而非调用者任意重试 key。相同 Session 的 8 并发只产生一次完整事实；不同专用 Session 竞争同一原 Attempt 时，Item／Attempt 锁及原关联保证只有一个成功。重试严格核对输入、binding、预算和持久关联，不重写 task／checkpoint／事件／Outbox。丢 ACK、Run 已取消或原 lease 到期后允许读取原受理回执，但不授予执行权；失租后继承原 checkpoint 的新 Attempt 不可重新派发原执行。
+
+AgentTaskCommandV2 新增互斥 case_execution_reference={run_item_execution_attempt_id,input_sha256}；完整 case_execution_input 形式仍可读并用于首次受理。实际 Outbox 使用 reference-only 形式，缺正式范围、原 Turn 不符、两种形式并存、未来额外字段及不合法摘要均有反例；其他操作禁携任一 case 形式，原 message 序列化不增加 null。模型／制品 schema 库存自然纳入新定义，但不代表旧 extra=forbid 制品可以读取新字段；写者未装配，滚动部署仍未验收。
+
+公开 AgentTaskRecord／前端 operation 读者沿用 §185；新字段仅属内部命令。核对后端 ExecutionEvent.type 和前端同字段均为开放字符串，test_run.case_admitted 不需要新增不真实的前端执行状态。事件顶层 attempt_id 保持 None，payload 用独立 run_item_execution_attempt_id；日志用既有 execution_id 渲染原 RunItem attempt，不能冒充 AgentTask attempt。成功／复用带原摘要，失败带固定阶段和 error_type，不输出正文、预算配置、认证或 token。协程等待者取消时 SQL 线程可能继续，日志明确 admission_receipt_unknown，不谎称回滚或自动重新执行；测试真实观察其提交后仅复用原回执。
+
+### TDD、修复过程与保留的失败
+
+首条开发命令只保留了前置文件输出，未保留该次执行 handle／最终 pytest 输出，未计作任何通过结果；随后清点无残留测试进程并使用显式 handle 重跑。新夹具依次暴露：18.38 秒的项目不存在（同一测试文件被 tests.* 和顶层模块双名导入，patch 到错误别名）；17.98 秒缺 Session ProjectService；16.43 秒误用不存在的 set_project_service；首次实现后 12.27 秒因参与者使用不同的完整数据库配置而构造失败。均保留为真实夹具失败，没有跳过正式项目、评审、FK、计划或 Session 校验。夹具最后通过原已有 _project_service 接线和官方 PG stores 持久化完整记录，不再使用手写简化表。
+
+真正目标红测在正式来源完成后，因缺 controlled_case_admission 模块实际 1 failed，10.81 秒。首实现六项实际 6 passed，32.47 秒。通用 checkpoint 反例实际 1 failed、25 deselected，11.15 秒（未拒绝伪造保留 key）；补原内存／PG 共用保留写口。扩大后实际 1 failed、13 passed，92.86 秒：测试误以为“仅缺归档”必须拒绝，但原代码明确允许当前完整快照仍匹配 pin。没有增加误杀门卫；将负例改成缺归档且当前漂移，并补缺归档匹配当前、当前已修订但原归档仍在的两个正例。
+
+固定失败阶段日志反例实际 1 failed、23 deselected，16.88 秒；仅 error_type 无法定位检查阶段，且 not_committed 字样无法证明丢 ACK 时真的没提交。改为 failed＋固定阶段；取消等待者单独记录未知回执。两个 Session 的并发用例实际 1 failed、22 passed、1 warning，117.28 秒：夹具修改 binding 后仍携旧 computed fingerprint，又在参数验证前构造了未 await 协程。改为用原 RuntimeBinding codec 重算、先构造合法命令再 gather，不屏蔽 warning、不弱化并发断言。随后专项实际 44 passed，141.91 秒，是引用投递等后续修改前的中间结果。
+
+队列正文反例实际 1 failed、43 deselected，10.39 秒，证明首实现把完整 case input 放进 Outbox；按原身份投递边界新增 reference-only 读者和写者，保留完整原件形式兼容。此后两模块一次实际 1 failed、23 passed，88.39 秒：旧时间夹具按主机时间 sleep，却未观察放锁时数据库是否已到期。单独当前采样 host_minus_db_seconds=0.012195，不足以反推当次失败根因；不据此认定主机／容器时钟故障。改成在锁内直接观察 DB clock_timestamp() 已达到已记录 expiry 才释放，且先确认 SQL 确实阻塞、等待前 DB 仍未到期。两模块中间结果实际 108 passed，170.34 秒，仍早于下一反例。
+
+新增模型 owner 竞争反例：在本测试自有 owner 行上持锁，真实观察受理等待和 DB 到期后放锁，实际 1 failed、54 deselected，12.72 秒（应拒绝却提交）。这是实现缺口，而非上述夹具时钟问题：首次租约检查发生在等待 freeze_submission 的 owner 锁之前。根因修复为取得绑定／预算锁后再执行原现场租约／deadline 检查；没有增加超时、重试或续租，也没有替换 DB clock。之后六模块中间结果实际 525 passed，270.22 秒，无 skip／deselect。
+
+最后审阅移除参与者的无关配置误拦截。纯配置用例先因 DatabaseConfig 缺必填 redis_url 实际 1 failed、55 deselected，7.32 秒（夹具错误）；补显式本地假地址后，真实目标红测 1 failed、55 deselected，6.78 秒，证明仅 Redis 配置不同也被拒绝。采用既有 postgres_url() 的实际连接身份比较，仍拒不同 PG database／认证，不渲染 URL。完整行／原租约比较使用规范摘要，避免失败断言展开私有原件；未减弱断言。
+
+### 最终源码验证与证据范围
+
+固定 E:\MiniConda3\envs\Agent\python.exe；每条运行命令前均使用 scripts/clear_uv_environment.ps1 -ProcessOnly 清理当前子进程继承，不调用 UV。最终六模块实际 **528 passed，264.16 秒，exit 0，无 skip／deselect**，其中新增专项共 58 项：
+
+~~~powershell
+# cwd: Agent_Server
+& ..\scripts\clear_uv_environment.ps1 -ProcessOnly | Out-Null
+$env:PYTHONIOENCODING='utf-8'
+$env:RUN_LIVE_POSTGRES_TESTS='1'
+$env:RUN_LIVE_REDIS_TESTS='1'
+$env:RUN_LIVE_DOCKER_TESTS='0'
+$env:RUN_LIVE_MYSQL_TESTS='0'
+$env:QA_FRAMEWORK_WORKER_DIAGNOSTICS='1'
+& E:\MiniConda3\envs\Agent\python.exe -u -m pytest tests/test_controlled_case_admission.py tests/test_controlled_case_task_input.py tests/test_agent_v2_worker_contract.py tests/test_runtime_binding_contract.py tests/test_runtime_binding_persistence.py tests/test_framework_model_admission.py -q -x -rs --tb=short --log-level=INFO
+~~~
+
+随后最终八模块实际 **132 passed、65 skipped，180.56 秒，exit 0**。明确将 RUN_LIVE_RUN_DEPENDENCIES、RUN_LIVE_PLAN_RUN_CREATION、RUN_LIVE_PUBLIC_PLAN_WORKER、RUN_LIVE_AGENT_CASE_CONTEXT_MODEL 置 0；这些历史夹具捆绑实际 MySQL／RustFS／供应商或相应隔离资源，包括部分仅标 PG 但共享该 opt-in 的用例，未借授权 PG 运行绕过其夹具边界。65 项不计通过，尤其原完整 plan projection lock 文件本次均 skip，新受理的真实 PG 锁竞争不替代其独立进程／完整领域验收。
+
+~~~powershell
+# 同上解释器与 PG／Redis=1，Docker／MySQL=0；另有上述四个场景 opt-in=0。
+& E:\MiniConda3\envs\Agent\python.exe -u -m pytest tests/test_agent_case_context.py tests/test_agent_case_execution.py tests/test_agent_case_session.py tests/test_run_item_dependencies.py tests/test_case_plan_run_creation.py tests/test_run_plan_projection_lock.py tests/test_framework_release_archive.py tests/test_framework_model_reader_admission.py -q -x -rs --tb=short --log-level=INFO
+~~~
+
+再将四个 RUN_LIVE 开关显式全部置 0，单跑新专项实际 **24 passed、34 skipped，21.54 秒，exit 0**；34 项为真实 PostgreSQL／Redis 场景，opt-in 生效，不计通过。命令为同一解释器执行 -u -m pytest tests/test_controlled_case_admission.py -q -x -rs --tb=short --log-level=INFO。全部已启动 pytest 均观察到终态，没有待观察 handle；上述最早未保留输出的调用未被回填为通过。
+
+最终源码聚合 SHA256（排序相对 Python 路径 UTF-8＋NUL＋原字节＋NUL）在上述两组前后均为 08971221a2fea6f6ca1e4d77860e5e1726c74be55bfdd58f68de3cca655d54ae；新专项文件 SHA256 为 2863d8d629b1b82264a545cb977ac3cf04974d12a662777d7174f220724462e4。没有测试运行中修改生产源码或测试。各组有模块覆盖重叠，不相加为独立覆盖数。
+
+前端实际 npm.cmd run typecheck exit 0；三个原消息／队列／结果面板测试文件实际 8 passed、3.22 秒。最终新 Python compileall -q src tests、pip check 及 diff --check 实际通过；ruff／mypy 不可用，没有安装或虚报独立 backend lint／typecheck。未跑全量前后端、前端 build、真实领域目标、真实模型／embedding／RustFS或独立 Worker 强杀验收。
+
+本轮正式来源通过原服务完成真实 PG 草稿／评审／启用，固定计划用原 PostgresCasePlanStore 保存，原 CasePlanRunService 以真实 PG Suite／Run 创建并领取／start，再进入本受理；规划模型／配置／文档对象后端仍是明确替身。正式 task／input／预算／原 Attempt／事件／Outbox 不是手工模拟未来行。Relay 实际发布隔离 Redis；现 Worker 两次读取持久 Outbox 的真实引用命令仍在 claim 前拒绝，Task attempt 保持 None／0。冷进程只证明无副作用导入／codec，不是 case 执行、双制品或付费供应商验收。
+
+### 提交对应、剩余出口与工期
+
+v4 E／§9、§12.1 → 本节 → 新受理器／checkpoint codec、RunStore 保留写口、命令／输入引用读者、新专项、当前控制说明及原实施记录，共 8 文件 → 上述真实红绿与最终相关回归 → 独立中文 commit，ID 见 Git 历史及交付。仅显式暂存这些文件，被忽略的新测试单文件强制纳入；不改 ignore、不纳入 v3／认证／日志／制品，不推送或建 PR。
+
+下一步是读取 reference 与完整持久原件的执行前核对，以及原 RunItem 与 AgentTask 独立 attempt 的双租约 claim／heartbeat／fencing，再接受控 RuntimeTurnResult 和唯一 finalizer。不能把受理或读回回执当已执行，不能让旧 lease、继承 checkpoint 或未知效果重跑原命令。完整有效输入／逐模式质量、剩余 A2/A3/B/C/D/E/F、H01–H12、真实供应商／embedding／RustFS／领域 Runner、全资源 main、E4 双制品／备份恢复继续保留。整体 goal 继续 active；没有启动／重启服务、运行 Docker、付费调用、访问外部目标或改变 .env／生产路由，仅清理本轮具名隔离测试资源。
+
+整体剩余仍为 §184 的约 4–8 周有效开发／验收风险粗估，供应商／目标授权、环境准备和人工发布等待另计；首个正式 case 端到端与 E3 清单收口后重估。本节没有足够真实领域验收依据来缩短该估算；v4 排除的六个占位模式新功能仍不在此工期内。

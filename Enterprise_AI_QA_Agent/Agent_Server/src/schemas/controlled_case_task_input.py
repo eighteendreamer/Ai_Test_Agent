@@ -19,6 +19,14 @@ from src.schemas.framework_approval import approval_value_hash
 from src.schemas.run_management import RunPlanSnapshotIdentity
 
 
+class ControlledCaseTaskInputReference(BaseModel):
+    """Delivery identity only; the full original remains in PostgreSQL."""
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    run_item_execution_attempt_id: str = Field(min_length=1)
+    input_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+
+
 class ControlledCaseTaskInputAsset(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
