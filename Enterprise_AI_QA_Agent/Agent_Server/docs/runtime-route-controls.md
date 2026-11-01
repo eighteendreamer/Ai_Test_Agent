@@ -100,6 +100,16 @@ v2 Dispatcher 的任务读取与 claim 锁内的 task／owner 绑定均使用原
 
 日志 `agent_message_admission_reused`／`agent_message_admission_committed` 记录有限任务／绑定身份和 schema；`agent_message_preparation_failed`／`agent_message_prepared_values_invalid` 只记错误类型，不输出输入或原异常；关闭新意图为 `agent_message_new_turn_admission_disabled`。验证见 `test_framework_release_binding.py` 的真实 HTTP／PG／Redis、事务回滚、丢响应重试及官方框架＋本地 HTTP 完整上下文用例；证据等级与实际结果见实施记录 §173。普通 headless／Coordinator／审批等入口不因该端口自动迁移，发布门、独立部署与真实领域验收仍保留。
 
+### 在受理事务外读取当前装配材料（v4 §4／§6）
+
+需要查询当前模型配置与制品时，受信组合可改装配异步 `framework_submission_loader(session, execution_request, command)`，与同步 preparer 互斥，默认仍未安装。`FrameworkReleaseSubmissionLoader` 在工作线程中复用真实 Agent／Model Registry 的选模规则和 `get_runtime_config()`，再调用原 `prepare_release_submission()`；每次新意图读取当前材料，不使用启动缓存。模式集合、namespace、调用／Token 上限和截止时长必须由可信组合显式提供，没有自行推导的生产默认。未命中模式返回 None，不读取模型或制品。
+
+Dispatcher 先无锁只读查询原 API 消息回执；已有相同请求直接返回，冲突仍 409，不再依赖当前材料源。未命中才读取材料，且不持有 Session 行锁、不写受理事实、不执行模型或工具。材料读取失败后只再查询一次并发提交回执；仍不存在则明确失败，不静默回退 legacy。候选若与原 payload 的显式模型 key 不同，受理前拒绝，避免先返回 202 再被 Worker 的冻结根模型规则拒绝；继承的 Session 偏好不冒充显式输入，仍允许 Registry 原有选择策略。
+
+读取成功不授予受理权：原 `submit_prepared_message()` 在 Session 行锁内重新核对幂等、当前新接入开关、候选能力及全部既有事务约束，只提交胜出的绑定／预算／任务／消息／outbox。并发候选不能替换原材料；关闭开关可丢弃未提交候选，但不撤销已提交绑定。读取期间取消后，即使只读工作线程随后结束，也不产生受理事实。该两阶段边界不是 MySQL／PG 分布式事务，配置在采集期间变化仍以最终捕获并入库的参数原件为准，执行端继续核对当前授权与原指纹。
+
+新增成功／回执复用日志为 `framework_submission_materials_loaded`／`agent_message_loaded_admission_reused`；失败 `agent_message_material_loading_failed` 只附任务身份和错误类型，不输出配置、请求或源异常正文。`test_framework_submission_loading.py` 验证真实 PG 行锁、并发、失败、取消、关闭和重试；`test_framework_release_binding.py` 的 external 参数用真实 Registry 加受控配置存储端口接通原 HTTP→Worker→官方框架与本地合成 HTTP。不是 MySQL 实库、付费供应商或完整 main 启动验收，生产入口和配置开关不变，结果见实施记录 §175。
+
 ### 消费受理时的根模型选择（v4 §4／§6）
 
 预算 v2 的非秘密配置原件通过原 `PostgresFrameworkModelCalls.frozen_policy()` 只读加载；`FrameworkModelBudget.root_configuration(binding.model_config_fingerprint)` 必须精确匹配唯一根配置，不以字典首项、角色名称或当前默认猜选。该派生读取不增加 JSON 字段／格式版本，不授予发送、owner 或恢复权限。历史预算 v1 没有配置原件，保留原图前编排选模契约，不推断或回填根身份。

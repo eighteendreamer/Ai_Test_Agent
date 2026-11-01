@@ -66,7 +66,9 @@ class AgentTaskDispatcher:
     def __init__(self, settings, tasks, sessions, resources, *,
                  framework_capabilities: FrameworkWorkerCapabilities | None = None,
                  framework_model_calls=None, framework_native_reader=None,
-                 framework_submission_preparer=None):
+                 framework_submission_preparer=None, framework_submission_loader=None):
+        if framework_submission_preparer is not None and framework_submission_loader is not None:
+            raise ValueError("Configure either a captured preparer or an async material loader, not both")
         self._settings = settings
         self._tasks = tasks
         self._sessions = sessions
@@ -77,6 +79,7 @@ class AgentTaskDispatcher:
         # Explicit composition only. No production caller installs this port
         # until compatible readers and the mode's release gates are deployed.
         self._framework_submission_preparer = framework_submission_preparer
+        self._framework_submission_loader = framework_submission_loader
         self._coordinator = None
         self._child_reaper_task: asyncio.Task[None] | None = None
         self._child_reaper_stop: asyncio.Event | None = None
@@ -142,10 +145,38 @@ class AgentTaskDispatcher:
         )
         message.metadata["context_eligible"] = False
         preparer = self._framework_submission_preparer
+        loader = self._framework_submission_loader
         capabilities = self._framework_capabilities
-        if preparer is None:
+        loaded, task = None, None
+        if loader is not None:
+            task = await self._tasks.find_message_submission(session_id, payload, idempotency_key=key)
+            if task is None and self._settings.deep_agents.new_turns_enabled:
+                try:
+                    # External read-only configuration/release acquisition must
+                    # finish before the PG Session admission transaction opens.
+                    loaded = await loader(session, request, command)
+                    if loaded is not None:
+                        root = loaded.model_budget.root_configuration(loaded.binding.model_config_fingerprint)
+                        # The normalized request may inherit a Session preference.
+                        # Only the original payload expresses an explicit choice;
+                        # do not admit a candidate the Worker must later reject.
+                        if root is not None and str(payload.model_key or "").strip() not in {"", "auto", root.key}:
+                            raise ValueError("Message model selection differs from its prepared root model")
+                except Exception as exc:
+                    # A concurrent request may have won while acquisition was
+                    # in flight. Its committed receipt outranks current source
+                    # availability; a miss never authorizes a legacy fallback.
+                    task = await self._tasks.find_message_submission(session_id, payload, idempotency_key=key)
+                    if task is None:
+                        LOGGER.warning("agent_message_material_loading_failed", extra={"session_id": session_id,
+                            "task_id": command.task_id, "error_type": type(exc).__name__})
+                        raise ValueError("Framework message material loading failed") from None
+            if task is not None:
+                LOGGER.info("agent_message_loaded_admission_reused", extra={"session_id": session_id,
+                    "task_id": task.id, "turn_id": task.turn_id})
+        if task is None and preparer is None and loader is None:
             task = await self._tasks.submit(command, payload, message, idempotency_key=key)
-        else:
+        elif task is None:
             def prepare():
                 # Called only for a new API intent, under the existing Session
                 # transaction lock. Must be synchronous and preparation-only:
@@ -155,7 +186,7 @@ class AgentTaskDispatcher:
                         "task_id": command.task_id, "recovery_reason": "new_turn_admission_disabled"})
                     return None
                 try:
-                    prepared = preparer(session, request, command)
+                    prepared = preparer(session, request, command) if preparer is not None else loaded
                     if prepared is not None:
                         if capabilities is None:
                             raise ValueError("Prepared admission requires explicit reader capabilities")

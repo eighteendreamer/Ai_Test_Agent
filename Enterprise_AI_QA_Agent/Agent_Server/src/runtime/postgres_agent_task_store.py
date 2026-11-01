@@ -117,6 +117,22 @@ class PostgresAgentTaskStore:
         return await asyncio.to_thread(self._submit_prepared_message_sync, command, payload, message,
             idempotency_key, prepare_framework_submission)
 
+    async def find_message_submission(self, session_id: str, payload: SendMessageRequest, *,
+                                      idempotency_key: str) -> AgentTaskRecord | None:
+        """Read an API receipt before external preparation, without holding locks.
+
+        A miss is advisory, not an admission right: submit_prepared_message must
+        recheck under its original Session lock before any write. Direct v2 and
+        other operation identities remain outside this API message lookup.
+        """
+        def read():
+            with postgres_connect(self._settings) as conn, conn.cursor() as cur:
+                cur.execute("SET TRANSACTION READ ONLY")
+                row = self._find_idempotent(cur, session_id, self._idempotency_key("message", idempotency_key),
+                    self._input_hash("message", payload.model_dump(mode="json")), message_intent=True)
+                return AgentTaskRecord.model_validate(row) if row is not None else None
+        return await asyncio.to_thread(read)
+
     async def submit_resume(
         self,
         command: AgentTaskCommand,

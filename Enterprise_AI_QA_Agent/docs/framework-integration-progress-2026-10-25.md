@@ -8022,3 +8022,55 @@ v4 B／§4、§6 → 本节 → 原预算 schema、SessionService、RuntimeServi
 本步修复冻结模型身份的真实消费缺口，不等于正式模型选择／预算策略已经装配。main／CLI 仍不安装准备端口；同步准备不得在 PG Session 行锁中读取 MySQL／额外 DB／网络或执行模型，不能用启动时过期缓存冒充每请求快照，也不能为缺失的根调用／Token 数值自行编造默认。后续仍需正式生产者装配／发布、全部旧初始化读者升级或隔离、完整有效输入与正式项目／用例固定版本冻结验收、格式／行为能力审计、双制品独立依赖安装及完整部署、一致备份恢复和灰度排空。
 
 §159／160 时间异常与 §166 子进程 RuntimeError 尚未定位；本轮绿色不抹去历史失败。完整 A2/A3/B/C/D/E/F、H01–H12、真实项目／MySQL／供应商／embedding／RustFS／领域 Runner、官方 saver conformance、全前后端和 E3/E4 继续保留 v4 原出口。整体 goal 继续 active，本子步不代表 B 或全系统完成。
+
+## 175. B／§4、§6：事务外采集当前模型与制品，事务内原子冻结受理（2026-11-01）
+
+### 续接、根因与依据 → 做法
+
+已提交基线 `9c7d59845`／§174。续接工作区的 Dispatcher／task store、装配服务及测试草稿后，核对 v4、原受理事务、选模 Registry、模型配置存储、预算原件和完整 HTTP 用例；没有重做原 messages 顺序、审批／结果恢复或根模型消费。用户 v3 草稿 SHA256 仍为 `8A43E94160767A0DE20740F2CB30782F06322CBC3467076DFCB120D4EFDF1AD4`，不修改／暂存。
+
+§173 的同步 preparer 在 Session 行锁内运行，只适合已捕获的纯材料，不能直接用它执行当前 MySQL 配置查询或制品探测。缺的是采集与原子受理的边界，不是另建分布式事务、启动缓存或调度器。依据 `ModelRegistry.resolve_for_agent()`／`get_runtime_config()` 和原 router／AgentRegistry → 在工作线程复用已有选模和配置读取，再交原 `prepare_release_submission()`；依据原 `_find_idempotent()` 与 `submit_prepared_message()` → 先无锁查询原回执，再外部只读采集，最后仍由原 Session 事务重新核对和原子写入。无锁未命中不是受理权。
+
+本地《Agent轨迹与协议鲁棒性》的幂等、半成功与取消轨迹要求 → 验证并发、丢响应、材料失败和取消，而不只断言返回文本；《模型升级与微调回归测试》§13 的配置身份追溯 → 核对采集原件、冻结预算、实际图输入和 HTTP 请求。沿已有模块与标准库 `asyncio.to_thread`，不引入／升级依赖。
+
+### 实现与消费边界
+
+- 新增 `src/application/orchestration/framework_submission_service.py::FrameworkReleaseSubmissionLoader`。受信组合显式提供模式集合、制品引用、namespace、调用／Token 上限及截止时长；没有生产默认或新配置字段。未命中模式返回 None；命中时读取当前 Agent／Model Registry、捕获非秘密配置原件并核验实际制品，绑定和预算复用原 codec／准备器，没有模型／工具执行或受理写入。
+- 原 Dispatcher 增加可选异步 `framework_submission_loader`，与原同步 preparer 互斥，默认均不安装。新请求先只读查 API 消息回执；已提交请求及冲突不再依赖可变材料源。采集异常后只再查一次并发回执：有则复用，无则受控失败，不改走 legacy。新增端口没有接入 main／CLI、headless、Coordinator 或审批入口。
+- 原 task store 新增 `find_message_submission()`，复用原消息输入哈希／幂等比较，READ ONLY、无 Session 行锁。真正提交仍走原 `submit_prepared_message()`，锁内重查幂等、开关、能力和全部事务约束；并发只提交一份绑定／预算／任务／消息／outbox，不写失败候选。关闭新接入可丢弃尚未提交候选，不能改已有回执或撤销存量绑定。
+- 码审发现 Registry 的合法 fallback 可能与用户显式 key 不同，先受理再被 §174 的 Worker 根模型消费拒绝。采集后按**原 payload**核对显式选择，冲突在受理前拒绝；不把标准化请求继承的 Session 偏好误当显式输入。执行端的原预算／配置指纹检查不削弱，历史同步 preparer 和无端口路径不变。
+- 新日志 `framework_submission_materials_loaded`／`agent_message_loaded_admission_reused`／`agent_message_material_loading_failed` 仅附有限任务身份或错误类型。源异常、配置／认证和用户正文不输出，异常不授予 legacy fallback、重跑或恢复权。
+- 已搜索新端口、回执查询与装配类的全部引用，同步原控制说明。无公共 API／DTO、DDL、持久格式版本或能力上界变化，前端无新字段消费方；新 writer 仍受原兼容部署／模式发布门限制。
+
+### 本轮可见 TDD 与实际结果
+
+1. 接续草稿，先实际运行装配及原完整 HTTP 用例专项，**19 passed、68 deselected，280.82 秒**。包含 captured／external 两种准备方式与 explicit／auto／session_preference 三种选模；这是本轮续核结果，不把续接摘要里的历史次数当成本轮红测。
+2. 针对显式缺失／不受支持模型补真实 HTTP＋PG 反例，修改生产源码前实际 **2 failed、13 deselected，61.72 秒**：两例均为 `assert 202 == 400`，证实错误候选已被受理。Dispatcher 在采集后、原事务前按原显式输入核对根模型，保留继承偏好 fallback 的正例；同一专项实际 **3 passed、13 deselected，68.82 秒**。
+3. 补材料线程在请求取消后完成的用例，实际 PG 行锁仍可取得，线程结束不留下受理事实。其他用例覆盖双候选并发、只读阶段零写入、源失败后可重试、并发已提交回执优先、原 legacy／bound 回执及冲突不重读、提交成功但 ACK 丢失、采集前／期间关闭及新请求不缓存配置。最终均纳入下述完整组，没有仅用早期绿测代表新增用例。
+
+```powershell
+# cwd: Agent_Server；固定 .venv-framework-v2，复用已启动 PG／Redis
+$env:RUN_LIVE_POSTGRES_TESTS='1'
+$env:RUN_LIVE_REDIS_TESTS='1'
+$env:RUN_LIVE_DOCKER_TESTS='0'
+$env:RUN_LIVE_MYSQL_TESTS='0'
+$env:PYTHONIOENCODING='utf-8'
+..\.venv-framework-v2\Scripts\python.exe -u -m pytest tests/test_framework_submission_loading.py tests/test_framework_release_binding.py tests/test_agent_task_dispatch.py tests/test_framework_model_admission.py tests/test_framework_message_stages.py tests/test_framework_route_rollback.py tests/test_framework_model_reader_admission.py tests/test_framework_release_startup.py tests/test_framework_release_workers.py -q -rs --tb=short
+# 258 passed，1123.35 秒，exit 0，无 skip／deselect
+```
+
+完整九模块验证原受理／事务、旧路径和能力读者、版本化预算、消息阶段、关闭新接入、制品预检及历史源码消费。测试期间归档覆盖的生产源码保持不变；全部已启动 pytest 均已观察到真实终态，没有后台测试遗留。完整组不与前述重复专项相加计数，不替代 §159／160 的原完整故障组合或撤销历史失败。
+
+扩展的 external 完整链路复用原 HTTP→PG／Redis outbox／Worker→统一上下文→官方模型对象／Deep Agents／PG saver→图输入和原应用结果，制品为本轮实际源码快照。选模使用真实 Agent／Model Registry，`MySQLModelConfigStore.list_active` 明确替换为受控端口，且该端口逐次取得 Session `FOR UPDATE NOWAIT`，证明不持受理行锁。受理后更换默认候选顺序／Session 偏好，原 payload 不改，冻结模型 key／预算和实际请求不漂移；原 Skill 改写、所有上下文标记恰好一次、唯一模型调用与重复投递仅 ACK 的断言保留。
+
+该链路仍是手动装配的测试 app，不是完整 main lifespan、MySQL 实库或真实项目质量验收；检索、GeneralSettings 等端口受控，Session 无正式项目，模型为本地合成 HTTP 文本／usage，无业务工具效果，不冒称真实供应商、领域 Runner 或 E3。源码归档恢复的新进程复用当前 venv，不是独立依赖安装或 E4。两阶段采集不保证 MySQL／PG 跨库同一时点，最终捕获并入库的原件负责语义身份，执行仍核对当前配置与授权，不冻结永久凭据。
+
+根目录 `.venv-framework-v2\Scripts\python.exe -m compileall -q Agent_Server/src Agent_Server/tests`、`git diff --check` 实际 exit 0；AST 核对 main 唯一 Dispatcher 未安装两个准备端口、CLI 复用 main lifespan，输出 `main_submission_ports_unconfigured_cli_reuses_main_lifespan`。这不是完整启动验收。find_spec 确认 ruff／mypy／build／wheel／setuptools 未安装，未跑独立 lint／typecheck／构建安装，不新增依赖。前端无修改，未重跑前端。
+
+实库 Harness 按原 Settings 加载后端 `.env`；未用工具直接打开、输出或修改实际 `.env`／认证内容。未启动／重启 PG／Redis、运行 Docker／MySQL、调用付费模型、扫描目标或改生产路由；fixture 仅清理本轮隔离资源，不猜测处理 §158 未归属残留。
+
+### 提交对应与剩余出口
+
+v4 B／§4、§6 → 本节 → Dispatcher、task store、新装配服务、两个测试模块、原控制说明与本记录共 7 文件 → 本节红绿和最终 258 项 → 独立提交 `【feat】在受理事务外装配模型与制品材料`，ID 见 Git 历史与交付；不推送、不建 PR，不包含 v3 草稿、认证、日志或测试制品。新增测试受仓库既有忽略规则覆盖，只对该已审阅文件显式纳入跟踪，不修改忽略规则。
+
+本步完成显式、默认未安装的当前材料装配边界及隔离链路，不代表正式生产发布、B 或全系统完成。仍需可信生产限额／模式发布策略与 main 组合、MySQL 实库及正式项目／用例版本冻结验收、全部旧读者升级或隔离、完整有效输入／格式／行为审计、独立制品安装／部署、备份恢复和灰度排空。§159／160 时间异常及 §166 子进程 RuntimeError 仍未定位；完整 A2/A3/B/C/D/E/F、H01–H12、真实供应商／embedding／RustFS／领域 Runner、官方 saver conformance、全前后端、E3/E4 继续保留 v4 原出口，整体 goal 继续 active。

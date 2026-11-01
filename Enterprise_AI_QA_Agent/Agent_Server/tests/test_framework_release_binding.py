@@ -281,12 +281,12 @@ async def test_prepared_release_binding_and_semantic_configuration_commit_in_the
     assert (await h.tasks.get(task.id)).runtime_binding == h.binding and h.runtime.calls == []
 
 
-def prepared_dispatcher(h, source_release, prepare):
+def prepared_dispatcher(h, source_release, prepare, *, loader=None):
     from src.application.orchestration.agent_task_dispatcher import AgentTaskDispatcher
 
     dispatcher = AgentTaskDispatcher(h.settings, h.tasks, h.sessions, h.resources,
         framework_capabilities=FrameworkWorkerCapabilities.from_release(*source_release, deepagents_available=True),
-        framework_model_calls=h.calls, framework_submission_preparer=prepare)
+        framework_model_calls=h.calls, framework_submission_preparer=prepare, framework_submission_loader=loader)
     h.app.state.agent_task_dispatcher = dispatcher
     h.sessions.set_agent_task_dispatcher(dispatcher)
     return dispatcher
@@ -538,8 +538,9 @@ async def test_prepared_api_idempotency_is_not_an_execution_digest_bypass(admiss
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("selection", ["explicit", "auto", "session_preference"])
+@pytest.mark.parametrize("preparation", ["captured", "external"])
 async def test_http_prepared_release_runs_full_context_graph_and_commits_original_assets(admission,
-        isolate_recovery_stores, current_source_release, tmp_path, monkeypatch, selection):
+        isolate_recovery_stores, current_source_release, tmp_path, monkeypatch, selection, preparation):
     import httpx
     import shutil
     from src.application.deep_agents.checkpoint_provider import DeepAgentCheckpointProvider
@@ -610,7 +611,36 @@ async def test_http_prepared_release_runs_full_context_graph_and_commits_origina
                     reads.append("default")
                     return replacement
 
-            models = ModelRuntimeService(Registry(), h.settings)
+            active_configurations = [config]
+            external_registry = None
+            if preparation == "external":
+                from src.infrastructure.model_config_store import MySQLModelConfigStore
+                from src.registry.models import ModelRegistry
+                from tests.test_framework_submission_loading import require_unlocked_session
+
+                model_store = MySQLModelConfigStore(h.settings)
+
+                def list_active():
+                    require_unlocked_session(h)
+                    return list(active_configurations)
+
+                monkeypatch.setattr(model_store, "list_active", list_active)
+                external_registry = ModelRegistry(model_store)
+                original_get = external_registry.get_runtime_config
+                original_default = external_registry.get_default_runtime_config
+
+                def get_model(key):
+                    reads.append(key)
+                    return original_get(key)
+
+                def get_default():
+                    reads.append("default")
+                    return original_default()
+
+                monkeypatch.setattr(external_registry, "get_runtime_config", get_model)
+                monkeypatch.setattr(external_registry, "get_default_runtime_config", get_default)
+                parts.model_registry = external_registry
+            models = ModelRuntimeService(external_registry or Registry(), h.settings)
             owned = DeepAgentRuntimeAdapter(model_resolver=models.resolve_langchain_chat_model,
                 checkpointer_factory=provider.open, model_call_policy=FrameworkModelCallPolicy(
                     calls=h.calls, model_config_resolver=models.get_model_config))
@@ -630,7 +660,22 @@ async def test_http_prepared_release_runs_full_context_graph_and_commits_origina
                 prepared.append(selected)
                 return selected
 
-            dispatcher = prepared_dispatcher(h, current_source_release, prepare)
+            if preparation == "external":
+                from src.application.orchestration.framework_submission_service import FrameworkReleaseSubmissionLoader
+
+                source_loader = FrameworkReleaseSubmissionLoader(release_store=current_source_release[0],
+                    release_reference=current_source_release[1], agent_registry=parts.agent_registry,
+                    model_registry=external_registry, mode_keys=frozenset({"code_review"}),
+                    checkpoint_namespace="prepared:v2", max_calls=8, max_tokens=100_000, deadline_seconds=300)
+
+                async def load(session, request, command):
+                    value = await source_loader(session, request, command)
+                    prepared.append(value)
+                    return value
+
+                dispatcher = prepared_dispatcher(h, current_source_release, None, loader=load)
+            else:
+                dispatcher = prepared_dispatcher(h, current_source_release, prepare)
             requested_key = "auto" if selection == "auto" else "fake" if selection == "explicit" else None
             if selection == "session_preference":
                 session = await h.store.get_session(h.session_id)
@@ -643,6 +688,7 @@ async def test_http_prepared_release_runs_full_context_graph_and_commits_origina
                 response = await client.post(f"/sessions/{h.session_id}/messages", json=body)
             assert response.status_code == 202 and requests == []
             task_id = response.json()["task"]["id"]
+            active_configurations[:] = [replacement, config]
             if selection == "session_preference":
                 session = await h.store.get_session(h.session_id)
                 session.preferred_model = replacement.key
