@@ -2,13 +2,14 @@
 from __future__ import annotations
 
 import asyncio
+from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 import logging
 from typing import Any
 
 from src.application.deep_agents.framework_transcript import deserialize_messages
 from src.application.runtime.framework_graph_invocation import FrameworkGraphOutcome, invoke_and_audit_framework_graph
-from src.graph.controlled_case import build_controlled_case_graph
+from src.graph.controlled_case import build_controlled_case_graph, build_controlled_case_native_schema
 
 
 logger = logging.getLogger(__name__)
@@ -42,6 +43,39 @@ class ControlledCaseGraphAdapter:
         self._model_resolver = model_resolver
         self._checkpointer_factory = checkpointer_factory
         self._model_call_policy = model_call_policy
+
+    @asynccontextmanager
+    async def open_native_reader(self, request, *, source):
+        """Inspect original native state without acquiring any execution right.
+
+        The Python request correlates the original scope only. It is NOT a
+        versioned persisted AgentCase preparation, a RunItem lease or an
+        application recovery/admission proof. Those contracts remain separate.
+        """
+        from src.schemas.runtime_binding import RuntimeCheckpointSource
+
+        source = RuntimeCheckpointSource.model_validate(source)
+        try:
+            _require_native_request(request, source)
+            if self._checkpointer_factory is None:
+                raise ValueError("Controlled native reader requires its source-only checkpoint provider")
+            async with self._checkpointer_factory(source=source) as saver:
+                graph = self.native_schema(request, source=source, saver=saver)
+                logger.info("controlled_case_native_reader_opened", extra={"binding_id": source.binding.binding_id,
+                    "task_id": source.task_id, "owner_epoch": source.owner_epoch})
+                yield graph, saver
+        except (Exception, asyncio.CancelledError) as exc:
+            logger.warning("controlled_case_native_reader_failed", extra={"binding_id": source.binding.binding_id,
+                "task_id": source.task_id, "error_type": type(exc).__name__})
+            raise
+
+    def native_schema(self, request, *, source, saver):
+        """Use the same inert schema for pooled reads and atomic rechecks."""
+        from src.schemas.runtime_binding import RuntimeCheckpointSource
+
+        source = RuntimeCheckpointSource.model_validate(source)
+        _require_native_request(request, source)
+        return build_controlled_case_native_schema(source=source, checkpointer=saver)
 
     async def execute(self, request: ControlledCaseGraphRequest) -> FrameworkGraphOutcome:
         try:
@@ -88,3 +122,10 @@ class ControlledCaseGraphAdapter:
             logger.warning("controlled_case_graph_invocation_failed", extra={
                 "turn_id": request.turn_id, "error_type": type(exc).__name__})
             raise
+
+
+def _require_native_request(request, source):
+    if (not isinstance(request, ControlledCaseGraphRequest) or source.binding.runtime_kind != "langgraph"
+        or (request.session_id, request.turn_id, request.checkpoint_namespace)
+        != (source.binding.session_id, source.binding.turn_id, source.binding.checkpoint_namespace)):
+        raise ValueError("Controlled native request differs from its original LangGraph source")

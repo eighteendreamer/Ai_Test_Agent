@@ -92,10 +92,13 @@ def require_native_terminal_original(cur, settings, source, native, preparation)
     from psycopg import sql
     from psycopg.rows import dict_row
     from src.application.deep_agents.fenced_postgres_saver import BoundPostgresReader
-    from src.application.deep_agents.runtime_adapter import DeepAgentRuntimeAdapter
+    from src.application.runtime.framework_native_schema import native_graph_schema
     from src.application.deep_agents.checkpoint_provider import checkpoint_serializer
     from src.runtime.framework_event_completion import CHECKPOINT_PREFIX_KEY
 
+    _require(native.proof.binding_fingerprint == source.binding.fingerprint
+        and native.proof.thread_id == source.binding.thread_id and native.proof.checkpoint_namespace == "",
+        "Original native proof differs from its bound source")
     # Use the SAME application connection. A nested savepoint restores the
     # transaction-local search_path even if an SDK query fails; no pool/setup,
     # checkpoint-table mutation or second materialization algorithm is needed.
@@ -107,8 +110,8 @@ def require_native_terminal_original(cur, settings, source, native, preparation)
         reader = BoundPostgresReader(connection, source=source, serde=checkpoint_serializer())
         config = {"configurable": {"thread_id": source.binding.thread_id,
             "checkpoint_id": native.proof.checkpoint_id}}
+        graph = native_graph_schema(preparation, source=source, saver=reader)
         checkpoint = reader.get_tuple(config)
-        graph = DeepAgentRuntimeAdapter(model_resolver=None).native_schema(preparation, source=source, saver=reader)
         snapshot = graph.get_state(config, subgraphs=True)
         native_cur.execute("SELECT set_config('search_path', %s, true)", (path,))
     _require(checkpoint is not None and not checkpoint.pending_writes

@@ -81,19 +81,47 @@ def build_controlled_case_graph(*, model, model_key, system_prompt, tools,
             "tool_call_count": len(response.result[-1].tool_calls)})
         return {"messages": response.result}
 
-    def after_model(state):
-        # Each call gets its own native task/interrupt. ToolNode reads the
-        # source AI message from channels; never inline or reconstruct history.
-        calls = state["messages"][-1].tool_calls
-        return [Send("tools", [call]) for call in calls] if calls else END
+    graph = _compile_controlled_case_graph(call_model, ToolNode(tools, handle_tool_errors=False,
+        awrap_tool_call=approval.awrap_tool_call if approval is not None else None), checkpointer)
+    logger.info("controlled_case_graph_built", extra={"binding_id": owner.binding.binding_id,
+        "tool_count": len(tools), "approval_tool_count": len(interrupt_on)})
+    return graph
 
+
+def build_controlled_case_native_schema(*, source, checkpointer):
+    """Same official channels/topology, deliberately no executable actions.
+
+    No upstream counterpart (checked: pinned StateGraph/MessagesState,
+    DeepAgentRuntimeAdapter.native_schema, v4 §8.2): this fixed graph has no
+    Harness-dependent state channels. Prompt, tools and approvals do not alter
+    its schema. Do not resolve a current model or reconstruct governed tools.
+    Read material grants neither execution nor application recovery permission.
+    """
+    if (source.binding.runtime_kind != "langgraph" or checkpointer is None
+        or getattr(checkpointer, "runtime_source", None) != source
+        or getattr(checkpointer, "runtime_owner", None) is not None):
+        raise ValueError("Controlled native schema requires its matching source-only saver")
+    return _compile_controlled_case_graph(_deny_native_execution, _deny_native_execution, checkpointer)
+
+
+async def _deny_native_execution(state: MessagesState):
+    raise PermissionError("A native checkpoint schema cannot execute model or tool actions")
+
+
+def after_model(state):
+    # Each call gets its own native task/interrupt. ToolNode reads the
+    # source AI message from channels; never inline or reconstruct history.
+    calls = state["messages"][-1].tool_calls
+    return [Send("tools", [call]) for call in calls] if calls else END
+
+
+def _compile_controlled_case_graph(model_node, tools_node, checkpointer):
+    # Both readers use the SAME pinned SDK builder, not a hand-written list of
+    # channel names, a custom reducer or a second checkpoint materializer.
     graph = StateGraph(MessagesState)
-    graph.add_node("model", call_model)
-    graph.add_node("tools", ToolNode(tools, handle_tool_errors=False,
-        awrap_tool_call=approval.awrap_tool_call if approval is not None else None))
+    graph.add_node("model", model_node)
+    graph.add_node("tools", tools_node)
     graph.add_edge(START, "model")
     graph.add_conditional_edges("model", after_model, ["tools", END])
     graph.add_edge("tools", "model")
-    logger.info("controlled_case_graph_built", extra={"binding_id": owner.binding.binding_id,
-        "tool_count": len(tools), "approval_tool_count": len(interrupt_on)})
     return graph.compile(checkpointer=checkpointer)

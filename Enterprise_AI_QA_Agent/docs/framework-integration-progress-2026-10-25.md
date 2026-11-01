@@ -8344,3 +8344,77 @@ $env:PYTHONIOENCODING='utf-8'
 v4 E／§12.1 → 本节 → 原 Deep Agents 调用提取、共同端口／受控适配器两个新模块、新测试、原控制说明与本记录，共 6 文件 → 本节 15 项红绿、23 项专项、最终 592 项扩大组和 opt-in 检查 → 独立提交 `【feat】接入受控图适配器并共享原生核验`，ID 见 Git 历史与交付；不推送、不建 PR。仅显式纳入已审阅新测试，不改忽略规则，不混入用户草稿、认证／日志／测试制品。
 
 本步补齐受控内核的运行层组合和原生结果材料，不是正式 AgentCase 接入完成。下一步继续正式 RunItem 的输入封存／AgentTask 双归属，以及版本化 controlled graph-input／source-only schema 读者、RuntimeTurnResult 原件与唯一收尾；现有 Deep Agents 资产／读者不得被当成受控图恢复的授权证明。兼容 Worker、发布制品与 main 选路仍未开放，legacy 外循环不提前删除。完整 v4 A2/A3/B/C/D/E/F、H01–H12、模式质量／有效输入审计、全资源启动、全部旧读者升级或隔离、真实依赖／供应商／领域 Runner、双制品独立安装与部署、备份恢复及 E3/E4 继续保留，整体 goal 维持 active。
+
+## 181. E／§8.2、§12.1：受控图只读 schema 与同事务原件复核；保留扩大组失败（2026-11-01）
+
+### 续接与依据 → 做法
+
+基线 e810dcec5／§180。工作区原有且唯一的用户修改为 v3 草稿，SHA256 仍是 8A43E94160767A0DE20740F2CB30782F06322CBC3467076DFCB120D4EFDF1AD4；不改动、不暂存。重读 v4、§52 后续事实、正式 AgentCase durable intent／Session 入口、AgentTask 受理和 RunStore 锁链：正式 RunItem 没有因此拥有框架任务，AgentTask 自身 attempt 也不能充作 RunItem attempt。没有把普通 message 的 stage 当作正式用例受理。
+
+§180 的受控适配器尚无 source-only schema，原 require_native_terminal_original() 则固定构造 Deep Agents。先准备兼容读者，再发布新持久格式，是 v4 §15 的依赖要求；若直接放行新 case command，会留下不能正确复核原件的恢复边界。因此本步只补原生状态读端口，不新增无消费者的持久 DTO、不开放 Worker 或生产路由。
+
+依据原 BoundPostgresReader／DeepAgentCheckpointProvider.open(source=...) → 继续显式使用无 token 的 RuntimeCheckpointSource，不借用当前 owner，不 setup、不续租、不取得审批交付权。依据固定 SDK StateGraph(MessagesState)、原 controlled_case 拓扑和 Deep Agents 的 native_schema 模式 → 执行和读取复用同一个图编译 helper；只读 model／tools 动作为不可执行节点，不构造当前模型、共享策略、业务工具、文件、Skills 或认知子代理。该内核没有随 Prompt／工具／HITL 变化的状态通道，不另写 reducer／Delta 物化算法。
+
+课程《Agent轨迹与协议鲁棒性》关于结果＋轨迹、幂等／权限／恢复的要求 → 同时检查完整原生消息、任务／中断、根预算、工具效果及业务 ToolJob 原件，不用终结文本或 proof 代替正式领域裁决。固定 SDK 用法以当前安装源码及原测试为据，没有联网选型、升级或新增依赖。
+
+### 实现、消费方与能力边界
+
+- ControlledCaseGraphAdapter 增加 open_native_reader()／native_schema()。在打开 provider 前核对 Python 请求类型、session／turn／物理 namespace／kind；打开后还要求 saver 的完整 source 相等且不带 runtime_owner。Python 请求只关联读取范围，**不是固定用例原件、持久化输入格式、制品兼容证明、RunItem 执行权或恢复许可**。
+- 新 application/runtime/framework_native_schema.py::native_graph_schema() 只按 source kind 选择原 schema builder。原事务复核使用这个选择器，保持同连接、短事务、官方 codec、namespace 映射与 search_path 恢复，继续比较 checkpoint、完整物化 state、pending writes、原时间、UntrackedValue 声明和事件前缀；额外核对 proof 的 binding fingerprint／thread／逻辑根 namespace。
+- Deep Agents 原 schema 现在拒绝 graph-input.runtime_kind 与 source.binding.runtime_kind 不同。负例同步改嵌套 binding、初态 binding 并重新计算资产摘要，旧实现确实会接受；新实现只在这个确定性类型矛盾上拒绝，不建立全局恢复门卫。
+- 真实读端口日志 controlled_case_native_reader_opened／controlled_case_native_reader_failed 只含身份／epoch／异常类型。未修改原 native pending 审批材料消费权、消息比较、原结果投影器、唯一 finalizer、Worker 能力、公开 DTO、配置或 DDL。
+- 新测试的四协议为官方 SDK 到本地合成 HTTP，PG／Redis 使用隔离夹具；新用例的工具仍为 callback。另有一个原业务工具桥用例保存并复读真实 PG ToolJob／FrameworkToolProjection，不执行真实目标或命令。批准／拒绝组是原生 HITL，不冒充公开业务审批权限；内存 saver 与不可调用节点组是明确替身边界。
+
+### TDD 与专项实际结果
+
+1. 实现前新模块实际 21 failed，57.86 秒，exit 1：缺少只读方法／选择器、事务复核仍将受控请求交给 Deep Agents codec，以及跨 kind 负例没有拒绝。属于明确新行为红测，不伪称已复现真实生产事故。
+2. 首实现实际 20 passed、1 failed，46.10 秒。失败测试把原 collect_pending_tool_interrupts() 当作无执行权读者的观察端口，但它读取的审批材料要求 captured owner；BoundPostgresReader 正确拒绝。保留这个限制，测试改用官方 StateSnapshot 逐字段比较 task／interrupt／消息，同时单独断言原审批端口仍拒绝。
+3. 随后实际 20 passed、1 failed，50.56 秒：显式调用只读图 resume 时，不可执行节点先于 SDK 后台写拒绝抛出 PermissionError，测试仅匹配了 saver 的错误文本。明确接受这两个独立拒绝边界，仍必须 PermissionError，并保持消息、完整 snapshot、全部 checkpoint tuples／pending writes、根账本、HTTP／工具次数完全不变；没有放宽任何效果或原件断言，也没有扩展读者权利。
+4. 加入原生批准／拒绝后读取、真实业务 ToolJob、proof thread／namespace 篡改后，新模块实际 26 passed，69.24 秒，exit 0，无 skip／deselect。
+
+### 十三模块扩大组：真实失败，不能宣称全绿
+
+~~~powershell
+# cwd: Agent_Server；固定 .venv-framework-v2，沿用已运行 PG／Redis
+$env:RUN_LIVE_POSTGRES_TESTS='1'
+$env:RUN_LIVE_REDIS_TESTS='1'
+$env:RUN_LIVE_DOCKER_TESTS='0'
+$env:RUN_LIVE_MYSQL_TESTS='0'
+$env:PYTHONIOENCODING='utf-8'
+..\.venv-framework-v2\Scripts\python.exe -u -m pytest tests/test_controlled_case_native_reader.py tests/test_controlled_case_adapter.py tests/test_controlled_case_graph.py tests/test_deep_agent_runtime_adapter.py tests/test_framework_native_terminal.py tests/test_framework_native_interrupts.py tests/test_framework_checkpoint_fencing.py tests/test_framework_harness_settings.py tests/test_framework_unsealed_result_reconstruction.py tests/test_framework_message_result_reconstruction.py tests/test_framework_approval_result_reconstruction.py tests/test_framework_terminal_gap.py tests/test_framework_context_runtime.py -q -rs --tb=short
+# 3 failed、403 passed、1 error，1401.33 秒，exit 1，无 skip／deselect
+~~~
+
+失败均位于 test_framework_unsealed_result_reconstruction.py，原断言和数据没有修改：
+
+- test_unsealed_message_reuses_complete_original_projection_without_writes[False-tools]：fixture 在 record_graph_input → assert_runtime_owner 时报 ContinuationLeaseLostError（Framework execution owner is no longer active）。
+- test_unsealed_approval_reconciliation_seals_original_and_only_finalizes[False-approved]：claim 后 begin 时报同一执行权错误。
+- test_unsealed_message_admission_seals_once_and_runs_only_existing_finalizer[True-none]：原结果完整时预期有后继，实际 successor is None。
+- test_unsealed_original_approval_worker_kill_recovers_without_graph_execution[reconcile_before_commit-None]：原资产、消息、工具次数、最终提交等断言已推进到 Redis 重投递末尾，但 pending 仍有两个条目，不是预期空列表。
+
+不能仅凭错误类型就称为时钟问题、归因本轮 diff 或与 §159／160 同因。只读五次时间采样显示当时 PG 比查询完成时的 Windows UTC 快约 1.19–1.38 秒；这不是原失败决策时刻，不能解释 120 秒租约或证明时钟回退。没有改系统时间、租约、deadline、重试次数、Redis 确认策略或测试断言。
+
+为取得下次失败的窄证据，临时测试插件仅包装原 claim／owner 校验：记录 monotonic 领取年龄、失败后重新只读查询的 DB 时刻／到期时间／身份相等布尔值，以及原 message recovery 的拒绝 reason。不输出 token、配置、消息或原记录；这个采样明确是失败后观察，不冒充原判定时刻。用该插件按上述四个完整 node id 定向执行，实际 4 passed，59.16 秒；输出的两条旧 owner 拒绝都由原测试预期捕获，不是原故障复现。
+
+保持同一源代码和开关，用同一临时插件不筛选地执行：
+
+~~~powershell
+..\.venv-framework-v2\Scripts\python.exe -u -m pytest -p tests._native_reader_diagnostics tests/test_framework_unsealed_result_reconstruction.py tests/test_controlled_case_native_reader.py -q -rs --tb=short
+# 92 passed，534.26 秒，exit 0，无 skip／deselect
+~~~
+
+该组覆盖原未封存恢复文件全部用例及新读者，包括独立 Worker 强杀；插件只在父进程采集，子进程沿原入口运行。**这不是十三模块组合最终全绿，也不能撤销上面四个失败或历史 §159／160／166 未定位事项。**临时插件及其自有 pyc 已按精确路径移除，不作为实现或提交；不通过重复运行挑选绿色结论。
+
+移除临时插件后，四个 RUN_LIVE 开关全部显式置 0，运行新模块实际 10 passed、16 skipped，5.02 秒，exit 0；16 项明确要求 PG／Redis，不将 skip 算通过。再将 PG／Redis 置 1、Docker／MySQL 保持 0，以相同命令最终复验新模块，实际 26 passed，59.83 秒，exit 0，无 skip／deselect。上述专项和扩大／诊断结果重叠，不能相加为覆盖数量。全部启动的 pytest 均观察到终态，无待观察测试或独立 Worker。
+
+根目录固定 Python 执行 -m compileall -q Agent_Server/src Agent_Server/tests 实际 exit 0；纳入全部 8 个文件（包括原忽略规则下的新测试）后的 git diff --cached --check 实际通过。find_spec 确认 ruff／mypy／build／wheel／setuptools 均未安装，没有执行独立 lint／typecheck／build，没有安装依赖。前端无改动、未重跑。全局搜索新 schema 选择器及请求引用，核对原唯一事务消费者、适配器与新测试，没有新增公共 API 或遗留旧消费者分叉。
+
+按排序的 src 相对 Python 路径 UTF-8＋NUL＋原文件字节＋NUL 计算，扩大组前后聚合 SHA256 均为 dd98512c217878e8635f4711dd12af2b4538296349803727c1527dc47fa6c880；新测试文件 SHA256 均为 6a70ff57570d9d8f0b59a212cd4b1c2bc3652be0a264bb2f23d15c03e2465c89。失败后未改生产／测试断言，仅增加后已移除的临时诊断和本节事实记录。用户 v3 草稿哈希再次相同，不纳入暂存。
+
+### 提交与剩余出口
+
+v4 E／§8.2、§12.1 → 本节 → 5 个生产文件、新测试、原控制说明与本记录，共 8 文件 → 上述真实红测、专项、扩大失败和诊断结果 → 独立提交“【feat】补齐受控图只读原件核验”，ID 见 Git 历史与交付；不推送、不建 PR。只显式纳入已审阅的新测试，不改忽略规则、不纳入用户草稿、认证、日志或测试制品。
+
+只读端口已有上述窄范围验证；组合稳定性仍有未定位缺口，不能称本轮全部验收完成。正式 RunItem 的冻结输入／AgentTask 双归属仍待实施，现有 Deep Agents 持久 graph-input 不因新增 Python 读端口变成受控资产。后续先补失败决策处的持久可观测性并定位租约／恢复／PEL 样本，再继续版本化输入、专用 RuntimeTurnResult 原件与唯一收尾、兼容 Worker／发布制品及 main 选路；不提前删除 legacy 外循环。
+
+完整 v4 A2/A3/B/C/D/E/F、H01–H12、全部旧读者升级或隔离、模式质量／完整有效输入、真实供应商／embedding／RustFS／领域 Runner、全资源 main 启动、双制品独立安装与部署、一致备份恢复和 E3/E4 继续保留，整体 goal 维持 active。本步不启动／重启服务或 Docker，不拉镜像、不调用付费模型、不访问目标、不改实际 .env 或生产路由；仅由原夹具创建／清理本轮自有隔离资源，不处理 §158 未归属共享残留。

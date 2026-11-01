@@ -179,7 +179,17 @@ bound Runtime 初始状态只查询 ExecutionRequest 的明确 key，不再回�
 
 返回的 `FrameworkGraphOutcome` 只携带原始 values、子代理事件、原生中断、`NativeTerminalRead` 和预算原件。native proof／checkpoint timestamp 不是应用完成、正式测试通过或恢复许可；消息不一致会沿原核验异常拒绝返回结果，不忽略 messages。原生审批材料也不能替代业务决议授权。成功／失败日志为 `controlled_case_graph_outcome_captured`／`controlled_case_graph_invocation_failed`，不记录消息／配置正文，取消继续向外传播。
 
-`tests/test_controlled_case_adapter.py` 覆盖四协议官方 SDK＋本地合成 HTTP＋真实 PG saver／根账本／业务 ToolJob、同一终态继续不重发、原生批准／拒绝与重建、根 deadline／取消、错误输入和原生／返回消息不一致。部分审批、计时器及输入反例为明确替身；这些证据不等于独立进程、真实供应商或正式 AgentCase 验收，实际命令与结果见实施记录 §180。该内部请求／结果类型没有持久 schema 或公开 API；现有 graph-input 资产和 source-only 重建仍是 Deep Agents 契约，不能直接用于受控图的恢复准入。正式 RunItem／AgentTask 归属、版本化输入／只读 schema 读者、RuntimeTurnResult／原件与唯一 finalizer、兼容 Worker／发布制品、main 选路仍待接通。
+`tests/test_controlled_case_adapter.py` 覆盖四协议官方 SDK＋本地合成 HTTP＋真实 PG saver／根账本／业务 ToolJob、同一终态继续不重发、原生批准／拒绝与重建、根 deadline／取消、错误输入和原生／返回消息不一致。部分审批、计时器及输入反例为明确替身；这些证据不等于独立进程、真实供应商或正式 AgentCase 验收，实际命令与结果见实施记录 §180。该内部请求／结果类型没有持久 schema 或公开 API；现有 graph-input 资产仍是 Deep Agents 契约，不能直接用于受控图的恢复准入。后续只读端口的窄范围见下节，不等于补齐正式 RunItem／AgentTask 归属、版本化输入、RuntimeTurnResult／原件与唯一 finalizer、兼容 Worker／发布制品或 main 选路。
+
+### 受控图 source-only 读取（v4 E／§8.2、§12.1；非恢复准入）
+
+`ControlledCaseGraphAdapter.open_native_reader()` 只用显式的 `RuntimeCheckpointSource` 打开原 `BoundPostgresReader`，不从当前上下文取得 owner，不初始化 checkpoint schema，不解析模型／策略或重新构建业务工具。原 Python 请求仅核对 session／turn／物理 namespace 与 runtime kind；它**不是持久化固定用例原件、版本／制品兼容证明、RunItem 租约或应用恢复授权**。不以本端口存在提前发布新资产格式。
+
+执行图和只读 schema 复用 `src/graph/controlled_case.py` 的同一 `StateGraph(MessagesState)` 拓扑与官方通道物化机制；该固定内核的 Prompt／工具／逐项审批配置不增加状态通道。只读 model／tools 节点均显式拒绝执行，saver 另行拒绝写入、setup 和审批材料消费。正常工具执行仍复用原 `ToolNode`／HITL，不复制 reducer、Delta 恢复或审批引擎。官方 `StateSnapshot` 可以观察中断，原 `collect_pending_tool_interrupts()` 是需要执行权的审批材料端口，仍不对 source-only 读者开放；等待状态不能冒充终态。
+
+`src/application/runtime/framework_native_schema.py::native_graph_schema()` 仅选择原 schema builder。原 `require_native_terminal_original()` 在同一应用连接短事务内通过它重读，沿用原 serializer、namespace 映射、搜索路径恢复及 checkpoint／完整 native state／时间／通道／事件前缀比较，增加 proof 与 source 的精确身份比较。Deep Agents schema 现在明确拒绝 graph-input 与 source 的 runtime kind 不同，即使调用者同步更改嵌套 binding 并重新计算资产摘要，也不能将其解释为受控图。这个选择器不放行 Worker、不签发任何恢复或写入凭证。
+
+`tests/test_controlled_case_native_reader.py` 验证四协议官方 SDK 到本地合成 HTTP、真实隔离 PG 的终态原件失租后重开、原生批准／拒绝后读取、真实业务 ToolJob／结果投影原件保留、只读中断观察和写入拒绝、事务内篡改反例及跨类型拒绝。内存 saver／不可调用节点是独立替身边界；实际命令与结果见实施记录 §181。日志 `controlled_case_native_reader_opened`／`controlled_case_native_reader_failed` 只含绑定／任务身份、epoch 或异常类型，不输出消息、模型配置正文或认证。
 
 ### 原路由与恢复验证
 

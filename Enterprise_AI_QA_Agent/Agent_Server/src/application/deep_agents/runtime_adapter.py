@@ -584,6 +584,8 @@ def _native_schema_input(graph_input, source):
 
     original = FrameworkPreparedGraphInputAsset.model_validate(graph_input)
     source = RuntimeCheckpointSource.model_validate(source)
+    if original.runtime_kind != source.binding.runtime_kind:
+        raise DeepAgentRuntimeError("Deep Agents native schema runtime kind differs from its original source")
     if original.runtime_preparation.identity.binding != source.binding:
         raise DeepAgentRuntimeError("Native reader schema differs from its original source binding")
     flags = original.feature_flags
