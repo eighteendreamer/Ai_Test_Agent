@@ -32,7 +32,8 @@ class LockedCaseExecution:
     lease: ControlledCaseExecutionLease
 
 
-def lock_case_execution(cur, settings, lease, *, task_id, binding, schema="", require_active=True):
+def lock_case_execution(cur, settings, lease, *, task_id, binding, schema="", require_active=True,
+        checkpoint_reader=read_admission_checkpoint):
     store = PostgresTestRunStore(settings)
     lock_plan_projection(cur, run_table=f"{schema}{store._run_table}", run_id=lease.run_id)
     cur.execute(f"SELECT record FROM {schema}{store._item_table} WHERE id=%s FOR UPDATE", (lease.run_item_id,))
@@ -46,7 +47,7 @@ def lock_case_execution(cur, settings, lease, *, task_id, binding, schema="", re
     if row is None:
         raise ContinuationLeaseLostError("Controlled case original attempt is missing")
     attempt = store._attempt_from_value(row["record"])
-    checkpoint = read_admission_checkpoint(attempt)
+    checkpoint = checkpoint_reader(attempt)
     cur.execute(f"SELECT record FROM {schema}{store._run_table} WHERE id=%s", (lease.run_id,))
     row = cur.fetchone()
     if (row is None
@@ -100,11 +101,13 @@ def prepare_case_claim(cur, tasks, command, capabilities):
         raise ValueError("Controlled case delivery differs from its frozen input original")
     store = PostgresTestRunStore(tasks._settings)
     attempt = store._get_attempt_by_id(cur, reference.run_item_execution_attempt_id)
+    capabilities.require_case_checkpoint_format(attempt)
     lease = ControlledCaseExecutionLease(run_id=command.run_id, run_item_id=command.run_item_id,
         run_item_execution_attempt_id=attempt.id, attempt_no=attempt.attempt_no,
         worker_id=attempt.worker_id, lease_token=attempt.lease_token, input_sha256=asset.asset_sha256)
     locked = lock_case_execution(cur, tasks._settings, lease, task_id=command.task_id, binding=command.runtime_binding,
-        require_active=row["status"] not in TERMINAL_AGENT_TASK_STATUSES)
+        require_active=row["status"] not in TERMINAL_AGENT_TASK_STATUSES,
+        checkpoint_reader=capabilities.require_case_checkpoint_format)
     if (locked.checkpoint.submission_sha256 != row["input_hash"]
         or locked.checkpoint.project_id != command.project_id or locked.item.case_version_id != command.reference_id
         or locked.checkpoint.plan_snapshot_identity != asset.plan_snapshot_identity):

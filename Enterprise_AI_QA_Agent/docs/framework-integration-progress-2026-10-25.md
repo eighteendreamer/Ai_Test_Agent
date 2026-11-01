@@ -9010,3 +9010,80 @@ v4 E／§9.2–9.3、§12.1 → 本节 → 上述 19 文件 → 真实红绿、2
 下一依赖仍是同一原结果资产和唯一 Session finalizer 的正式 case 接口、原 Assessment／Verification／证据与 RunItem 原子完成，再推进业务审批继续、失租／独立进程恢复、兼容 Worker／main 与逐模式验收。不能用本轮确定性投影或事件集合代替这些待实现／待环境出口；不重置原任务／失败结果，回归必须创建新运行。
 
 剩余 A2/A3/B/C/D/E/F、H01–H12、逐模式质量／完整有效输入、流式／取消未收口项与历史异常继续保留，整体 goal 仍 active，不标 complete。未运行 Docker、未新增付费调用或外部目标测试、未改实际 .env／生产路由；仅原 fixture 清理本轮自有随机隔离资源。整体剩余仍粗估 **4–8 周有效开发／验收**，外部授权、环境和人工发布等待另计；该估算不是交付承诺，本子步没有充分 E3／E4 证据缩短工期。
+
+## 191. E／§9.2–9.4、§12.1：正式 case 原结果资产与 Verification 输入留存（2026-11-02）
+
+### 续接、依据与边界
+
+续接 a396cca3e／§190，重读 v4 §9／§12.1、§52 和后续最新记录，核对 active goal、当前 Git、原资产／Session finalizer／Verification 与原 RunItem checkpoint。用户 v3 草稿 SHA256 仍为 8A43E94160767A0DE20740F2CB30782F06322CBC3467076DFCB120D4EFDF1AD4，不修改、不暂存。此前 435d9cf7c 已完成本阶段 Conda／pip 依赖迁移，本轮不重复安装或升级依赖，不将历史 UV 锁制品删除当作接入进展。§181 四项及其他历史异常继续保留。
+
+原 message 结果资产依附 message-stage；正式来源是固定 RunItem attempt，既没有业务用户行也没有 message-stage。§190 的确定性 RuntimeTurnResult 仍只在内存中，这是正式来源的持久资产缺口，不能靠伪造 message-stage 或第二套 finalizer 填补。本步只留存唯一 finalizer 将来消费的原输入／结果，不接 Session 分项收尾、正式 Assessment 或 RunItem 完成，不授予失租恢复／重执行权。
+
+依据 → 采用方式：
+
+- 原 FrameworkRuntimeResultAsset、FrameworkRuntimeResults 与 RunItem attempt checkpoint → 扩展同一资产家族，并在原 attempt 的显式新版 checkpoint 包装原 admission 与资产；不用新表或假 message-stage。
+- 原 VerificationService.prepare_projection／build_results、FrameworkVerificationPreparation／VerificationProjectionIdentity → 图前冻结原规则／能力、绑定／trace 和预留时间；首次留存用同一 builder，重入只复用已留存 Verification。
+- §190 ControlledCaseResultReader、原 native／账本／ToolJob／事件读者与 assert_runtime_owner → 将原完整检查提取为同连接 read_in_transaction，资产写与原件核验在同一短事务，原规则未删减；等待／构建后再次按 DB clock 核双租约。
+- 原 SessionStore.append_event_in_transaction 与事件冲突原件校验 → 同事务保存稳定身份、原资产摘要与实际留存时间的独立审计回执，防止仅重算资产 hash 替换原 Verification／身份。
+- 原 FrameworkWorkerCapabilities strict codec → 同步 input／checkpoint 能力上限，claim 初查和锁内均检查，格式不足 defer、不重写原件。
+- 本地《Agent轨迹与协议鲁棒性》的结果＋轨迹／幂等与恢复要求，以及《评测工程化与CICD》的版本化原结果保留 → 正式来源、漂移反例和事务故障实测；旧失败不覆盖，回归仍建新运行。
+
+本轮 19 文件：controlled_case_runtime／preparation／admission、controlled_case_execution／result_reader、framework_runtime_results／worker_capabilities、agent_task／controlled_case_admission／task_input／framework_runtime_result，新增 controlled_case_results；新增 test_controlled_case_result_asset 并同步四个原 case 测试；更新 runtime-route-controls 与本记录。main／CLI／生产 Dispatcher、公开 DTO／路由、DDL、实际 .env、依赖声明与默认 controlled_case_available=false 均未改。
+
+### 格式、事务与证明语义
+
+新增 task input schema 4，持久 verification_preparation 与图前 state 的同一原件，严格核原绑定／trace／预留 snapshot 时间。schema 1／2／3 继续按原意读取；旧 schema 2 执行无 runtime_result，schema 3 投影无 result_asset，不静默提升语义。AgentTaskCommandV2 union、受理重建、codec／Worker 能力和未来版本反例同步为新上限／未来 5。
+
+ControlledCaseRuntimeResultAsset schema 2 继承原完整资产契约，scope 为 completed_controlled_case_finalization_input，增加正式 run／item／原 RunItem attempt；AgentTask attempt 仍是独立身份，不混用。原 RunItem checkpoint 1→2，保留原 key、checkpoint_at 和完整 schema 1 admission，新增包装资产及 aware retained_at。input／submission／source 摘要和正式来源逐项对齐。retained_at 是实际 DB 留存时间，projection_at 仍为原 native checkpoint 时间，snapshot 保留图前预留身份／时间。
+
+正常运行在原 executor owner／sink 关闭前，先 ACK 终态事件和完整集合，再调用 freeze_controlled_case。深拷贝原 owner／native（不丢不可序列化的第二租约），以完整 JSON 归一化结果与确定性原投影逐字段比较。原 Session／RunItem／attempt／runtime owner／task 与相关账本／工具原件锁保持到短事务结束；同一事务写原 checkpoint 和 test_run.case_result_prepared，事件 ID 由原 binding fingerprint 确定，payload 含原 task／attempt／epoch、run／item／原 attempt 和资产摘要，application_finalized=false。该应用审计不混进此前已封存的 runtime 事件集合，也不冒充 completion。
+
+load_controlled_case／重复 freeze 仍要求原 live 双租约，重新核完整执行原件、原 assistant／user objective／投影时间、owner、模型／工具摘要及独立留存回执；已存在资产则不重新调用 Verification builder。调用方结果不能覆盖原投影，重算 hash 也不能替换原 finalization intent。SQL 回执写失败使 checkpoint 同事务回滚；提交后 ACK 丢失或等待者取消保留真实已提交事实并记录未知回执，不假装后台 DB 线程已停止，也不重跑图／模型／工具。保留原 running 意图；finish(completed) 仍拒绝，审批等待仍无资产。
+
+input 能力上限为 4、checkpoint 能力上限为 2；锁内再次检查避免等待期间格式变化。旧能力、未来字段／版本 defer 后原数据摘要不变。本组内部兼容测试不证明双制品滚动部署，也不授权旧 owner 恢复。
+
+### TDD 与中间失败记录
+
+首条正式来源红测 **1 failed，12.66 秒**，ControlledCaseRuntimeOutcome 缺 result_asset。实现后一次 **1 failed，13.24 秒**：内存 untyped state 的 datetime 与持久 JSON 字符串不能用 Python 对象相等来断言；改为完整 model_dump(mode="json") 比较，生产 supplied-result 检查也用同一规范，不删字段／不忽略 messages。同时修正测试错误地把 admission 前 fixture 时间当作原 checkpoint_at。该首条随后 **1 passed，12.53 秒**。
+
+重算资产 hash 替换 assistant 的红测 **1 failed、1 deselected，12.74 秒，DID NOT RAISE**。根因是仅有 result／owner／账本摘要检查，缺原 finalization identity 与独立原留存回执。补原 assistant／objective／projection_at 校验及同事务稳定审计回执，而非降低摘要或原件校验。当时 5 项 **5 passed，32.17 秒**；扩展后的新资产＋原结果专项 **54 passed，248.14 秒** 只是中间源码，不能代替下述最终回归。
+
+后续新专项真实 **1 failed、20 passed，106.93 秒**：非空 Verification 夹具误用 register_dynamic 覆盖已有静态 api-test-runner，Registry 按原契约拒绝。仅使用夹具本地 Registry 的既有 _replace_descriptor 装配显式合成工具，生产 Registry／治理规则未改。定向运行后 **1 failed、1 passed、20 deselected，17.15 秒**：旧 schema 3 正确抛出 FrameworkMessageStageRecoveryRequired(RuntimeError)，测试误期待 ValueError；改为精确匹配原 RuntimeError 契约与 retention/Verification 消息，不改生产异常分类。新增 preparation 漂移与调用方结果替换反例后，新专项实际 **27 passed，129.73 秒，exit 0，无 skip／deselect**。
+
+非空 Verification 用例使用合成 api-test-runner descriptor／handler，仅返回 fixture-only failed check，完全不发真实业务请求。正式来源、治理、原 ToolJob 与 Verification builder 为真实实现；验证 failed 状态、稳定原身份／证据时间和真实隔离 Job 引用。随后将 builder 替换为必抛异常，load 仍返回原资产；这证明原资产重用，不是实际 API 模式或领域 Runner 验收。
+
+### 最终源码验证
+
+每条 backend pytest 前执行 scripts/clear_uv_environment.ps1 -ProcessOnly，固定 E:\MiniConda3\envs\Agent\python.exe，PYTHONIOENCODING=utf-8、RUN_LIVE_POSTGRES_TESTS=1、RUN_LIVE_REDIS_TESTS=1、RUN_LIVE_DOCKER_TESTS=0、RUN_LIVE_MYSQL_TESTS=0、QA_FRAMEWORK_WORKER_DIAGNOSTICS=1。仅使用已运行且获授权的 PG／Redis，不启动／重启服务、不使用 UV。工作目录 Agent_Server：
+
+~~~powershell
+& E:\MiniConda3\envs\Agent\python.exe -u -m pytest tests/test_controlled_case_result_asset.py tests/test_controlled_case_result.py tests/test_controlled_case_runtime.py tests/test_controlled_case_executor.py tests/test_controlled_case_task_input.py tests/test_controlled_case_admission.py tests/test_controlled_case_execution_lease.py -q -x -rs --tb=short --log-level=INFO
+~~~
+
+实际 **266 passed，811.99 秒，exit 0，无 skip／deselect**，包含最终新专项全部 27 项。覆盖正式完整来源／四协议投影、原资产留存与加载、重算摘要后的身份／Verification 替换、native／Job／账本／事件／回执／租约／剥离 owner 漂移、并发幂等重入且 builder 禁止再调用、回执 SQL 失败回滚／提交后 ACK 丢失／取消等待者 DB 线程仍提交、旧输入／旧读者与未来格式、Verification preparation 缺失／上下文／时间／trace 漂移，以及调用方结果不能覆盖原投影。原 finish 仍要求唯一 finalizer，业务 RunItem 未生成正式 result_id。
+
+~~~powershell
+& E:\MiniConda3\envs\Agent\python.exe -u -m pytest tests/test_framework_runtime_result_asset.py tests/test_framework_application_projection.py tests/test_framework_finalization_projection.py tests/test_case_execution_verification.py tests/test_agent_v2_worker_contract.py tests/test_framework_route_rollback.py tests/test_agent_task_dispatch.py tests/test_runtime_binding_persistence.py -q -x -rs --tb=short --log-level=INFO
+~~~
+
+实际 **552 passed，661.47 秒，exit 0，无 skip／deselect**。两组分别报告，不累计冒充更高级的独立证据。共享组沿随机隔离 fixture 与主组并行进程执行，没有修改运行中的 Python 源码／测试；各原 handle 均取得终态，不因观察等待超时重启命令。共享组涵盖原普通 message／approval 结果资产及唯一应用投影、Verification 稳定规则、Worker／调度／绑定与路由契约；不能替代正式 case 的独立进程恢复验收。
+
+四个 RUN_LIVE 开关全为 0，单跑 tests/test_controlled_case_result_asset.py 的同一 pytest 参数，实际 **27 skipped，7.73 秒，exit 0**；只证明原 opt-in 边界，不计通过。固定 Python 的 compileall -q Agent_Server/src Agent_Server/tests 和 pip check 实际 exit 0，报告 No broken requirements found。ruff／mypy 仍未安装，没有安装依赖，未运行独立 backend lint／typecheck。
+
+工作目录 agent_web，npm.cmd run typecheck 实际 exit 0；以下事件消费回归实际 **18 passed，2.49 秒，exit 0**：
+
+~~~powershell
+npm.cmd run test -- src/components/chat/ExecutionTrace.eventCompletion.test.ts src/stores/sessionEventRefresh.test.ts src/features/flow/useFlowSession.lifecycle.test.ts
+~~~
+
+最终 src 聚合 SHA256 为 b3096fd83a84df0df2672b68f5892acfdcf1bd03f76b72f34c81140ed19e21be，tests 聚合为 c1a7a85e9a966c64b791053d0df3e210699906f8932ffd54908cabafc078d627（各自相对目录的 Python 路径按 POSIX 字符串排序，UTF-8 路径＋NUL＋原字节＋NUL）；新专项 SHA256 为 68d1e2fe86aa214128c0b0ed7330401f65d39f15cb6c615a1ae649d0febe4576。主组前、两组运行中及全部终态后的采样一致，未在最终测试期间改源码／测试。v3 原草稿摘要不变；终态检查无本轮 pytest 进程残留。git diff --check 已实际通过，仅既有 LF→CRLF 提示；提交前再核暂存范围。
+
+正式来源为原服务在真实隔离 PostgreSQL 完成草稿／评审／启用、Suite／计划 Run、原 RunItem claim／start、受理与双租约 claim／begin；真实 Redis、固定官方 SDK／LangGraph／PostgresSaver、模型账本／ToolJob／事件与原 Verification builder。模型 HTTP 对端、工具 handler 与规划／配置／Memory／MCP／文档对象等检索端口仍是明确本地合成或替身。本轮没有真实付费供应商／embedding／RustFS／领域 Runner、case 独立 Worker 强杀、全资源 main／E4 双制品／一致备份恢复、官方 saver conformance、全量前后端、前端 build／浏览器或性能基线验收，不把本结果称为这些出口通过。
+
+### 对应、提交与下一步
+
+v4 E／§9.2–9.4、§12.1 → 本节 → 上述 19 文件 → 真实红绿、最终 266／552 项回归及前端检查 → 独立提交“【feat】留存正式用例原结果资产与验证输入”，具体 ID 见 Git 与本轮交付。检查完整 diff／status／暂存清单和敏感新增内容，只纳入本轮具体文件；被忽略的新测试仅单文件 git add -f，不改 ignore，不纳入用户 v3／认证／日志／制品，不推送或创建 PR。
+
+下一依赖是将本原资产接入**唯一** Session finalizer 的正式 case 来源／分项原意图与回执，再接原 Assessment／证据和 RunItem fenced 原子完成、业务审批继续、失租恢复／独立进程、兼容 Worker／main 与逐模式验收。本步已经留存 Verification 输入与结果，但没有正式 Session Verification 分项写入／最终提交、Assessment 或 RunItem 完成事务，不能因资产存在就裁决通过或调用 finish。旧失败保留，回归创建新运行，不重置原任务／RunItem，不重跑原图。
+
+剩余 A2/A3/B/C/D/E/F、H01–H12、逐模式完整有效输入／质量、空结构化结果／流式／取消等未收口项与历史异常仍保留，整体 goal 维持 active，不标 complete。未运行 Docker、未新增付费调用或外部目标测试、未改实际 .env／生产路由；只由原 fixture 清理本轮自有随机隔离资源。整体剩余仍粗估 **4–8 周有效开发／验收**，外部授权、环境准备和人工发布等待另计，非交付承诺；首个正式 case 唯一 finalizer 闭环和 E3／E4 清单收口后再重估。

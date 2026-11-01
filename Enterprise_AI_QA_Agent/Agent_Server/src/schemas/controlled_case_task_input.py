@@ -18,6 +18,7 @@ from src.schemas.controlled_case_graph_input import ControlledCaseGraphInputAsse
 from src.schemas.framework_approval import approval_value_hash
 from src.schemas.framework_graph_input import FrameworkRuntimePreparation
 from src.schemas.framework_transcript import CONTROLLED_CASE_CONTEXT_VERSION_KEY
+from src.schemas.framework_verification_projection import FrameworkVerificationPreparation, VERIFICATION_PREPARATION_KEY
 from src.schemas.run_management import RunPlanSnapshotIdentity
 
 
@@ -165,6 +166,23 @@ class ControlledCaseResultTaskInputAsset(ControlledCasePreparedTaskInputAsset):
         return self
 
 
+class ControlledCaseFinalizationTaskInputAsset(ControlledCaseResultTaskInputAsset):
+    """v4 selects original result retention with pre-execution verification rules."""
+    schema_version: Literal[4]
+    verification_preparation: FrameworkVerificationPreparation
+
+    @model_validator(mode="after")
+    def require_verification_preparation(self):
+        preparation = self.verification_preparation
+        state = self.runtime_preparation.initial_state
+        preparation.require_context(state["context_bundle"], session_id=self.graph_input.binding.session_id,
+            turn_id=self.graph_input.binding.turn_id, trace_id=self.graph_input.trace_id)
+        if (state["context_bundle"].get(VERIFICATION_PREPARATION_KEY) != preparation.model_dump(mode="json")
+            or preparation.reserved_at != self.runtime_preparation.identity.snapshot_created_at):
+            raise ValueError("Controlled result retention requires its original Verification preparation")
+        return self
+
+
 def controlled_case_native_input(context, attempt_id, turn_id):
     """Protocol user role denotes formal input, NOT a persisted business user row."""
     from langchain_core.messages import HumanMessage
@@ -204,6 +222,7 @@ def parse_controlled_case_task_input(value) -> ControlledCaseTaskInputAsset:
         value = json.loads(json.dumps(value, ensure_ascii=False, allow_nan=False))
     except (TypeError, ValueError) as exc:
         raise ValueError("Controlled case input contains non-persistable execution data") from exc
-    reader = {2: ControlledCasePreparedTaskInputAsset, 3: ControlledCaseResultTaskInputAsset}.get(
+    reader = {2: ControlledCasePreparedTaskInputAsset, 3: ControlledCaseResultTaskInputAsset,
+        4: ControlledCaseFinalizationTaskInputAsset}.get(
         value.get("schema_version") if isinstance(value, dict) else None, ControlledCaseTaskInputAsset)
     return reader.model_validate(value)

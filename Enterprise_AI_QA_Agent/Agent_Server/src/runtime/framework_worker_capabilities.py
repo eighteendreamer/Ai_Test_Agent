@@ -45,7 +45,8 @@ class FrameworkWorkerCapabilities:
     release_reference: FrameworkReleaseReference | None = None
     model_budget_max_version: int = 2
     controlled_case_available: bool = False
-    controlled_case_input_max_version: int = 3
+    controlled_case_input_max_version: int = 4
+    controlled_case_checkpoint_max_version: int = 2
 
     @classmethod
     def from_artifact(cls, *, deepagents_available: bool):
@@ -138,6 +139,14 @@ class FrameworkWorkerCapabilities:
             or version >= 2 and not self.turn_context_assembly_enabled):
             raise TaskDeferred(reason)
         return self._read_compatible(parse_controlled_case_task_input, value, reason)
+
+    def require_case_checkpoint_format(self, attempt):
+        from src.schemas.controlled_case_admission import read_admission_checkpoint
+
+        reason = "framework_case_checkpoint_format_unavailable"
+        if type(attempt.checkpoint_version) is not int or not 1 <= attempt.checkpoint_version <= self.controlled_case_checkpoint_max_version:
+            raise TaskDeferred(reason)
+        return self._read_compatible(read_admission_checkpoint, attempt, reason)
 
     @classmethod
     def require_binding_format(cls, value) -> RuntimeBinding:

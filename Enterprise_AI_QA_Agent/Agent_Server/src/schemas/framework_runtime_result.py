@@ -122,3 +122,26 @@ class FrameworkRuntimeResultAsset(BaseModel):
     def event_id(self, event_type: str) -> str:
         return str(uuid5(NAMESPACE_URL,
             f"framework-finalization:{self.binding.binding_id}:{self.assistant_message_id}:{event_type}"))
+
+
+class ControlledCaseRuntimeResultAsset(FrameworkRuntimeResultAsset):
+    """Same finalization material, formal source instead of a business user row.
+
+    No upstream counterpart (checked: message result asset, original RunItem
+    checkpoint, v4 §9/§12.1): a formal case has no message-stage or user row.
+    This asset does not authorize finalization, recovery or a test verdict.
+    """
+    schema_version: Literal[2] = 2
+    scope: Literal["completed_controlled_case_finalization_input"] = "completed_controlled_case_finalization_input"
+    run_id: str = Field(min_length=1)
+    run_item_id: str = Field(min_length=1)
+    run_item_execution_attempt_id: str = Field(min_length=1)
+
+    @model_validator(mode="after")
+    def require_formal_source(self):
+        context = self.runtime_result.state.get("context_bundle") or {}
+        if (self.binding.runtime_kind != "langgraph" or not context.get("case_execution_managed")
+            or (context.get("run_id"), context.get("run_item_id"), context.get("attempt_id"))
+                != (self.run_id, self.run_item_id, self.run_item_execution_attempt_id)):
+            raise ValueError("Controlled result asset differs from its original formal execution")
+        return self

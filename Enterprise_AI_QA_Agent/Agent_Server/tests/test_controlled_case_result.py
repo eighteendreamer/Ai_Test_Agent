@@ -57,7 +57,7 @@ async def test_formal_native_completion_projects_real_application_result_inside_
                     h.task, executor=executor(s, h), resource_id="isolated-case-result", fencing_token=1)
                 result = outcome.runtime_result
                 assert result is not None and result.output_text == "fixture answer"
-                assert s.asset.schema_version == 3 and result.snapshot.stage == "completed"
+                assert s.asset.schema_version == 4 and result.snapshot.stage == "completed"
                 identity = s.asset.runtime_preparation.identity
                 assert (result.snapshot.id, result.snapshot.version, result.snapshot.created_at) == (
                     identity.snapshot_id, identity.snapshot_version, identity.snapshot_created_at)
@@ -218,7 +218,7 @@ async def test_preexecution_refusal_is_a_real_result_but_never_external_tool_evi
 @pytest.mark.parametrize("change", ["missing_rules", "boolean_version", "unknown_contract", "old_reader", "no_assembly"])
 async def test_result_contract_is_explicit_and_old_workers_leave_it_unclaimed(full_input, change):
     s, asset = full_input.s, full_input.asset
-    assert asset.schema_version == 3
+    assert asset.schema_version == 4
     raw = asset.model_dump(mode="json")
     from src.schemas.controlled_case_task_input import parse_controlled_case_task_input
 
@@ -254,6 +254,7 @@ async def test_legacy_full_preparation_stays_readable_without_gaining_result_con
             raw = (await prepare(s, assembly(s, tmp_path / "assembly", models))).model_dump(mode="json")
             raw["schema_version"] = 2
             raw.pop("result_preparation")
+            raw.pop("verification_preparation")
             raw["asset_sha256"] = approval_value_hash({key: value for key, value in raw.items() if key != "asset_sha256"})
             return parse_controlled_case_task_input(raw)
         async with execution(s, _config("openai_chat_completions", url), prepare_input=prepare_input) as h:

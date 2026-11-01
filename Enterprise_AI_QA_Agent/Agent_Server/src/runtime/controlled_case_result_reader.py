@@ -65,62 +65,67 @@ class ControlledCaseResultReader:
         return result
 
     def _read(self, owner, original, native, event_log, root_model_budget):
+        with postgres_connect(self._tasks._settings) as connection, connection.cursor() as cur:
+            return self.read_in_transaction(cur, owner, original, native,
+                event_log=event_log, root_model_budget=root_model_budget)
+
+    def read_in_transaction(self, cur, owner, original, native, *, event_log=None, root_model_budget=None):
+        """Same original checks for readers and the existing owner's asset write."""
         original = parse_controlled_case_task_input(original)
         _require(owner is not None and owner.controlled_case_lease is not None
             and isinstance(original, ControlledCaseResultTaskInputAsset) and owner.binding == original.graph_input.binding,
             "Controlled result requires its original selected preparation and dual owner")
         tasks, binding = self._tasks, owner.binding
         settings = tasks._settings
-        with postgres_connect(settings) as connection, connection.cursor() as cur:
-            configure_runtime_owner_transaction(cur, settings)
-            locked = assert_runtime_owner(cur, settings, owner)
-            cur.execute(f"SELECT * FROM {tasks._tasks} WHERE id=%s FOR UPDATE", (owner.task_id,))
-            task = cur.fetchone()
-            _require(task is not None and task["operation"] == "case_execute" and task["status"] == "running"
-                and task["attempt_id"] == owner.attempt_id and task["worker_id"] == owner.worker_id
-                and task["runtime_binding"] == binding.model_dump(mode="json")
-                and task["input_payload"] == {"case_execution_input": original.model_dump(mode="json")}
-                and locked.checkpoint.input_sha256 == original.asset_sha256,
-                "Controlled result differs from its durable original task/admission")
-            ledger = PostgresFrameworkModelCalls(settings)
-            cur.execute(f"SELECT binding_id FROM {ledger.budgets_table} WHERE binding_id=%s FOR SHARE", (binding.binding_id,))
-            cur.execute(f"SELECT attempt_id FROM {ledger.calls_table} WHERE binding_id=%s ORDER BY attempt_id FOR SHARE", (binding.binding_id,))
-            budget = ledger._snapshot(cur, binding)
-            expected = tasks._input_hash("case_execute", {"input": task["input_payload"],
-                "runtime_binding_fingerprint": binding.fingerprint, "model_budget": budget.policy.model_dump(mode="json")})
-            _require(expected == task["input_hash"] == locked.checkpoint.submission_sha256
-                and budget.calls and all(call.phase == "completed" for call in budget.calls),
-                "Controlled result has changed original input/budget or unsettled model calls")
-            source = RuntimeCheckpointSource(binding=binding, owner_epoch=owner.owner_epoch,
-                task_id=owner.task_id, attempt_id=owner.attempt_id, worker_id=owner.worker_id)
-            require_native_terminal_original(cur, settings, source, native, original.graph_input)
-            sealed = event_log is None
-            if sealed:
-                read = read_completion(cur, settings, binding, native.proof.model_dump(mode="json"))
-                material = read.completion
-                _require((material.task_id, material.attempt_id, material.owner_epoch, material.worker_id,
-                    material.returned_event_offset) == (owner.task_id, owner.attempt_id, owner.owner_epoch, owner.worker_id, 0),
-                    "Controlled result completion differs from its original producer")
-                event_log = read.event_log[:-1]
-                root_model_budget = read.event_log[-1]["payload"].get("root_model_budget")
-            _require(read_model_budget_material(binding, root_model_budget) == budget,
-                "Controlled result root model budget differs from its original ledger")
-            _require_ordered_log(binding, event_log, 0)
-            _event_references(cur, settings, binding, event_log)
-            table = settings.database.postgres_tool_job_table
-            cur.execute("SELECT to_regclass(%s) IS NOT NULL AS present", (table,))
-            jobs = []
-            if cur.fetchone()["present"]:
-                cur.execute(f"SELECT * FROM {table} WHERE session_id=%s AND turn_id=%s ORDER BY id FOR SHARE",
-                    (binding.session_id, binding.turn_id))
-                jobs = [_job_from_row(row) for row in cur.fetchall()]
-            _require(all(job.status.value in {"completed", "partial", "failed", "denied"} for job in jobs),
-                "Controlled result has unsettled business ToolJobs")
-            materials = read_unapproved_tool_materials(original.graph_input, binding,
-                native.values.get("messages", []), jobs, event_log=event_log)
-            result = project_controlled_case_result(original, native, root_model_budget, event_log, materials)
-            _require(not sealed or result.state["event_log"] == read.event_log,
-                "Controlled result completion differs from its frozen deterministic projection")
-            # Recheck on a fresh DB clock after any potentially waiting reads.
-            assert_runtime_owner(cur, settings, owner)
-            return result
+        configure_runtime_owner_transaction(cur, settings)
+        locked = assert_runtime_owner(cur, settings, owner)
+        cur.execute(f"SELECT * FROM {tasks._tasks} WHERE id=%s FOR UPDATE", (owner.task_id,))
+        task = cur.fetchone()
+        _require(task is not None and task["operation"] == "case_execute" and task["status"] == "running"
+            and task["attempt_id"] == owner.attempt_id and task["worker_id"] == owner.worker_id
+            and task["runtime_binding"] == binding.model_dump(mode="json")
+            and task["input_payload"] == {"case_execution_input": original.model_dump(mode="json")}
+            and locked.checkpoint.input_sha256 == original.asset_sha256,
+            "Controlled result differs from its durable original task/admission")
+        ledger = PostgresFrameworkModelCalls(settings)
+        cur.execute(f"SELECT binding_id FROM {ledger.budgets_table} WHERE binding_id=%s FOR SHARE", (binding.binding_id,))
+        cur.execute(f"SELECT attempt_id FROM {ledger.calls_table} WHERE binding_id=%s ORDER BY attempt_id FOR SHARE", (binding.binding_id,))
+        budget = ledger._snapshot(cur, binding)
+        expected = tasks._input_hash("case_execute", {"input": task["input_payload"],
+            "runtime_binding_fingerprint": binding.fingerprint, "model_budget": budget.policy.model_dump(mode="json")})
+        _require(expected == task["input_hash"] == locked.checkpoint.submission_sha256
+            and budget.calls and all(call.phase == "completed" for call in budget.calls),
+            "Controlled result has changed original input/budget or unsettled model calls")
+        source = RuntimeCheckpointSource(binding=binding, owner_epoch=owner.owner_epoch,
+            task_id=owner.task_id, attempt_id=owner.attempt_id, worker_id=owner.worker_id)
+        require_native_terminal_original(cur, settings, source, native, original.graph_input)
+        sealed = event_log is None
+        if sealed:
+            read = read_completion(cur, settings, binding, native.proof.model_dump(mode="json"))
+            material = read.completion
+            _require((material.task_id, material.attempt_id, material.owner_epoch, material.worker_id,
+                material.returned_event_offset) == (owner.task_id, owner.attempt_id, owner.owner_epoch, owner.worker_id, 0),
+                "Controlled result completion differs from its original producer")
+            event_log = read.event_log[:-1]
+            root_model_budget = read.event_log[-1]["payload"].get("root_model_budget")
+        _require(read_model_budget_material(binding, root_model_budget) == budget,
+            "Controlled result root model budget differs from its original ledger")
+        _require_ordered_log(binding, event_log, 0)
+        _event_references(cur, settings, binding, event_log)
+        table = settings.database.postgres_tool_job_table
+        cur.execute("SELECT to_regclass(%s) IS NOT NULL AS present", (table,))
+        jobs = []
+        if cur.fetchone()["present"]:
+            cur.execute(f"SELECT * FROM {table} WHERE session_id=%s AND turn_id=%s ORDER BY id FOR SHARE",
+                (binding.session_id, binding.turn_id))
+            jobs = [_job_from_row(row) for row in cur.fetchall()]
+        _require(all(job.status.value in {"completed", "partial", "failed", "denied"} for job in jobs),
+            "Controlled result has unsettled business ToolJobs")
+        materials = read_unapproved_tool_materials(original.graph_input, binding,
+            native.values.get("messages", []), jobs, event_log=event_log)
+        result = project_controlled_case_result(original, native, root_model_budget, event_log, materials)
+        _require(not sealed or result.state["event_log"] == read.event_log,
+            "Controlled result completion differs from its frozen deterministic projection")
+        # Recheck on a fresh DB clock after any potentially waiting reads.
+        assert_runtime_owner(cur, settings, owner)
+        return result

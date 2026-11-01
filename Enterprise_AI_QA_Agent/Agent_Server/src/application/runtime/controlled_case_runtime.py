@@ -19,12 +19,14 @@ from src.runtime.execution_logging import (
 )
 from src.schemas.controlled_case_task_input import (
     ControlledCasePreparedTaskInputAsset, controlled_case_native_input, controlled_case_schema_tools,
-    ControlledCaseResultPreparation, ControlledCaseResultTaskInputAsset, parse_controlled_case_task_input,
+    ControlledCaseResultPreparation, ControlledCaseResultTaskInputAsset, ControlledCaseFinalizationTaskInputAsset,
+    parse_controlled_case_task_input,
 )
 from src.application.runtime.turn_projection import RuntimeTurnResult
 from src.schemas.framework_graph_input import FrameworkProjectionIdentity, FrameworkRuntimePreparation
 from src.schemas.framework_transcript import CONTROLLED_CASE_CONTEXT_VERSION_KEY
 from src.schemas.session import ExecutionEvent
+from src.schemas.framework_runtime_result import ControlledCaseRuntimeResultAsset
 
 
 logger = logging.getLogger(__name__)
@@ -37,6 +39,7 @@ class ControlledCaseRuntimeOutcome:
     state: dict[str, Any]
     tool_records: list[dict[str, Any]]
     runtime_result: RuntimeTurnResult | None = None
+    result_asset: ControlledCaseRuntimeResultAsset | None = None
 
 
 class ControlledCaseRuntime:
@@ -111,6 +114,11 @@ class ControlledCaseRuntime:
             # Never leak them into another Turn's active sink during preparation.
             with graph_event_scope(None):
                 state = await self._runtime._turn_context_assembly.prepare(state)
+            from src.application.testing.verification_service import VerificationService
+            from src.schemas.framework_verification_projection import FrameworkVerificationPreparation, VERIFICATION_PREPARATION_KEY
+
+            verification = VerificationService.prepare_projection(identity, trace_id=state["trace_id"])
+            state["context_bundle"][VERIFICATION_PREPARATION_KEY] = verification
             if (state["selected_model_provider"], state["selected_model_transport"]) != (
                     binding.model_provider, binding.model_transport):
                 raise ValueError("Controlled context assembly cannot replace the bound model protocol")
@@ -125,7 +133,8 @@ class ControlledCaseRuntime:
                 attempt_id=attempt_id, binding=binding, graph_request=graph,
                 runtime_preparation=FrameworkRuntimePreparation(identity=identity, initial_state=state),
                 result_preparation=ControlledCaseResultPreparation(schema_version=1,
-                    timestamp_source="native_checkpoint.ts", output_contract="current_final_ai_text"))
+                    timestamp_source="native_checkpoint.ts", output_contract="current_final_ai_text"),
+                verification_preparation=FrameworkVerificationPreparation.model_validate(verification))
         except (Exception, asyncio.CancelledError) as exc:
             logger.warning("controlled_case_runtime_preparation_failed", extra={**scope,
                 "recovery_reason": phase, "error_type": type(exc).__name__})
@@ -148,6 +157,7 @@ class ControlledCaseRuntime:
         state = None
         records = []
         runtime_result = None
+        result_asset = None
 
         async def build(prepared):
             nonlocal state
@@ -168,7 +178,7 @@ class ControlledCaseRuntime:
             return tools
 
         async def project(prepared, outcome):
-            nonlocal state, runtime_result
+            nonlocal state, runtime_result, result_asset
             if not isinstance(prepared, ControlledCaseResultTaskInputAsset) or outcome.native_interrupts:
                 # Historical preparation is not silently upgraded. Native wait
                 # still needs the original business approval/admission contract.
@@ -180,10 +190,15 @@ class ControlledCaseRuntime:
                 owner, prepared, outcome, state["event_log"])
             await append_graph_event_intent_durable(state, projected.events[-1])
             await complete_graph_event_log(state, outcome.native_terminal.proof.model_dump(mode="json"))
+            if isinstance(prepared, ControlledCaseFinalizationTaskInputAsset):
+                from src.runtime.framework_runtime_results import FrameworkRuntimeResults
+
+                result_asset = await FrameworkRuntimeResults(executor._tasks).freeze_controlled_case(
+                    owner, runtime_result=projected, native=outcome.native_terminal)
             runtime_result = projected
             state = deepcopy(projected.state)
 
         outcome = await executor.execute(task, build_business_tools=build,
             resource_id=resource_id, fencing_token=fencing_token, project_outcome=project)
         return ControlledCaseRuntimeOutcome(graph_outcome=outcome, state=state, tool_records=records,
-            runtime_result=runtime_result)
+            runtime_result=runtime_result, result_asset=result_asset)

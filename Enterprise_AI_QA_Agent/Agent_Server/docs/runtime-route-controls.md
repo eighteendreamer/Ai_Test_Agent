@@ -290,7 +290,7 @@ Worker 内存中的 `RuntimeExecutionOwner.controlled_case_lease` 捕获原 RunI
 新 Worker 不重新检索项目、Memory、Skill、MCP 或配置来替换原上下文；工具执行仍走现有实时治理。
 ACK 失败保留 running 意图且禁止重跑，不能把准备时间冒充执行／数据库写入时间。
 schema 2 的 `ControlledCaseRuntimeOutcome` 仍只含应用状态、ToolJob 记录和原生读材料，
-不静默升级历史输入。§190 的新准备端口生成 task input schema 3，单独冻结结果投影版本、
+不静默升级历史输入。§190 首次引入 task input schema 3，单独冻结结果投影版本、
 `current_final_ai_text` 输出契约与 `native_checkpoint.ts` 时间来源；graph input、binding 和命令
 envelope 格式不变。旧格式／assembly 能力不足的 Worker 在 claim 前 defer，默认受控能力仍关闭。
 
@@ -308,12 +308,39 @@ schema 3 原生正常结束后，在原 executor 的 owner／sink 作用域内�
 `output_reference`，不是外部执行证据。模型账本结算不等于缺失的模型响应对象已被导入。
 
 终态事件／集合 ACK 失败、失租或提交后 ACK 丢失均不自动重跑；保留原 running 意图与实际
-持久事实。上述结果与事件集合仍**不是不可变结果资产、Session 最终提交、审批恢复许可或
+持久事实。schema 3 的结果与事件集合仍**不是不可变结果资产、Session 最终提交、审批恢复许可或
 正式测试裁决**。本端口未安装到 main／CLI／生产 Dispatcher；原 `finish(completed)` 仍要求
 尚待接入的唯一应用 finalizer，不得仅凭文本、RuntimeTurnResult 或事件声明完成 RunItem。
-同一原结果资产／唯一 Session finalizer、正式 Assessment／Verification／证据与 RunItem 原子
-完成、业务审批继续、强杀恢复、真实供应商／embedding／RustFS／领域 Runner 及部署验收仍未
-完成；不得据此开启生产。真实来源／替身、实际命令和验证限制见实施记录 §189–190。
+唯一 Session finalizer、正式 Assessment／证据与 RunItem 原子完成、业务审批继续、强杀恢复、
+真实供应商／embedding／RustFS／领域 Runner 及部署验收仍未完成；不得据此开启生产。
+schema 4 的原结果资产留存见下节。真实来源／替身、实际命令和验证限制见实施记录 §189–191。
+
+### 正式 case 原结果资产与 Verification 输入留存（内部端口）
+
+§191 的准备端口生成 task input schema 4，在原完整准备中冻结
+`FrameworkVerificationPreparation`（规则版本、原绑定／trace、预留时间与能力快照），
+并核对图前 state 中的同一原件；不在图后用最新配置替换。schema 1／2／3 含义不变，
+schema 2 只执行、schema 3 只投影，不能静默获得 schema 4 的留存行为。
+
+正常原生终态与事件集合已 ACK 后，原 owner／sink 内调用
+`FrameworkRuntimeResults.freeze_controlled_case()`。在同一短事务复核原 live 双租约、
+精确 native checkpoint、原任务／输入／预算、模型账本、ToolJob 和事件，核对完整确定性 JSON
+投影，复用原 Verification builder 首次生成结果。`ControlledCaseRuntimeResultAsset` schema 2
+沿用同一结果资产契约，显式增加正式 run／item／原 RunItem attempt，绝不伪造 message-stage。
+
+原 RunItem attempt 的 checkpoint 从 1 扩为 2，包装原 admission 与结果资产，原 key／
+`checkpoint_at`／admission 事实不变；`retained_at` 使用本次实际 DB 留存时间，不冒充图结束时间。
+同事务追加稳定身份的 `test_run.case_result_prepared` 审计回执，绑定原资产摘要，
+`application_finalized=false`；它不是 completion 事件或业务裁决。claim 前与锁内均检查
+`controlled_case_input_max_version=4`／`controlled_case_checkpoint_max_version=2` 与 strict codec，
+旧能力或未来格式 defer、不改原件；默认 `controlled_case_available=false` 不变，
+本兼容测试不是双制品部署验收。
+
+同一 live 双租约下的 `load_controlled_case()`／重复 freeze 复核原件、资产与原审计回执，
+复用已留存 Verification，不重新调用 builder。未知提交、协程等待者取消或 ACK 丢失不得自动
+重跑图／模型／工具，也不能声称同步 DB 线程已停止。审批等待仍无 result_asset；
+原 `finish(completed)` 仍拒绝。这里没有 Session 分项写入、正式 Assessment／RunItem 完成、
+失租恢复许可、独立 case Worker 强杀或 main／CLI／生产 Dispatcher 接线。
 
 ### 原路由与恢复验证
 

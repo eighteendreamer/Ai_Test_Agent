@@ -87,7 +87,7 @@ async def test_full_formal_preparation_is_frozen_admitted_and_consumed_without_r
             p = assembly(s, tmp_path / "assembly", models)
             asset = await prepare(s, p)
             assert database_digest(s) == before and s.session == original and requests == []
-            assert asset.schema_version == 3 and asset.runtime_preparation.identity == p.identity
+            assert asset.schema_version == 4 and asset.runtime_preparation.identity == p.identity
             state = asset.runtime_preparation.initial_state
             assert state["context_bundle"]["case_execution"] == asset.context.execution_json()
             assert state["context_bundle"]["attempt_id"] == s.attempt.id

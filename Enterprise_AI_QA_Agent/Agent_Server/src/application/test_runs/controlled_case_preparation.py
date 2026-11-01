@@ -14,7 +14,7 @@ logger = logging.getLogger(__name__)
 
 
 def prepare_controlled_case_input(*, detail, item, version, attempt_id, binding, graph_request,
-        runtime_preparation=None, result_preparation=None) -> ControlledCaseTaskInputAsset:
+        runtime_preparation=None, result_preparation=None, verification_preparation=None) -> ControlledCaseTaskInputAsset:
     """Reuse formal context and claim pin, without writes, model or tool calls.
 
     This observed lease identity is not a current lease check: no DB clock,
@@ -60,6 +60,8 @@ def prepare_controlled_case_input(*, detail, item, version, attempt_id, binding,
             payload.update(schema_version=2, runtime_preparation=runtime_preparation.model_dump(mode="json"))
         if result_preparation is not None:
             payload.update(schema_version=3, result_preparation=result_preparation.model_dump(mode="json"))
+        if verification_preparation is not None:
+            payload.update(schema_version=4, verification_preparation=verification_preparation.model_dump(mode="json"))
         asset = parse_controlled_case_task_input({**payload, "asset_sha256": approval_value_hash(payload)})
     except (TypeError, ValueError) as exc:
         logger.warning("controlled_case_input_preparation_rejected", extra={**scope,
