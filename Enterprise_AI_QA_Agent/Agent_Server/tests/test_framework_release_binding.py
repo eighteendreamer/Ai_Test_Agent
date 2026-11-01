@@ -82,6 +82,23 @@ def prepare_submission(current_source_release, *, session_id="prepared-session",
     return prepare_release_submission(store, reference, **values)
 
 
+def bind_captured_submission(captured, *, session_id, turn_id, binding_id, created_at):
+    """Pure test preparer; real source/model acquisition already happened.
+
+    Match the synchronous port's §175 boundary, rather than doing a subprocess
+    release probe under its Session lock. External loaders retain their actual
+    per-request acquisition tests and do not use this helper.
+    """
+    from src.schemas.framework_model_call import FrameworkModelBudget
+
+    selected = RuntimeBinding.model_validate({**captured.binding.model_dump(mode="json", exclude={"fingerprint"}),
+        "session_id": session_id, "turn_id": turn_id, "thread_id": turn_id,
+        "binding_id": binding_id, "created_at": created_at})
+    budget = FrameworkModelBudget.model_validate({**captured.model_budget.model_dump(mode="json"),
+        "deadline_at": created_at + (captured.model_budget.deadline_at - captured.binding.created_at)})
+    return replace(captured, binding=selected, model_budget=budget)
+
+
 def test_submission_preparation_uses_real_release_and_model_materials(current_source_release, caplog):
     import hashlib
     import zipfile
@@ -334,7 +351,7 @@ def prepared_dispatcher(h, source_release, prepare, *, loader=None):
 
 @pytest.mark.asyncio
 async def test_http_prepared_submission_serializes_first_binding_and_reuses_it_after_route_changes(
-        admission, isolate_recovery_stores, current_source_release):
+        admission, isolate_recovery_stores, current_source_release, monkeypatch):
     import asyncio
     import httpx
     from tests.test_agent_task_dispatch import payload
@@ -342,11 +359,26 @@ async def test_http_prepared_submission_serializes_first_binding_and_reuses_it_a
 
     h = admission
     prepared = []
+    from src.runtime import framework_submission_preparation
+    from tests.test_framework_submission_loading import require_unlocked_session
+
+    verify = framework_submission_preparation.require_installed_release
+    probes = []
+
+    def verify_outside_admission(*args, **kwargs):
+        # Actual PG NOWAIT proves source acquisition precedes the Session lock;
+        # a faster machine cannot conceal an invalid synchronous fixture.
+        require_unlocked_session(h)
+        probes.append("outside_admission")
+        return verify(*args, **kwargs)
+
+    monkeypatch.setattr(framework_submission_preparation, "require_installed_release", verify_outside_admission)
+    captured = prepare_submission(current_source_release)
 
     def prepare(session, request, command):
         assert session.id == command.session_id == request.session_id
         assert request.turn_id == command.turn_id and request.model_key == "primary"
-        value = prepare_submission(current_source_release, session_id=command.session_id, turn_id=command.turn_id,
+        value = bind_captured_submission(captured, session_id=command.session_id, turn_id=command.turn_id,
             binding_id="http-" + command.task_id, created_at=command.created_at)
         prepared.append(value)
         return value
@@ -368,6 +400,7 @@ async def test_http_prepared_submission_serializes_first_binding_and_reuses_it_a
         conflict = await client.post(f"/sessions/{h.session_id}/messages", json={**body, "content": "different"})
         assert conflict.status_code == 409
     assert len(prepared) == 1 and h.runtime.calls == []
+    assert probes == ["outside_admission"]
     assert counts(h) == dict(tasks=1, owners=1, outbox=1, budgets=1, messages=1)
     task = await h.tasks.get(task_id)
     assert task.runtime_binding == prepared[0].binding and task.turn_id == prepared[0].binding.turn_id
@@ -421,12 +454,13 @@ async def test_http_prepared_submission_rolls_back_every_admission_fact_and_can_
 
     h = admission
     fail = True
+    captured = prepare_submission(current_source_release)
 
     def prepare(session, request, command):
         if failure == "preparation" and fail:
             raise ValueError("synthetic-private-preparer-input")
         selected_session = "foreign-session" if failure == "identity" and fail else session.id
-        return prepare_submission(current_source_release, session_id=selected_session, turn_id=command.turn_id,
+        return bind_captured_submission(captured, session_id=selected_session, turn_id=command.turn_id,
             binding_id="rollback-" + command.task_id, created_at=command.created_at)
 
     def after(original):
@@ -499,9 +533,10 @@ async def test_prepared_http_writer_cannot_bypass_explicit_compatible_reader_cap
     from tests.test_framework_model_admission import counts
 
     h = admission
+    captured = prepare_submission(current_source_release)
 
     def prepare(session, request, command):
-        return prepare_submission(current_source_release, session_id=session.id, turn_id=command.turn_id,
+        return bind_captured_submission(captured, session_id=session.id, turn_id=command.turn_id,
             binding_id="capabilities-" + command.task_id, created_at=command.created_at)
 
     dispatcher = prepared_dispatcher(h, current_source_release, prepare)
@@ -523,10 +558,11 @@ async def test_prepared_http_retry_after_commit_loses_ack_does_not_prepare_again
 
     h = admission
     prepared = []
+    captured = prepare_submission(current_source_release)
 
     def prepare(session, request, command):
         assert not prepared, "A retry after commit must not re-read mutable release/model inputs"
-        value = prepare_submission(current_source_release, session_id=session.id, turn_id=command.turn_id,
+        value = bind_captured_submission(captured, session_id=session.id, turn_id=command.turn_id,
             binding_id="lost-ack-" + command.task_id, created_at=command.created_at)
         prepared.append(value)
         return value
@@ -556,9 +592,10 @@ async def test_prepared_api_idempotency_is_not_an_execution_digest_bypass(admiss
     from tests.test_agent_task_dispatch import payload
 
     h = admission
+    captured = prepare_submission(current_source_release)
 
     def prepare(session, request, command):
-        return prepare_submission(current_source_release, session_id=session.id, turn_id=command.turn_id,
+        return bind_captured_submission(captured, session_id=session.id, turn_id=command.turn_id,
             binding_id="digest-" + command.task_id, created_at=command.created_at)
 
     dispatcher = prepared_dispatcher(h, current_source_release, prepare)
@@ -710,11 +747,12 @@ async def test_http_prepared_release_runs_full_context_graph_and_commits_origina
                 turn_context_assembly=build_assembly(parts), permission_service=parts.permission_service,
                 deep_agent_governed_tools_enabled=True)
             prepared = []
+            captured = (prepare_submission(current_source_release, root_model_key="fake",
+                model_configurations={"fake": config}) if preparation == "captured" else None)
 
             def prepare(session, request, command):
-                selected = prepare_submission(current_source_release, session_id=session.id, turn_id=command.turn_id,
-                    binding_id="full-" + command.task_id, created_at=command.created_at,
-                    root_model_key="fake", model_configurations={"fake": config})
+                selected = bind_captured_submission(captured, session_id=session.id, turn_id=command.turn_id,
+                    binding_id="full-" + command.task_id, created_at=command.created_at)
                 prepared.append(selected)
                 return selected
 
@@ -1030,6 +1068,7 @@ def current_source_release(tmp_path_factory):
     snapshot = tmp_path / "trusted-source-snapshot"
     snapshot.mkdir()
     names = set(module.METADATA)
+    names.update(name for name in module.OPTIONAL_METADATA if (checkout / name).is_file())
     names.update(path.relative_to(checkout).as_posix() for path in (checkout / "Agent_Server/src").rglob("*")
         if path.is_file() and module._source_name(path.relative_to(checkout).as_posix()))
     for name in names:
@@ -1039,7 +1078,7 @@ def current_source_release(tmp_path_factory):
     # The capability identity hashes raw lock bytes. Preserve this test's
     # actual installed lock even under a host-wide core.autocrlf setting;
     # only the isolated fixture repository gets these attributes.
-    (snapshot / ".gitattributes").write_text("uv.lock -text\n", encoding="utf-8")
+    (snapshot / ".gitattributes").write_text("uv.lock -text\nrequirements.lock -text\n", encoding="utf-8")
     # This is an isolated test commit of the current implementation, not a
     # published commit in the user's repository or an independent venv install.
     environment = {**os.environ, "GIT_AUTHOR_NAME": "Release Test", "GIT_COMMITTER_NAME": "Release Test",

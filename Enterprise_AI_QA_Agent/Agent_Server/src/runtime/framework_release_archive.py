@@ -30,6 +30,9 @@ logger = logging.getLogger(__name__)
 MANIFEST = "release/manifest.json"
 GENERATED = {"release/environment.json", "release/formats.json", "release/tools.json"}
 METADATA = {"uv.lock", "pyproject.toml", "Agent_Server/pyproject.toml"}
+# Pip migration is reader-first: old archives keep their exact mandatory
+# inventory and lock identity; newly committed sources may carry this file.
+OPTIONAL_METADATA = {"requirements.lock"}
 MAX_CONTENT_BYTES = 256 * 1024 * 1024
 MAX_FILES = 20000
 
@@ -69,7 +72,7 @@ def _source_name(name: str) -> bool:
     path = PurePosixPath(name)
     if any(part.startswith(".") or part == "__pycache__" for part in path.parts):
         return False
-    if name in METADATA:
+    if name in METADATA | OPTIONAL_METADATA:
         return True
     root = "Agent_Server/src/"
     if not name.startswith(root) or name.startswith(root + "data/"):
@@ -291,7 +294,7 @@ def require_installed_release(project: Path, store: Path, reference) -> Framewor
     manifest, files = _verified_files(store, reference)
     project = Path(project).resolve()
     source_names = set(files) - GENERATED
-    installed = {name for name in METADATA if (project / name).is_file()}
+    installed = {name for name in METADATA | OPTIONAL_METADATA if (project / name).is_file()}
     for path in (project / "Agent_Server/src").rglob("*"):
         name = path.relative_to(project).as_posix()
         if _source_name(name) and path.is_file():

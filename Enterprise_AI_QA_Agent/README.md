@@ -194,16 +194,21 @@ Windows PowerShell 启动开发前后端时，可先在两个终端分别设置�
 
 ### 1. 启动后端
 
-在仓库根目录同步 uv 工作区；后端与测试依赖会安装到根目录 `.venv`：
+使用 Conda 环境 `Agent`（当前 Windows 解释器为 `E:\MiniConda3\envs\Agent\python.exe`）。在仓库根目录安装完整哈希锁定依赖；不再使用 UV 工作区、UV 环境变量或旧 `.venv` 启动器：
 
 ```bash
-uv sync --locked
-uv run --locked --directory Agent_Server uvicorn src.main:app --reload --port 1032
+conda activate Agent
+python -m pip install --require-hashes -r requirements.lock
+python -m pip check
+cd Agent_Server
+python -m uvicorn src.main:app --reload --port 1032
 ```
 
-IDE 的解释器选择仓库根目录 `.venv/Scripts/python.exe`，入口选择 `Agent_Server/src/main.py`。也可以在根目录运行 `uv run --locked python Agent_Server/src/main.py`。
+IDE 选择上述 Conda 解释器，入口为 `Agent_Server/src/main.py`。下文后端命令中的 `python` 均指该环境，工作目录为 `Agent_Server`；未激活环境时在 PowerShell 中使用 `& E:\MiniConda3\envs\Agent\python.exe ...`。根目录 `pyproject.toml` 仅保留仓库元数据，不作为可安装的工作区聚合包。
 
-工作区以根目录 `uv.lock` 为唯一生效锁文件；后端依赖仍在 `Agent_Server/pyproject.toml` 声明。不要仅逐个安装 LangChain/LangGraph 主包：`langgraph-prebuilt` 等传递依赖也必须按锁文件同步。旧组合 `langgraph==1.0.10` / `langgraph-prebuilt==1.0.10` 曾在导入 `ExecutionInfo` 时失败，即使 `uv pip check` 通过仍可能存在运行时不兼容。
+日常安装以根目录 `requirements.lock` 的完整版本、环境标记及 SHA256 为准；后端依赖声明仍在 `Agent_Server/pyproject.toml`。此次清单从原锁定原件无版本变更地迁移，不是重新求解或升级。旧 `uv.lock` 暂保留为历史 RuntimeBinding 指纹与源码制品的被动证据，运行时仍按其原字节计算既有指纹；**不能删除、重写或用新清单摘要冒充旧绑定**。后续切换运行时锁身份须单独 reader-first 迁移；本步不宣称完成。新源码制品可携带 `requirements.lock`，旧制品库存不补写；旧制品读者不具备新库存兼容能力时不得领取新绑定。不要逐个升级 LangChain/LangGraph 主包来修导入问题；`pip check` 也不能代替运行时回归。
+
+Windows 残留配置清理可在自己的 PowerShell 终端执行 `& .\scripts\clear_uv_environment.ps1`：只清除当前进程／用户级 `UV_*` 和失效的专用 UV bin PATH 项，不改系统级配置，不删缓存、旧环境、配置文件或锁文件。`-ProcessOnly` 只改调用进程。该脚本不能反向修改已运行的 IDE／Codex 父进程；若新终端仍继承旧值，应核对其启动来源并重启相应应用。文档下方保留的旧验收命令是历史记录，不代表当前仍需 UV。
 
 说明：
 
@@ -217,7 +222,7 @@ IDE 的解释器选择仓库根目录 `.venv/Scripts/python.exe`，入口选择 
 使用现有 `ORCHESTRATION__REDIS_TASK_DISPATCH_ENABLED` 开启持久派发，并将 `qa:tasks:document_parsing` 加入现有 `ORCHESTRATION__REDIS_TASK_OUTBOX_STREAMS`（保留其他已登记流）。先启动下方 Relay，再运行：
 
 ```bash
-uv run --locked --directory Agent_Server python -m src.cli.run_document_parse_worker
+python -m src.cli.run_document_parse_worker
 ```
 
 有界验收可以增加 `--once --worker-id document-parse-probe`；`--stream` 仅用于明确登记的独立传输流。提交入口为 `POST /api/v1/projects/{project_id}/documents/{document_id}/parse-tasks`，请求包含 `creation_key`、固定 `version_id` 和可选 `options`。以原请求身份查询或重试可以找回已提交任务；成功后按 `snapshot_id` 查询 `parse-snapshots/{snapshot_id}`。修改策略或重解析使用新的请求身份，旧快照保留。原件版本与解析快照是不同记录；已有持久引用的文档删除返回冲突，防止丢失历史依据。
@@ -227,7 +232,7 @@ uv run --locked --directory Agent_Server python -m src.cli.run_document_parse_wo
 保留已登记流，并将 `qa:tasks:document_difference` 加入 `ORCHESTRATION__REDIS_TASK_OUTBOX_STREAMS`，使用同一 Relay，再启动：
 
 ```bash
-uv run --locked --directory Agent_Server python -m src.cli.run_document_difference_worker
+python -m src.cli.run_document_difference_worker
 ```
 
 比较 CLI 同样支持 `--once --worker-id document-difference-probe` 和已登记的 `--stream`。提交入口为 `POST /api/v1/projects/{project_id}/documents/{document_id}/difference-tasks`，请求包含 `creation_key`、`old_snapshot_id`、`new_snapshot_id`；双方必须属于同一项目/文档的固定解析快照。`difference-tasks/by-request?creation_key=...` 找回原提交，`difference-tasks/{task_id}` 查询状态，成功后读取 `difference-snapshots/{snapshot_id}`，失败轨迹读取 `difference-tasks/{task_id}/failure`。任务和结果列表支持分页；`version_id` 只筛选新侧原件版本，完整双方引用始终保留。
@@ -239,13 +244,13 @@ uv run --locked --directory Agent_Server python -m src.cli.run_document_differen
 任务提交先写入 PostgreSQL Outbox，再由独立 Relay 投递到 Redis Streams。Relay 不应与 API 进程绑定，生产环境建议作为单独的进程或服务运行：
 
 ```bash
-uv run --locked --directory Agent_Server python -m src.cli.run_task_outbox_relay
+python -m src.cli.run_task_outbox_relay
 ```
 
 只做一次有界投递（适合部署探针或手工恢复）：
 
 ```bash
-uv run --locked --directory Agent_Server python -m src.cli.run_task_outbox_relay --once --batch-size 100
+python -m src.cli.run_task_outbox_relay --once --batch-size 100
 ```
 
 主 Stream 由 `ORCHESTRATION__REDIS_TASK_STREAM` 配置，额外 Stream 通过逗号分隔的 `ORCHESTRATION__REDIS_TASK_OUTBOX_STREAMS` 配置。Relay 会按 Outbox 记录中的 `stream` 精确投递；目标 Stream 未配置或不匹配时保留 Outbox 记录并等待重试，不会静默改投默认 Stream。租约和重试窗口分别由 `ORCHESTRATION__TASK_OUTBOX_LEASE_SECONDS`、`ORCHESTRATION__TASK_OUTBOX_RETRY_SECONDS` 管理。Relay 只连接 Redis，首次发布由 XADD 创建流；消费组由对应 Worker 创建，发布器不再创建未使用的消费组。
@@ -267,13 +272,13 @@ Redis 是交付层，长期运行结果和证据仍在 PostgreSQL；新建消费
 Relay 恢复后继续发布到 `qa:tasks:agent`。生产环境必须在 Outbox Relay 之外独立启动 Agent Worker：
 
 ```bash
-uv run --locked --directory Agent_Server python -m src.cli.run_agent_worker
+python -m src.cli.run_agent_worker
 ```
 
 单次消费可用于部署探针和恢复验证：
 
 ```bash
-uv run --locked --directory Agent_Server python -m src.cli.run_agent_worker --once --worker-id agent-probe-1
+python -m src.cli.run_agent_worker --once --worker-id agent-probe-1
 ```
 
 `metadata.client_message_id` 是客户端重试的幂等键；相同键和相同请求返回原任务，
@@ -333,7 +338,7 @@ API 对该分支返回 HTTP 202，Worker 领取后再获得 Session 执行租约
 ```powershell
 $env:RUN_LIVE_POSTGRES_TESTS='1'
 $env:RUN_LIVE_REDIS_TESTS='1'
-uv run --locked --directory Agent_Server python -m pytest tests/test_agent_task_dispatch.py -q
+python -m pytest tests/test_agent_task_dispatch.py -q
 ```
 
 测试覆盖并发幂等提交、事务回滚、FIFO、资源等待、新 Attempt、跨 API 中断、
@@ -342,7 +347,7 @@ uv run --locked --directory Agent_Server python -m pytest tests/test_agent_task_
 Session/Turn 完成事件也会在同一 PostgreSQL 事务中写入 `compaction_task` Outbox。配置额外 Stream 包含 `qa:tasks:compaction` 后，单独启动低优先级压缩 Worker：
 
 ```bash
-uv run --locked --directory Agent_Server python -m src.cli.run_compaction_worker
+python -m src.cli.run_compaction_worker
 ```
 
 压缩 Worker 使用 Redis 热记忆的 event cursor 和稳定 `compaction_key`，只裁剪已成功落入 PostgreSQL 的事件；Worker 重试或并发重复投递不会删除截止点之后的新事件。
@@ -350,7 +355,7 @@ uv run --locked --directory Agent_Server python -m src.cli.run_compaction_worker
 测试用例通过评审并激活固定版本时，用例状态、Embedding Job 和 Outbox 意图在同一个 PostgreSQL 事务中提交。单独启动低优先级 Embedding Worker，使用模型设置中已启用的 `embedding_retrieval` 模型生成完整向量：
 
 ```bash
-uv run --locked --directory Agent_Server python -m src.cli.run_embedding_worker
+python -m src.cli.run_embedding_worker
 ```
 
 Worker 不读取独立模型配置，也不截断或补零向量。向量先写入 PostgreSQL 权威表，再写入 Redis 版本索引；Redis 候选进入 Agent 上下文前必须按项目、环境、模式、用例生命周期、活动版本和内容哈希回查 PostgreSQL。旧版本任务会以 `superseded` 终止，不会调用模型或反复重试。
@@ -358,8 +363,8 @@ Worker 不读取独立模型配置，也不截断或补零向量。向量先写�
 Redis 向量索引按 `embedding_version` 独立构建。恢复或模型版本切换时先预览 PostgreSQL 权威库存，再执行重建；只有 Redis 文档数对账和抽样召回都通过后，才允许原子切换在线索引：
 
 ```bash
-uv run --locked --directory Agent_Server python -m src.cli.rebuild_memory_vectors --embedding-version <version>
-uv run --locked --directory Agent_Server python -m src.cli.rebuild_memory_vectors --embedding-version <version> --execute --activate
+python -m src.cli.rebuild_memory_vectors --embedding-version <version>
+python -m src.cli.rebuild_memory_vectors --embedding-version <version> --execute --activate
 ```
 
 `--execute` 只重建并验证副本，`--activate` 进一步写入 `qa:vector:active:memory` 指针。验证失败时保留原指针和旧索引，检索自动回源 PostgreSQL。验证等待时间和轮询间隔由 `ORCHESTRATION__REDIS_VECTOR_VALIDATION_TIMEOUT_SECONDS`、`ORCHESTRATION__REDIS_VECTOR_VALIDATION_POLL_INTERVAL_SECONDS` 管理。
@@ -367,9 +372,9 @@ uv run --locked --directory Agent_Server python -m src.cli.rebuild_memory_vector
 生产环境通过低优先级 Stream 执行同一套重建与切换逻辑。先启动独立 Worker，再创建 PostgreSQL Job 与 Outbox 意图；Outbox Relay 会将任务投递到 `qa:tasks:vector_rebuild`：
 
 ```bash
-uv run --locked --directory Agent_Server python -m src.cli.run_vector_rebuild_worker
-uv run --locked --directory Agent_Server python -m src.cli.enqueue_vector_rebuild --embedding-version <version> --activate
-uv run --locked --directory Agent_Server python -m src.cli.enqueue_vector_rebuild --entity test_case --embedding-version <version> --activate
+python -m src.cli.run_vector_rebuild_worker
+python -m src.cli.enqueue_vector_rebuild --embedding-version <version> --activate
+python -m src.cli.enqueue_vector_rebuild --entity test_case --embedding-version <version> --activate
 ```
 
 `memory` 和 `test_case` 使用独立的版本索引与活动指针。任务状态持久化在 `agent_vector_rebuild_jobs`，包含 Worker、租约、维度、权威数据量、已复制数量、失败类型和最终活动索引。Worker 只在 `index_activated`、`index_validated` 或空数据终态落库后 ACK；崩溃时由 Redis Pending 接管和 PostgreSQL 租约共同恢复。
@@ -381,7 +386,7 @@ uv run --locked --directory Agent_Server python -m src.cli.enqueue_vector_rebuil
 后续独立 CDP/ego-lite Browser Worker 需要实现远程清理适配器：
 
 ```bash
-uv run --locked --directory Agent_Server python -m src.cli.run_resource_cleanup_worker
+python -m src.cli.run_resource_cleanup_worker
 ```
 
 资源清理进程会将过期租约原子转交到 `qa:tasks:cleanup`，随后使用独立
@@ -915,10 +920,12 @@ application/
 ## 测试
 
 ```bash
-uv sync --locked
-uv run --locked --directory Agent_Server python -m pytest tests
+conda activate Agent
+python -m pip install --require-hashes -r requirements.lock
+cd Agent_Server
+python -m pytest tests
 
-cd agent_web
+cd ../agent_web
 npm test                   # vitest run（含 tests/recorder/recorder.test.mjs）
 npm run typecheck          # vue-tsc：严格检查 TS 与 Vue SFC 脚本/模板
 npm run build              # 类型检查通过后执行 vite build
@@ -951,18 +958,18 @@ New-Item -ItemType Directory -Path $env:QA_METRICS_MULTIPROCESS_DIR | Out-Null
 
 ```powershell
 cd Agent_Server
-uv run --no-sync python scripts/run_test_quality_gate.py --profile metrics-core
+python scripts/run_test_quality_gate.py --profile metrics-core
 ```
 
 每次执行保留独立的 `artifacts/test-gates/` 报告、源码哈希和 JUnit 结果。真实进程回归使用正式指标路由与 HTTP 中间件的 ASGI 请求，尚不等同于生产 Uvicorn/反向代理和 Prometheus 抓取验收。
 
-MCP 管理专项可执行 `uv run --no-sync python scripts/run_test_quality_gate.py --profile mcp-core`。它验证 JSON/真实 PostgreSQL 配置存储，并通过测试专属本地 MCP SDK 服务验证 stdio 确认、连接、工具发现和调用；需可用 PostgreSQL 与白名单允许当前 Python。确认操作仅保存首次使用许可，真正建立连接须执行重连；第三方服务器与 HTTP/SSE 传输另须验收。
+MCP 管理专项可执行 `python scripts/run_test_quality_gate.py --profile mcp-core`。它验证 JSON/真实 PostgreSQL 配置存储，并通过测试专属本地 MCP SDK 服务验证 stdio 确认、连接、工具发现和调用；需可用 PostgreSQL 与白名单允许当前 Python。确认操作仅保存首次使用许可，真正建立连接须执行重连；第三方服务器与 HTTP/SSE 传输另须验收。
 
 数据库版本迁移目前覆盖 PostgreSQL 任务 Outbox、工具任务、工具工件与压缩记录四张表的三个版本，详见 [迁移说明](Agent_Server/alembic/README)。`migration-core` 专项在随机临时 schema 中验证真实升级、原有数据保留、事务回滚、双进程执行，以及无运行时初始化的正式存储领取/结算/证据读写，并将迁移源码纳入质量报告。压缩旧结构只支持缺事件水位列的形态，新增水位为 0，不推断历史值、重置租约或重放任务；会话事件表仍由独立运行时依赖提供。尚未对现有业务表执行升级或 stamp；其余存储迁移及运行时 DDL 收敛仍待补齐，不能把三个版本视为全库迁移完成。
 
-API 执行专项使用 `uv run --no-sync python scripts/run_test_quality_gate.py --profile api-execution`，包含本地真实 TCP 请求和隔离 PostgreSQL 的相邻回归，不调用外部模型或供应商。API 任务的 `request_body` 缺失/`null` 表示不发送 JSON 正文，显式 `{}` 会发送空 JSON 对象；固定用例步骤的 `body` 保持相同语义。此处 `null` 是任务的“无正文”标记，不表示发送 JSON 字面量 `null`，数组/标量正文尚不在该 DTO 的支持范围。旧持久任务中 `{}` 的原始缺省意图无法反推，保留所存值，不自动改写或重放已完成请求。
+API 执行专项使用 `python scripts/run_test_quality_gate.py --profile api-execution`，包含本地真实 TCP 请求和隔离 PostgreSQL 的相邻回归，不调用外部模型或供应商。API 任务的 `request_body` 缺失/`null` 表示不发送 JSON 正文，显式 `{}` 会发送空 JSON 对象；固定用例步骤的 `body` 保持相同语义。此处 `null` 是任务的“无正文”标记，不表示发送 JSON 字面量 `null`，数组/标量正文尚不在该 DTO 的支持范围。旧持久任务中 `{}` 的原始缺省意图无法反推，保留所存值，不自动改写或重放已完成请求。
 
-真实模型与工具/SSE 专项使用 `uv run --no-sync python scripts/run_test_quality_gate.py --profile model-tools`。该组只读 MySQL 当前模型配置，实际请求供应商并可能产生费用；要求默认模型已配置凭据且支持工具调用。会话与 ToolJob 使用隔离内存存储，正式 SessionService 兼容入口、LangGraph 和注册的只读 `session-history` 工具实际执行，再通过本地真实 HTTP 的正式 SSE 路由接收分片，与最终会话正文逐字对账。`acceptance.json` 仅归档模型标识、工具/事件/分片数量和验证边界，不保存凭据或正文。默认诊断组跳过此项；它不覆盖持久派发的消息 HTTP 入口、重启恢复、外部业务工具或正式浏览器，单组通过不代表可发布。
+真实模型与工具/SSE 专项使用 `python scripts/run_test_quality_gate.py --profile model-tools`。该组只读 MySQL 当前模型配置，实际请求供应商并可能产生费用；要求默认模型已配置凭据且支持工具调用。会话与 ToolJob 使用隔离内存存储，正式 SessionService 兼容入口、LangGraph 和注册的只读 `session-history` 工具实际执行，再通过本地真实 HTTP 的正式 SSE 路由接收分片，与最终会话正文逐字对账。`acceptance.json` 仅归档模型标识、工具/事件/分片数量和验证边界，不保存凭据或正文。默认诊断组跳过此项；它不覆盖持久派发的消息 HTTP 入口、重启恢复、外部业务工具或正式浏览器，单组通过不代表可发布。
 
 进一步使用 `--profile model-dispatch` 验收正式消息 HTTP 202→PostgreSQL Outbox→Redis worker→真实模型/只读工具→PG 结果/SSE；使用 `--profile model-browser` 将同一次执行接入真实 Chromium、正式 Pinia Store 与 ChatTimeline 的 Vite 探针页面。两组会创建并清理自身 UUID 测试表与 Redis 前缀，包含独立项目 FK 表，不读取或处理业务队列；当前模型配置仍只读。浏览器组要求已安装 Node/Vite/Playwright Chromium，并另存前端源码哈希、Vite stdout/stderr 和安全观察记录。它验证正常单轮、幂等接收、worker ACK 和终态不重复执行，不覆盖完整工作台 GUI、生产代理鉴权、重启/审批恢复、多进程/容量或其他业务工具。默认诊断仍跳过这些外部调用，不能把这些验收扩大为整个发布矩阵已通过。
 

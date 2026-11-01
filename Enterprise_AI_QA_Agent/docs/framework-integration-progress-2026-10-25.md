@@ -8535,3 +8535,57 @@ v4 E／§9、§12.1 → 本节 → 新受控 codec、原 adapter／native_termin
 下一依赖仍为正式 RunItem 的固定版本／上下文封存及其原执行 attempt 与 AgentTask 自身 attempt 的双归属（不能将 AgentTask.attempt_id 当成 RunItem attempt）、专用 case 受理、受控 RuntimeTurnResult 原件与唯一 finalizer、兼容 Worker／制品／main 选路。原结果和终态 RunItem 不重置；正式失败仍创建新回归运行。
 
 完整 v4 A2/A3/B/C/D/E/F、H01–H12、完整有效输入与模式质量、真实供应商／embedding／RustFS／领域 Runner、全资源 main 启动、双制品 E4 与一致备份恢复继续保留，整体 goal 维持 active。本步未执行 Docker 操作、不拉镜像、不调用付费模型、不访问外部目标、不改实际 .env 或生产路由；只由原夹具清理本轮自有隔离资源。已收到的隔离 Docker echo／sleep 验收授权不因本步未使用而变成已完成验收，不处理未归属共享残留。
+
+
+## 184. F／§14.1：迁移 Conda＋pip 日常环境并保留历史锁身份（2026-11-01）
+
+### 用户补充、依据与边界
+
+续接 ee8180f51／§183 和未提交的正式 case 输入草稿。用户明确指定 E:\MiniConda3\envs\Agent、停止使用 UV，并选择“同时迁移项目依赖管理，逐步移除 UV 声明”。本步只提交环境／依赖入口、制品库存读者、相关夹具与记录；正式 case 草稿单独归入下一节，不混入此提交。用户 v3 草稿保持原 SHA256 8A43E94160767A0DE20740F2CB30782F06322CBC3467076DFCB120D4EFDF1AD4，不修改／暂存。
+
+依据原 uv.lock、Agent_Server/pyproject.toml 及已授权安装所导出的完整哈希列表 → 不重新求解、不升级依赖，将日常安装迁为 requirements.lock＋pip。依据 FrameworkWorkerCapabilities、framework_orchestration_artifact、prepare_release_submission 和 release verifier 的实际锁身份消费 → 不能删除旧锁或用新文件摘要冒充已有 RuntimeBinding。依据原制品白名单和完整库存核验 → 先让读者接受可选新锁；历史库存仍按其原清单核验，不补写历史制品。
+
+### 实现与实际环境操作
+
+- 根 pyproject.toml 删除 tool.uv.sources／workspace、仅用于工作区聚合的 dependencies／dev 声明，保留仓库元数据；后端直接依赖及 dev 声明不改。新增 requirements.lock，118 个 registry 包的全部固定版本与全部 sdist／wheel SHA256 都与原锁逐项相等，保留环境标记；头部记录原锁 SHA256 d515518eef9560b95f9575729adfa2e284d6ec801cd233933d334d6cb18a0a9d。不是重新求解产物，不声称已完成未来依赖升级流程或运行时锁身份迁移。
+- README 的当前启动、Worker、测试与质量门改为 Conda／python／pip，修正测试示例切换前端的工作目录。原历史验收命令不改写成新环境成绩。后端代码运行仍从 Agent_Server 导入，不将仓库聚合元数据作为安装包。
+- framework_release_archive 新增 OPTIONAL_METADATA={requirements.lock}；归档白名单和安装库存比较同步纳入。新锁存在即必须与相应制品一致，缺失／漂移拒绝；旧无新锁库存仍可读，但不能悄悄往安装目录补新锁。原 METADATA、manifest／reference 版本和 uv.lock 原字节身份不变。新兼容库存测试明确是构造样本，不冒称双制品 E4 或已有历史环境部署验证。
+- 新 scripts/clear_uv_environment.ps1：默认只清 Process／User 的 UV_*，仅移除失效且明确专属于 Python_UV／uv 的 bin／tool-bin PATH；-ProcessOnly 不改 User。保留活路径、普通失效路径、Machine、缓存、配置文件与所有旧环境，输出只有变量名和已移除路径，没有变量值。
+- 首实现把 SetEnvironmentVariable 的 $null 误当删除，在当前 PowerShell 7.6.9 上实际只置为空值。依据实际最小复现、[官方环境变量文档](https://learn.microsoft.com/en-us/powershell/module/microsoft.powershell.core/about/about_environment_variables?view=powershell-7.6)及[官方仓库问题与解释](https://github.com/PowerShell/PowerShell/issues/27414) → 传 [NullString]::Value 真正删除。原断言不改成“允许空值”，同时测试 pwsh 与 Windows PowerShell，两次调用幂等，原 uv.toml 不删。
+- 已真实执行默认清理：调用的 PowerShell 子进程清掉 8 个 UV_* 和失效 E:\Python_UV\bin；Process／User 的 UV_* 数量均为 0。User 执行前本就为 0，Machine 全量比较未变化；第二次移除列表均为空。不能反向修改已运行的 Codex 父进程，后续工具子进程仍可能继承其旧值，因此实际执行前显式用 -ProcessOnly 清理；需要从干净启动源重启相应应用才能消除其父进程继承。没有将子进程清理虚报为已清空 Codex 全局环境。
+
+新 Conda 环境最初只有 pip／setuptools／wheel／packaging；用户此前已同意按原锁安装。离线尝试因 alembic 不在本机缓存失败，随后已授权从 PyPI 安装 114 包成功；这发生在用户要求停用 UV 之前。本步后续不调用 UV，也不重建旧 .venv-framework-v2；旧 trampoline 不能运行不作为继续依赖旧环境的理由。当前 Python 为 3.11.18，适用当前 Windows／Python 环境的 115 个锁定包版本与实际 installed metadata 逐项匹配。
+
+### TDD、并发失败的根因与验证范围
+
+新增迁移专项首先实际 4 failed，45.17 秒，分别对应缺新锁、仍有 UV 工作区声明、制品缺新库存、缺清理脚本。一次误在仓库根目录运行 tests/test_pip_environment_migration.py 导致 no tests ran／exit 1，随后改为真实 Agent_Server 工作目录，不把误命令计为通过。首实现实际 3 passed、1 failed，47.51 秒，证明上述 PowerShell 删除语义错误；修正后迁移＋制品组实际 43 passed，129.17 秒。随后增加新锁缺失／漂移和独立无新锁库存测试，保持全部原断言。
+
+扩大到原 release_binding 时，真实 62 passed、1 failed，292.30 秒：原 8 请求并发测试在 _submit_prepared_message_sync 的 Session FOR UPDATE 处 lock timeout。沿调用链确认其同步测试 preparer 在锁内执行 prepare_submission／require_installed_release 的文件扫描与新进程探测；这违反 §175 已有的 captured-only 同步端口，不是需要延长 5000ms 锁超时或新增调度／重试。加入真实 PG FOR UPDATE NOWAIT 的探测位置断言，未修夹具时实际 1 failed、73 deselected，61.73 秒，八个 HTTP 响应都是 400，确定性证明采集处于受理锁内。
+
+修正同文件六处 captured 回调：在受理前真实获取制品／模型原件，回调只用原 typed codec 绑定本次 Session／Turn／task 和相对 deadline。原外部 loader 路径仍每请求实际采集，不接入这个测试 helper、不缓存生产配置、不改变生产代码。原 8 并发、全部 202、唯一任务／绑定／预算／消息／outbox、只调用一次同步回调、改路由后重试复用、冲突、丢 ACK、回滚和完整实际请求断言保留；新增断言要求只有一次制品采集且发生在锁外。专项真实 1 passed、73 deselected，79.32 秒。没有修改租约、重试、超时、并发数或任何生产受理路径。
+
+最终六模块实际 **163 passed，1349.14 秒，exit 0，无 skip／deselect**。生产源码在组前后按排序相对 Python 路径 UTF-8＋NUL＋原字节＋NUL 计算，SHA256 均为 67681265612dea71b53d52721018e9af49c1822e87a7e071f02efc142eedd62d；未在运行中改这些源码或测试。测试时仍有下一节未提交的 case 读者草稿，current_source_release 明确只在隔离 fixture 仓库提交实际快照，不冒称用户仓库已部署制品。
+
+~~~powershell
+# cwd: Agent_Server；此处固定 Python 指 E:\MiniConda3\envs\Agent\python.exe
+& ..\scripts\clear_uv_environment.ps1 -ProcessOnly | Out-Null
+$env:RUN_LIVE_POSTGRES_TESTS='1'
+$env:RUN_LIVE_REDIS_TESTS='1'
+$env:RUN_LIVE_DOCKER_TESTS='0'
+$env:RUN_LIVE_MYSQL_TESTS='0'
+$env:QA_FRAMEWORK_WORKER_DIAGNOSTICS='1'
+$env:PYTHONIOENCODING='utf-8'
+& E:\MiniConda3\envs\Agent\python.exe -u -m pytest tests/test_pip_environment_migration.py tests/test_framework_release_archive.py tests/test_framework_release_binding.py tests/test_framework_submission_loading.py tests/test_framework_release_workers.py tests/test_framework_release_startup.py -q -x -rs --tb=short --log-level=INFO
+~~~
+
+组内真实使用 PG／Redis、独立源码恢复进程与 Worker，模型／配置对端仍是本地合成 HTTP／受控端口；不等于 MySQL 实库、真实供应商／RustFS、独立依赖安装或双制品 E4。所有启动的 pytest 均观察到终态，无待观察 handle。
+
+其他真实结果：新 Python 执行 pip install --dry-run --require-hashes --no-index -r requirements.lock 以及 pip check 均 exit 0；前者为已安装环境验证，不冒称从空环境重新下载并验证全部 wheel。test_framework_dependencies.py 实际 10 passed，1.24 秒。compileall -q Agent_Server/src Agent_Server/tests 与 git diff --check 实际通过；未安装 ruff／mypy，未跑独立后端 lint／typecheck。原前端类型检查及三个测试文件本轮也通过，详见下一节。没有全量／真实付费供应商或领域目标验收。
+
+### 提交对应、剩余出口与整体工期
+
+v4 F／§14.1 → 本节 → 新锁／清理脚本、根 metadata／README、制品读者、迁移专项及原 release_binding 夹具与本记录，共 8 文件 → 上述红绿、环境检查及最终六模块 → 独立中文 commit，ID 见 Git 历史与交付。仅显式暂存这些文件，被忽略的新脚本／测试经审阅后单文件强制纳入；不改忽略规则，不纳入 case 草稿、认证、日志、制品或用户 v3 草稿；不推送／建 PR。
+
+这是日常依赖管理迁移第一步，不是删除全部 UV 历史证据。运行时 dependency_lock_sha256 的 reader-first 演进、历史绑定／制品兼容、正式 case 双租约受理／结果 finalizer、剩余 A2/A3/B/C/D/E/F、H01–H12 与 E3/E4 仍在完整目标内。§181 四个未定位失败和 §159／160／166 历史异常不因本节绿色而撤销；没有启动／重启服务、Docker、扫描目标、付费模型或生产路由，没有修改实际 .env、删除共享残留。
+
+整个 v4 项目剩余时间目前只可给风险估算：以现有八种非占位运行形态、现有领域引擎和全部发布验收为边界，约 4–8 周有效开发／验收时间；真实供应商、目标授权、环境准备和人工发布窗口的等待另计。此为粗估而非交付承诺，首个正式 case 端到端及 E3 清单收口后重估；v4 明确排除六个占位模式新功能，不能把其产品化工期暗中计作本次完成。整体 goal 继续 active。
