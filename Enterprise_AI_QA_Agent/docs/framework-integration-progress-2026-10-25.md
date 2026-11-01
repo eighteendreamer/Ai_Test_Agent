@@ -8182,3 +8182,52 @@ HTTP captured／external × explicit／auto／session_preference 六例现在从
 v4 B／§4.1 → 本节 → ContextBuilder／共享 builder／PromptAssembly／main，三个原测试及新项目测试、原控制说明和本记录共 10 文件 → 本节红绿、失败原件与最终 423 项 → 独立提交 `【feat】装配正式项目上下文并冻结请求原件`，ID 见 Git 历史与交付；不推送／建 PR。提交前核对 status／diff／具体暂存清单，只对已审阅的新测试显式纳入跟踪，不改忽略规则，不混入 v3 草稿、认证／日志或测试制品。
 
 本步完成项目正文的正式来源与冻结消费，不代表 B 或全系统完成。下一步继续核对正式固定用例／套件／RunItem 的新框架入口与版本冻结，以及实际 MySQL 模型配置链；不把已有领域实现重写为另一套流程。完整有效输入／格式／行为审计、全部旧读者升级或隔离、正式模式／预算发布、完整 main 启动、双制品独立安装／部署、备份恢复及灰度排空仍待验收；v4 A2/A3/B/C/D/E/F、H01–H12、真实供应商／embedding／RustFS／领域 Runner、官方 saver conformance、全前后端和 E3/E4 出口继续保留，整体 goal 维持 active。
+
+## 178. B／§4、§6：真实 MySQL 配置只读采集至原 HTTP 原子受理验收（2026-11-01）
+
+### 续接与依据 → 做法
+
+基线 `e5df01b92`／§177。核对活跃 goal、v4、实施记录、原模型 Store／Registry、受理 loader／Dispatcher／PG 事务以及真实源码归档和项目夹具。用户 v3 草稿 SHA256 仍为 `8A43E94160767A0DE20740F2CB30782F06322CBC3467076DFCB120D4EFDF1AD4`，不修改、不暂存。没有重新实现原 messages 顺序、审批、原件恢复或根模型消费。
+
+先沿正式用例生产者核对 `AgentCaseExecutionAdapter` 的 RunItem／attempt 租约与冻结上下文、durable intent、`SessionService.execute_case_turn()` 的专用 Session 执行权。该入口尚未拥有普通消息的 runtime_binding／AgentTask owner，不能把普通消息 binding 塞入后称为固定用例迁移完成；RunItem 与 AgentTask 的双归属衔接仍属于 v4 E 待实施。本步选择不依赖该迁移的实际 MySQL 采集边界，不重写原领域流程，也不复制已有检索冻结材料或任意额外 test_data。
+
+依据 `MySQLModelConfigStore.list_all()` 唯一 SELECT、原 `_row_to_record()`／`list_active()`／`get_active()` → 保留真实查询与原转换结果，不替换成测试模型；依据原 `FrameworkReleaseSubmissionLoader.from_configuration()`、真实 `ModelRegistry` 与 `prepare_release_submission()` → 用显式测试策略和真实源码制品验证受理材料，不新增生产装配或缓存。依据原实库 Harness、`prepare_formal_project` 在 Session 外键初始化前选择隔离表的做法 → 复用隔离项目／PG／Redis，不接触现有业务项目。
+
+本地《模型升级与微调回归测试》的 baseline snapshot／同输入与采样参数追溯，以及《Agent轨迹与协议鲁棒性》的幂等／半成功链路原则 → 核对实际配置的非秘密参数、固定受理原件、outbox 与账本，不以 HTTP 202 或非空回答代替执行事实。没有引入／升级依赖，生产源码无需修改；本步补的是环境证据，不虚构待修的生产缺陷。
+
+### 测试实现与真实边界
+
+- 新增 opt-in `tests/test_framework_mysql_submission.py`。纯测试专用 `_ReadOnlyCursor` 仅放行原 Store 的完整 SELECT（压缩空白后精确核对），拒绝参数、其他 SELECT、写语句和复合语句；仍把原语句和 fetchall 结果委托真实 cursor。initialize 明确禁止，连接／执行／读取异常不输出原 driver 文本。这是本验收的操作边界，不是新的生产 SQL 安全策略、DB 权限隔离或通用 SQL 解析器。
+- 所有真实模型读取在工作线程进行；材料采集时每次检查不在事件循环线程、PG Session 行锁可用、task／owner／outbox／budget／message 尚未产生。原 Store 全记录投影在前后只读计算内存摘要并核对，不输出配置原件、模型名、认证、endpoint 或摘要。该核对不是全表物理快照；不为变化自动修复数据。
+- explicit／auto／Session preference 使用原 Agent／Model Registry 和同一配置工厂；显式选择 coordinator 以复用原无模型白名单的描述符，没有改 AgentRegistry 或真实模型配置。正式项目在隔离 PG 绑定 Session，HTTP 202 后逐项核对项目、原 payload、binding／预算 v2 非秘密原件和指纹、四项显式策略、原创建时刻计算的 deadline、原执行摘要、v2 outbox 完整绑定及消息锚点。每项受理事实各一份，模型调用账本和受控 Runtime 调用均为空。
+- 已提交后暂时替换测试 Store 的连接端口：相同请求复用原回执，同 key 不同 body 为 409，两者均不触碰故障端口；新 key 为受控 400，没有额外部分事实，原预算／deadline 不变。另验首次读取故障时零部分事实，恢复端口后同一原意图成功。故障是连接端口注入，不是真实服务停止、网络故障或 MySQL 重启。
+- 测试禁止 `httpx` 同步／异步真实 HTTP transport 发送，同时保留原 ASGI transport；没有启动 relay／Worker、供应商 SDK 请求或领域 Runner。模型表不执行 initialize／DDL／迁移／UPDATE／种子，真实返回记录不被替换；PG／Redis 只由原夹具创建并清理本轮隔离资源。
+
+### TDD、首轮验证及剩余出口
+
+续接前，同一新测试文件的只读 cursor 夹具已实际经历 **10 failed（NameError），0.34 秒 → 10 passed，0.13 秒**；这是验收夹具红绿，不是生产缺陷红测。续接后加入四项真实读取／HTTP 参数用例，首轮完整新模块实际 **14 passed，115.64 秒，exit 0，无 skip／deselect**。随后补充 fetchall 私密错误断言、v2 outbox／原执行摘要和消息锚点核对，交给扩大组对最终测试源码重验，不沿用首轮结果代表最终新增断言。
+
+```powershell
+# cwd: Agent_Server；固定 .venv-framework-v2，沿用已启动服务
+$env:RUN_LIVE_POSTGRES_TESTS='1'
+$env:RUN_LIVE_REDIS_TESTS='1'
+$env:RUN_LIVE_DOCKER_TESTS='0'
+$env:RUN_LIVE_MYSQL_TESTS='1'
+$env:PYTHONIOENCODING='utf-8'
+..\.venv-framework-v2\Scripts\python.exe -u -m pytest tests/test_framework_mysql_submission.py tests/test_framework_submission_loading.py tests/test_framework_submission_configuration.py tests/test_framework_model_admission.py tests/test_framework_release_binding.py tests/test_runtime_binding_persistence.py tests/test_session_project_binding.py tests/test_lifespan_resource_cleanup.py -q -rs --tb=short
+# 最终 209 passed，1015.08 秒，exit 0，无 skip／deselect
+```
+
+扩大组保留原原子受理、配置／失败／取消／并发、持久绑定、正式项目和生命周期契约；其中原有 Worker／官方模型与本地合成 HTTP 用例继续各自的既有替身范围。**不能把这些既有用例与本步只到受理的真实 MySQL 分支拼成“实际配置已发送给供应商”的证据。** 新分支从未启动 Worker，原组也不是完整 main 或生产部署验收。
+
+另将四个 RUN_LIVE 开关全部显式置 0，运行同一新模块，实际 **10 passed、4 skipped，7.32 秒，exit 0**；跳过均为预期 opt-in 实库用例，纯 cursor 测试不依赖数据库，不替代上述无跳过扩大组。所有启动的 pytest 均已观察至真实终态，无遗留后台测试。
+
+当前子步没有改公共 API／DTO、持久 schema、DDL、能力上界、生产路由或真实配置；控制说明仅增加本验收方式及边界。前端无修改、未重跑。实库 Harness 仍按原 Settings 自动加载后端 `.env`，不声称完全不访问配置；没有用工具直接打开、输出或修改该文件或认证。
+
+根目录 `.venv-framework-v2\Scripts\python.exe -m compileall -q Agent_Server/src Agent_Server/tests` 与 `git diff --check` 实际 exit 0，明确输出 compileall_ok／diff_check_ok。find_spec 确认 ruff／mypy／build／wheel／setuptools 未安装，未跑独立 lint／typecheck／构建安装，不安装依赖。本轮按排序后的 src 相对 Python 路径 UTF-8＋NUL＋原字节＋NUL 计算的前后聚合 SHA256 同为 `b0977b040d6f63bbaead6459228c547dc5b3881d86c7f44c2a5448d80c3dbd44`；这是本轮明确算法，不与未核对算法的旧摘要混比。归档／验证期间未改生产源码，只有不在源码制品覆盖范围的说明／记录更新。
+
+未启动／重启 PG、Redis、MySQL 或 Docker，不访问项目 base_url、扫描目标、调用付费模型或改变生产路由。原夹具只清理本轮自有隔离资源，不处理 §158 未归属共享残留；用户 v3 草稿最终哈希核对不变。
+
+v4 B／§4、§6 → 本节 → 新 MySQL 受理测试、原控制说明与本记录共 3 文件 → 本节夹具红绿、14 项首轮和最终 209 项扩大组 → 独立提交 `【test】验证真实模型配置只读受理与故障幂等`，ID 见 Git 历史和交付；不推送、不建 PR。测试被原忽略规则排除，仅对审阅过的具体新文件显式纳入跟踪，不改忽略规则、不混入用户 v3 草稿、认证／日志或测试制品。
+
+正式 AgentCase／RunItem 的新框架执行、实际配置的供应商发送、完整 main 全资源启动、模式质量与完整有效输入审计、全部旧读者升级或隔离、双制品独立安装／部署、备份恢复与排空继续待验收；本步真实 MySQL 读取不替代这些出口。§159／160 时间异常与 §166 子进程 RuntimeError 仍未定位，不能用本步绿色撤销历史失败。v4 A2/A3/B/C/D/E/F、H01–H12、真实供应商／embedding／RustFS／领域 Runner、官方 saver conformance、全前后端与 E3/E4 仍保留完整目标，goal 继续 active。

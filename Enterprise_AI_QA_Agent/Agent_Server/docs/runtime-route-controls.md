@@ -127,6 +127,16 @@ main 在原 Dispatcher 构造处调用 `FrameworkReleaseSubmissionLoader.from_co
 
 组合日志 `framework_submission_unconfigured`／`framework_submission_configured`／`framework_submission_configuration_failed` 仅记录既有制品身份或错误类型，不输出路径、策略原件和认证。验证由 `test_framework_submission_configuration.py` 的配置／环境／工厂与 main AST 审计、原生命周期和预检测试、原完整 HTTP external 用例共同覆盖。HTTP 用例使用真实配置预检与同一组合工厂，但应用资源仍手动装配，不冒称完整 main lifespan、MySQL 模型配置链路或 E4 已通过。另有已运行本机 MySQL 的只读 SELECT 1／连接池归属清理验收，不代替配置表或正式受理验收。实际结果和剩余限制见实施记录 §176；没有修改实际 `.env` 或启用生产策略。
 
+### 真实 MySQL 配置到 HTTP 受理的只读验收（v4 §4／§6）
+
+`tests/test_framework_mysql_submission.py` 以 `RUN_LIVE_MYSQL_TESTS=1` 显式启用，另需原真实 PostgreSQL／Redis 测试环境。它不运行完整 main：复用原隔离 app、正式项目夹具、实际源码制品校验、同一 `from_configuration()` 工厂、真实 `ModelRegistry` 与 `MySQLModelConfigStore`，沿原消息 HTTP 路由受理。策略四字段仅写入测试 Settings 副本，不修改实际 `.env` 或开启生产模式。
+
+现有模型表只通过原 `list_all()` SELECT 读取，结果仍由真实数据库及原行转换器产生；测试专用 cursor 只放行该语句并禁止 initialize，不替换记录、不执行 DDL／UPDATE／种子。每次材料读取均核对工作线程、PG Session 行锁可取和受理事实尚未产生。前后比较原 Store 完整记录投影的内存摘要，不输出原记录、凭据、endpoint 或摘要原件；这不是全表物理快照、数据库权限控制或生产 SQL 安全策略。
+
+explicit／auto／Session preference 分支核对正式项目身份、真实配置的非秘密参数原件和指纹、绑定／预算／原输入摘要、v2 outbox 及固定限额／截止时间。HTTP 202 后只核对持久受理，不启动 relay／Worker；账本调用为空，真实 HTTP transport 发送被测试明确禁止。已有回执重试和同 key 冲突不再读取配置源；注入连接端口故障时，新请求受控失败、无额外部分事实，恢复端口后原失败意图可重试。故障注入没有停止／重启真实 MySQL 服务。
+
+实际命令、结果及限制见实施记录 §178。此验收补齐真实模型表到受理的读取边界，不代表该配置的官方模型对象／供应商发送、正式 AgentCase、完整 main、生产发布或 E3/E4 已通过；执行阶段仍必须核对当前授权与冻结指纹。
+
 ### 正式项目数据与现有图输入原件（v4 §4.1）
 
 main 将既有 `ProjectService` 注入同一个 `build_turn_context_assembly()`；新完整上下文（v2.2／v2.3）只在上下文节点按 Runtime 已从 Session 写入的正式 `project_id` 读取一次项目正文。原 Session／Worker 的项目存在性和活动状态校验仍独立保留，不把一次正文读取说成整个请求只访问项目库一次。无项目不读取；有项目但服务未组合、记录不存在／已归档、返回身份不符或源异常时明确失败并记录 `framework_project_context_unavailable`，不使用客户端正文或切换 legacy。日志只有 Session／Turn／项目身份与错误类型，不输出原异常和项目正文。
