@@ -8466,3 +8466,72 @@ v4 C／§8.1、A2／§10.1 → 本节 → 4 个生产文件、2 个新测试及�
 本步完成的是已证实诊断缺口，而非 §181 故障修复；十五模块本次全绿没有撤销 §181 的四个失败，也没有定位 §159／160 的过期比较异常或 §166 子进程 RuntimeError。后续若再现，使用决策处事实继续定位，不靠延长租约、放宽原件／消息／PEL 断言或重复挑选绿色结果。
 
 正式 RunItem 冻结输入／AgentTask 双归属、controlled 版本化 graph-input、RuntimeTurnResult 原件与唯一收尾、兼容 Worker／发布制品／main 选路仍待实现；AgentTask.attempt_id 不得承载 RunItem attempt。完整 v4 A2/A3/B/C/D/E/F、H01–H12、真实供应商／embedding／RustFS／领域 Runner、完整有效输入与模式质量、全资源启动、双制品部署 E4 和一致备份恢复均继续保留，整体 goal 维持 active。没有启动／重启服务或 Docker、拉镜像、调用付费模型、测试外部目标、修改实际 .env 或生产路由；只由原夹具清理本轮自有隔离资源，不处理 §158 未归属共享残留。
+
+
+## 183. E／§9、§12.1：冻结受控图输入并关联原生检查点（2026-11-01）
+
+### 续接、依据与范围
+
+续接 6703849b8／§182，以及已红测但未提交的受控 graph-input 草稿。核对 active goal、v4、§52 及后续事实、Git 状态和草稿内容；不把 §181 四个未定位失败或 §159／160／166 的历史异常撤销。本子步只完成内部版本化输入消费与原生检查点关联，不开放正式 RunItem、AgentTask、Worker 或生产路由。
+
+依据现有 FrameworkGraphInputAsset／approval_value_hash、官方 LangChain messages codec、固定 SDK convert_to_openai_tool／DecisionType → 独立定义 controlled schema 1，保留完整绑定、原生输入、原 system prompt、trace／model key、按序完整工具 schema 和 JSON 可持久化 HITL 配置；不把 Deep Agents codec 改成 union，不新建消息 reducer 或审批引擎。依据安装版 langgraph/checkpoint/base 的 get_checkpoint_metadata() 及原 FencedPostgresSaver → 将内容摘要通过原 invoke metadata 保存到官方 checkpoint，不另建表、调度器或 checkpoint 物化算法。
+
+查阅本地《Agent轨迹与协议鲁棒性》的结果＋轨迹、协议语义、重复执行和恢复边界 → 除返回文本外，严格比较原生消息、原 checkpoint tuples／pending writes、根账本、HTTP 和工具次数。证据仍为固定 SDK＋本地合成 HTTP＋隔离 PG／Redis，不冒充真实供应商或领域 Runner。
+
+### 实现、根因与跨层契约
+
+- 新 schemas/controlled_case_graph_input.py：ControlledCaseGraphInputAsset 要求显式整数版本／kind、完整 RuntimeBinding 和规范 asset_sha256，拒绝未知格式、损失原生消息、缺失或重复输入 ID、重复工具、未知审批目标及非 JSON 配置。冻结不接受 resume／continue，不保存 owner token 或恢复权。解析对已构造对象重新 dump／校验，并对 raw JSON 做独立 JSON 副本；frozen=True 不被当作深层不可变保证。
+- 原 adapter 的 execute() 与新 execute_frozen() 进入同一 _execute()、官方图、根策略／预算、sync saver 和原生核验边界。冻结路径在解析模型前核对完整 captured binding。业务工具 iterable 只物化一次；工具 schema／顺序用原规范 JSON 摘要比较，不以 Python 的 False == 0 放过类型漂移。schema 相等不证明 handler 代码、目标授权或 Runner 执行权相等。
+- 真实反例证实：资产摘要自洽且 binding 相同，仍不能证明 checkpoint 消费了该资产。新增 controlled_graph_input_sha256 内容引用，由原官方 checkpoint metadata codec 持久化。冻结路径继续／resume 必须已有同一输入引用；无 checkpoint 的裸资产不能继续；无引用旧 checkpoint 不得被新资产收编；观察到已有 checkpoint 后拒绝再次提交初次输入。没有重置原账本／任务或自动重跑。
+- open_native_reader() 捕获独立解析资产，provider await 后不重新使用调用者可变 raw 参数；打开后检查当时最新 checkpoint 的输入引用，不解析模型／重建工具。native_schema() 仍只定义惰性只读 schema，不执行 IO，也不凭 schema 授予原件核验权。旧 Python 请求读取口保留其原窄语义。
+- 原 native_terminal.require_native_terminal_original() 捕获同一资产，继续使用原同连接事务、官方 schema／codec、精确 checkpoint、完整 state、原时间和事件前缀复核；对 controlled 资产额外比较 proof 指向的精确 checkpoint 输入引用，失配仍报 FrameworkMessageStageRecoveryRequired。不修改 proof schema、消息比较、投影器、finalizer、公开 DTO 或 DDL。
+- 日志 controlled_case_graph_input_loaded／controlled_case_graph_input_rejected 只记录绑定／turn、资产摘要或 error_type；执行和读者失败沿用原事件，不输出 Prompt、原生消息、工具配置、认证或异常正文。全局核对新 codec、adapter、原 native schema 选择器、唯一事务消费者 framework_event_completion 及测试；既有 Worker／Runtime 仍只接受其已支持的 deepagents，不为 langgraph 开放执行能力。
+
+摘要是内容引用，不是签名、目标授权、RunItem 租约或自动恢复证明。上述已有 checkpoint 的观察是顺序检查，**不是并发原子受理／CAS，也不证明正式 case 并发幂等**。旧 Python 执行口未被包装成冻结契约。本步仅内部受控 checkpoint metadata 有新增引用，没有发布 message stage／AgentTask／RunItem／outbox 的新格式写者；没有完整正式上下文或 RuntimeTurnResult，不能称完整有效输入或 AgentCase 已完成。
+
+### TDD：保留真实红绿与中间修正
+
+续接前已终态的本子步记录：新 codec 缺失时 32 failed，41.92 秒；首实现 31 passed、1 failed，37.97 秒。该失败是负例改变 binding 后未重建 computed fingerprint，先在资产摘要处拒绝；测试改为用原 RuntimeBinding codec 重建合法但不同的绑定，不削弱完整绑定漂移断言。随后专项 38 passed，55.55 秒。工具 iterator 被比较耗尽的真实红测 1 failed，9.79 秒，修复为只物化一次；加入 bool HITL 后八模块 564 passed，402.04 秒。一次误指不存在测试文件导致 no tests ran／exit 1，随后使用实际文件列表完成上述组，不把误命令计为通过。这些早期绿色均早于输入—checkpoint 关联修复。
+
+续接时已有同绑定不同合法资产、只读／事务／continue／初次重投四项红测：4 failed，25.37 秒。扩展 raw alias、旧无引用 checkpoint、无 checkpoint 恢复后定向实际 **11 failed、41 deselected，49.10 秒，exit 1**：旧实现未拒绝不同资产、无引用收编、初次重投或空检查点恢复，且解析保留调用者深层别名。实现上述根因修复后专项 **52 passed，82.50 秒**，无 skip／deselect。
+
+加入 provider await 期间 raw 改动的正例、四协议及 HITL 全部 checkpoint 都保留原输入摘要的断言后，八模块实际 **576 passed，423.42 秒**，无 skip／deselect。再补工具 schema 布尔／数字反例，实际 **1 failed、59 deselected，8.27 秒**（DID NOT RAISE ValueError），证实 Python 字典相等不是完整 JSON 契约比较；改用原规范摘要。另加六项真实 PG 原 checkpoint 输入引用被删除／替换的负例，断言只读、原事务核验和继续均拒绝，原 HTTP／预算／全部 checkpoint tuples 不发生进一步变化，不自动修复篡改材料。
+
+### 实际扩大回归与最终验证
+
+固定根目录 .venv-framework-v2，cwd 为 Agent_Server，PG／Redis 沿用用户已启动服务；不启动／重启服务。首次八模块 576 组及下面九模块的生产源码聚合 SHA256 均为 ffb4dc14b4820ee9addeba228e2115b93d85a450e75bebfbe0d022c3ebc5f48d，期间没有修改生产源码或这些既有测试。
+
+~~~powershell
+$env:RUN_LIVE_POSTGRES_TESTS='1'
+$env:RUN_LIVE_REDIS_TESTS='1'
+$env:RUN_LIVE_DOCKER_TESTS='0'
+$env:RUN_LIVE_MYSQL_TESTS='0'
+$env:QA_FRAMEWORK_WORKER_DIAGNOSTICS='1'
+$env:PYTHONIOENCODING='utf-8'
+..\.venv-framework-v2\Scripts\python.exe -u -m pytest tests/test_deep_agent_runtime_adapter.py tests/test_framework_native_interrupts.py tests/test_framework_harness_settings.py tests/test_framework_context_runtime.py tests/test_framework_route_rollback.py tests/test_framework_unsealed_result_reconstruction.py tests/test_framework_message_result_reconstruction.py tests/test_framework_approval_result_reconstruction.py tests/test_framework_terminal_gap.py -q -rs --tb=short --log-level=INFO
+# 316 passed，1244.72 秒，exit 0，无 skip／deselect。
+~~~
+
+这组含原独立 Worker 强杀及共享原件／恢复路径，但没有定位 §181 等历史故障，不能称这些故障已修复。九模块结束后，仅将新 codec 的工具比较从 Python equality 改为规范 JSON 摘要；共享 native_terminal 等生产文件无后续变动。最终源码的八模块含新专项全部 60 项：
+
+~~~powershell
+# 同上 PG／Redis=1、Docker／MySQL=0，固定 Python，未修改依赖或超时。
+..\.venv-framework-v2\Scripts\python.exe -u -m pytest tests/test_controlled_case_graph_input.py tests/test_controlled_case_adapter.py tests/test_controlled_case_native_reader.py tests/test_controlled_case_graph.py tests/test_framework_graph_input_asset.py tests/test_framework_native_terminal.py tests/test_framework_checkpoint_fencing.py tests/test_agent_v2_worker_contract.py -q -rs --tb=short
+# 583 passed，431.36 秒，exit 0，无 skip／deselect。
+
+# 再显式将四个 RUN_LIVE 开关全部置 0，仅测试 opt-in 行为。
+..\.venv-framework-v2\Scripts\python.exe -u -m pytest tests/test_controlled_case_graph_input.py -q -rs --tb=short
+# 33 passed、27 skipped，7.65 秒，exit 0；27 项明确要求真实 PG／Redis，不算通过。
+~~~
+
+各组覆盖有重叠，不相加为独立覆盖数。官方四协议对端仅为本地合成 HTTP，新工具为 callback；原生批准／拒绝不是公开业务审批授权。原共享组的本地受控对象后端不等于 RustFS，独立 Worker 强杀不等于真实供应商／领域目标验收。所有已启动 pytest 均观察到终态，无待观察 handle。
+
+按排序 src 相对 Python 路径 UTF-8＋NUL＋原文件字节＋NUL 计算，最终八模块期间前后聚合 SHA256 均为 75993b66d862ffd81d252c9db6135e555007ee23432e8689925d6df6b9107389；最终新测试 SHA256 均为 509ee83b55706d38ae7a939da0c1a520b8adf2f9ce9de1e083efc78ad681c170。根目录固定 Python 的 compileall -q Agent_Server/src Agent_Server/tests 实际 exit 0；git diff --check 实际通过。find_spec 确认 ruff／mypy／build／wheel／setuptools 未安装，未运行独立 lint／typecheck／build，不安装依赖；前端无改动、未重跑，未跑全量或真实领域验收。
+
+### 提交对应与剩余出口
+
+v4 E／§9、§12.1 → 本节 → 新受控 codec、原 adapter／native_terminal、新专项、原路由控制说明及本记录，共 6 文件 → 上述红测、真实 PG 专项与跨层回归 → 独立提交“【feat】冻结受控图输入并绑定原生检查点”，ID 见 Git 历史与交付。提交前审阅 status、完整 diff、暂存范围及 diff --check；仅显式加入已审阅但被原规则忽略的新测试，不改忽略规则，不纳入日志、认证、制品或用户 v3 草稿。v3 草稿 SHA256 仍为 8A43E94160767A0DE20740F2CB30782F06322CBC3467076DFCB120D4EFDF1AD4，不修改、不暂存；不推送、不建 PR。
+
+下一依赖仍为正式 RunItem 的固定版本／上下文封存及其原执行 attempt 与 AgentTask 自身 attempt 的双归属（不能将 AgentTask.attempt_id 当成 RunItem attempt）、专用 case 受理、受控 RuntimeTurnResult 原件与唯一 finalizer、兼容 Worker／制品／main 选路。原结果和终态 RunItem 不重置；正式失败仍创建新回归运行。
+
+完整 v4 A2/A3/B/C/D/E/F、H01–H12、完整有效输入与模式质量、真实供应商／embedding／RustFS／领域 Runner、全资源 main 启动、双制品 E4 与一致备份恢复继续保留，整体 goal 维持 active。本步未执行 Docker 操作、不拉镜像、不调用付费模型、不访问外部目标、不改实际 .env 或生产路由；只由原夹具清理本轮自有隔离资源。已收到的隔离 Docker echo／sleep 验收授权不因本步未使用而变成已完成验收，不处理未归属共享残留。

@@ -179,7 +179,7 @@ bound Runtime 初始状态只查询 ExecutionRequest 的明确 key，不再回�
 
 返回的 `FrameworkGraphOutcome` 只携带原始 values、子代理事件、原生中断、`NativeTerminalRead` 和预算原件。native proof／checkpoint timestamp 不是应用完成、正式测试通过或恢复许可；消息不一致会沿原核验异常拒绝返回结果，不忽略 messages。原生审批材料也不能替代业务决议授权。成功／失败日志为 `controlled_case_graph_outcome_captured`／`controlled_case_graph_invocation_failed`，不记录消息／配置正文，取消继续向外传播。
 
-`tests/test_controlled_case_adapter.py` 覆盖四协议官方 SDK＋本地合成 HTTP＋真实 PG saver／根账本／业务 ToolJob、同一终态继续不重发、原生批准／拒绝与重建、根 deadline／取消、错误输入和原生／返回消息不一致。部分审批、计时器及输入反例为明确替身；这些证据不等于独立进程、真实供应商或正式 AgentCase 验收，实际命令与结果见实施记录 §180。该内部请求／结果类型没有持久 schema 或公开 API；现有 graph-input 资产仍是 Deep Agents 契约，不能直接用于受控图的恢复准入。后续只读端口的窄范围见下节，不等于补齐正式 RunItem／AgentTask 归属、版本化输入、RuntimeTurnResult／原件与唯一 finalizer、兼容 Worker／发布制品或 main 选路。
+`tests/test_controlled_case_adapter.py` 覆盖四协议官方 SDK＋本地合成 HTTP＋真实 PG saver／根账本／业务 ToolJob、同一终态继续不重发、原生批准／拒绝与重建、根 deadline／取消、错误输入和原生／返回消息不一致。部分审批、计时器及输入反例为明确替身；这些证据不等于独立进程、真实供应商或正式 AgentCase 验收，实际命令与结果见实施记录 §180。原内部 Python 请求／Outcome 没有公开 API；Deep Agents graph-input 契约不能直接用于受控图恢复。下文受控 codec 是另一个明确版本，只完成内部执行／读取消费，不开放正式 RunItem／AgentTask 受理、RuntimeTurnResult／原件与唯一 finalizer、兼容 Worker／发布制品或 main 选路。
 
 ### 受控图 source-only 读取（v4 E／§8.2、§12.1；非恢复准入）
 
@@ -190,6 +190,20 @@ bound Runtime 初始状态只查询 ExecutionRequest 的明确 key，不再回�
 `src/application/runtime/framework_native_schema.py::native_graph_schema()` 仅选择原 schema builder。原 `require_native_terminal_original()` 在同一应用连接短事务内通过它重读，沿用原 serializer、namespace 映射、搜索路径恢复及 checkpoint／完整 native state／时间／通道／事件前缀比较，增加 proof 与 source 的精确身份比较。Deep Agents schema 现在明确拒绝 graph-input 与 source 的 runtime kind 不同，即使调用者同步更改嵌套 binding 并重新计算资产摘要，也不能将其解释为受控图。这个选择器不放行 Worker、不签发任何恢复或写入凭证。
 
 `tests/test_controlled_case_native_reader.py` 验证四协议官方 SDK 到本地合成 HTTP、真实隔离 PG 的终态原件失租后重开、原生批准／拒绝后读取、真实业务 ToolJob／结果投影原件保留、只读中断观察和写入拒绝、事务内篡改反例及跨类型拒绝。内存 saver／不可调用节点是独立替身边界；实际命令与结果见实施记录 §181。日志 `controlled_case_native_reader_opened`／`controlled_case_native_reader_failed` 只含绑定／任务身份、epoch 或异常类型，不输出消息、模型配置正文或认证。
+
+### 受控图冻结输入消费（v4 E／§9、§12.1；尚未发布业务写者）
+
+`src/schemas/controlled_case_graph_input.py` 定义独立的 `ControlledCaseGraphInputAsset`，显式整数 schema 1／kind=langgraph，包含完整 RuntimeBinding、trace／model key、原 system prompt、官方 LangChain 原生消息字典、按原顺序的完整工具 schema、可 JSON 持久化的逐工具 HITL 配置及规范摘要。工具 schema 复用原模型中间件的官方 `convert_to_openai_tool()`，决定类型复用固定 SDK 的 `DecisionType`；不另建供应商转换器、消息 reducer 或审批引擎。新冻结边界要求稳定且不同的输入消息 ID，避免官方 add_messages 替换原输入；不随机补 ID。描述 callable 不可持久化，不能悄悄改为当前生成的文本。
+
+`freeze_controlled_graph_input()` 不接受 resume／continue 标志，不保存 owner token 或恢复权限。`parse_controlled_graph_input()` 在每个执行／只读边界重新校验摘要，即使传入已构造的 Pydantic 对象，也不能利用其可变嵌套字典绕过。内容摘要不是签名或授权，资产必须仍来自服务器原件；本对象也没有冒充固定用例、完整有效输入清单、RunItem attempt 或应用结果资产。
+
+`ControlledCaseGraphAdapter.execute_frozen()` 只从原资产重建值，显式传入当前已治理工具并用既有规范 JSON 摘要核对其完整 schema／顺序，避免 Python 相等判断混淆布尔值与数字；工具 iterable 只物化一次。schema 相等不证明 handler 代码／目标授权相等，工具治理、制品与 Runner 执行权继续独立校验。随后进入原 `_execute()`，在解析模型／调用策略前核对完整捕获 binding，不因 session／turn 相同就接受其他版本／Prompt／Skill／工具／制品身份。正常／native resume／continue 共用原图、根策略、预算和 sync saver，不新增第二个循环。决定是调用方独立提供的受治理控制输入，不从资产取得审批交付权或自动恢复资格。
+
+冻结执行将 `controlled_graph_input_sha256` 放入固定 SDK 的 invoke metadata，由官方 checkpoint codec 与原 fenced saver 保存为内容引用。已有 checkpoint 必须引用同一资产；无引用的旧 checkpoint 不得被新资产收编。发现已有 checkpoint 后拒绝再次提交初次输入，只接受显式 resume／continue；没有 checkpoint 的裸资产也不获得继续资格。这是读取原件后的顺序检查，不是正式 case 的原子受理／CAS，不证明并发调用幂等，也不授予审批交付权。
+
+原 `open_native_reader()`／`native_schema()` 现在也消费该对象或其 JSON 字典：先校验完整资产与原 source binding，再打开 source-only provider；不重构工具或解析当前模型。解析使用独立 JSON 副本，provider await 后不重新读取调用者可能修改的 raw 字典。读者入口校验当时最新 checkpoint 的输入引用；schema builder 保持惰性、不执行 IO，其本身不是原件核验证明。同事务原件复核沿原选择器消费同一捕获资产，并检查 proof 指向的精确 checkpoint 引用，而非仅比较资产自身摘要。旧 Python 请求的窄读取接口保留，不将它升级为固定用例证明。日志为 `controlled_case_graph_input_loaded`／`controlled_case_graph_input_rejected`，只记录绑定／turn、资产摘要或错误类型，不输出 Prompt、消息、工具配置或异常正文；执行和读者失败继续使用原拒绝日志。
+
+本步仅为内部受控图 checkpoint metadata 增加上述引用，没有发布既有 message stage、AgentTask、RunItem 或 outbox 的新格式写者，也没有将 Deep Agents codec 偷换为 union。现有 Worker／Runtime 仍拒绝 langgraph；正式 RunItem 输入／上下文封存、AgentTask 自身 attempt 与 RunItem 原执行 attempt 的双归属、专用受理命令、投影和发布兼容能力仍须接通。`tests/test_controlled_case_graph_input.py` 的真实 PG／根账本和四种官方协议只连接本地合成 HTTP，工具为测试 callback；原生批准／拒绝不代表业务审批授权。结果和限制见实施记录 §183。
 
 ### 原路由与恢复验证
 

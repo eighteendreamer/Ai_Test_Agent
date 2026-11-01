@@ -99,6 +99,13 @@ def require_native_terminal_original(cur, settings, source, native, preparation)
     _require(native.proof.binding_fingerprint == source.binding.fingerprint
         and native.proof.thread_id == source.binding.thread_id and native.proof.checkpoint_namespace == "",
         "Original native proof differs from its bound source")
+    frozen_input = None
+    if source.binding.runtime_kind == "langgraph":
+        from src.schemas.controlled_case_graph_input import ControlledCaseGraphInputAsset, parse_controlled_graph_input
+
+        if isinstance(preparation, (dict, ControlledCaseGraphInputAsset)):
+            frozen_input = parse_controlled_graph_input(preparation)
+            preparation = frozen_input
     # Use the SAME application connection. A nested savepoint restores the
     # transaction-local search_path even if an SDK query fails; no pool/setup,
     # checkpoint-table mutation or second materialization algorithm is needed.
@@ -114,6 +121,11 @@ def require_native_terminal_original(cur, settings, source, native, preparation)
         checkpoint = reader.get_tuple(config)
         snapshot = graph.get_state(config, subgraphs=True)
         native_cur.execute("SELECT set_config('search_path', %s, true)", (path,))
+    if frozen_input is not None:
+        try:
+            frozen_input.require_checkpoint(checkpoint)
+        except ValueError as exc:
+            raise FrameworkMessageStageRecoveryRequired("Original native checkpoint differs from its frozen input") from exc
     _require(checkpoint is not None and not checkpoint.pending_writes
         and native.proof.serializer == type(reader.serde).__module__ + "." + type(reader.serde).__qualname__
         and _native_hash(reader.serde, checkpoint.checkpoint) == native.proof.checkpoint_sha256
