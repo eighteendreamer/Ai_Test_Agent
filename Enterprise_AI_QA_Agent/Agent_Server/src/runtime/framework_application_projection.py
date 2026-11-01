@@ -8,7 +8,7 @@ resource cleanup and arbitrary external effects. It never permits graph replay.
 from __future__ import annotations
 
 import asyncio
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from src.infrastructure.postgres_runtime import postgres_connect
 from src.infrastructure.storage_utils import make_json_safe
@@ -47,6 +47,7 @@ class FrameworkProjectionWrite:
     snapshot_sha256: str
     output_message_id: str | None
     runtime_result_asset_sha256: str | None = None
+    controlled_case_native: object | None = field(default=None, repr=False, compare=False)
 
 
 def _require(condition, message):
@@ -208,14 +209,15 @@ def prepare_snapshot_projection(cur, settings, write, snapshot):
     LangGraph persistence, integration plan v3 §12.1 A2-1): a native checkpoint
     is not a receipt for the platform's separately allocated snapshot row.
     """
-    from src.runtime.framework_runtime_results import lock_runtime_result_stage, validate_runtime_result, RESULT_KEY
+    from src.runtime.framework_runtime_results import RESULT_KEY
+    from src.runtime.framework_projection_source import lock_projection_source, validate_projection_result
 
     owner, binding = write.owner, write.owner.binding
-    stage, task = lock_runtime_result_stage(cur, settings, owner)
+    stage, task = lock_projection_source(cur, settings, write)
     manifest = stage.source_manifest or {}
     _require(COMMIT_KEY not in manifest, "Committed application snapshot must use ACK recovery")
     _require(manifest.get(RESULT_KEY) is not None, "Runtime result snapshot has no original asset")
-    asset = validate_runtime_result(cur, settings, owner, stage, task, manifest[RESULT_KEY])
+    asset = validate_projection_result(cur, settings, owner, stage, task, manifest[RESULT_KEY])
     _require(write.runtime_result_asset_sha256 == asset.asset_sha256
         and write.snapshot_id == snapshot.id
         and snapshot.model_dump(mode="json") == asset.runtime_result.snapshot.model_dump(mode="json")
@@ -234,10 +236,9 @@ def record_snapshot_projection(cur, settings, write, stage):
         snapshot_id=write.snapshot_id, snapshot_sha256=_hash(snapshot))
     manifest = dict(stage.source_manifest or {})
     manifest[SNAPSHOT_COMMIT_KEY] = receipt.model_dump(mode="json")
-    updated = validate_message_stage(stage.model_copy(update={"schema_version": max(8, stage.schema_version),
-        "source_manifest": manifest, "source_sha256": approval_value_hash(manifest)}).model_dump())
-    cur.execute(f"UPDATE {message_stage_table(settings)} SET record=%s::jsonb WHERE task_id=%s",
-        (updated.model_dump_json(), stage.task_id))
+    from src.runtime.framework_projection_source import save_projection_manifest
+
+    save_projection_manifest(cur, settings, stage, manifest, message_version=8)
     return snapshot
 
 
@@ -286,14 +287,15 @@ def prepare_event_projection(cur, settings, write, event):
     LangGraph persistence/interrupts, plan v3 §12.1 A2-1): event delivery IDs
     alone do not prove that the original application projection is unchanged.
     """
-    from src.runtime.framework_runtime_results import lock_runtime_result_stage, validate_runtime_result, RESULT_KEY
+    from src.runtime.framework_runtime_results import RESULT_KEY
+    from src.runtime.framework_projection_source import lock_projection_source, validate_projection_result
 
     owner, binding = write.owner, write.owner.binding
-    stage, task = lock_runtime_result_stage(cur, settings, owner)
+    stage, task = lock_projection_source(cur, settings, write)
     manifest = stage.source_manifest or {}
     _require(COMMIT_KEY not in manifest, "Committed application events must use ACK recovery")
     _require(manifest.get(RESULT_KEY) is not None, "Event projection has no original runtime result")
-    asset = validate_runtime_result(cur, settings, owner, stage, task, manifest[RESULT_KEY])
+    asset = validate_projection_result(cur, settings, owner, stage, task, manifest[RESULT_KEY])
     _require(write.runtime_result_asset_sha256 == asset.asset_sha256 and event.session_id == binding.session_id,
         "Event projection differs from its runtime result")
     originals = [item for item in asset.runtime_result.events if item.id == event.id]
@@ -345,10 +347,9 @@ def record_event_projection(cur, settings, write, event, stage, *, inserted):
         runtime_result_asset_sha256=write.runtime_result_asset_sha256, event_hashes=hashes)
     manifest = dict(stage.source_manifest or {})
     manifest[EVENT_COMMITS_KEY] = receipt.model_dump(mode="json")
-    updated = validate_message_stage(stage.model_copy(update={"schema_version": max(9, stage.schema_version),
-        "source_manifest": manifest, "source_sha256": approval_value_hash(manifest)}).model_dump())
-    cur.execute(f"UPDATE {message_stage_table(settings)} SET record=%s::jsonb WHERE task_id=%s",
-        (updated.model_dump_json(), stage.task_id))
+    from src.runtime.framework_projection_source import save_projection_manifest
+
+    save_projection_manifest(cur, settings, stage, manifest, message_version=9)
 
 
 def require_event_projections(cur, settings, stage, binding, asset_sha256, required_ids=()):

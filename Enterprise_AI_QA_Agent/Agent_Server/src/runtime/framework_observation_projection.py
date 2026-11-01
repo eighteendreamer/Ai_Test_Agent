@@ -11,8 +11,8 @@ import logging
 
 from src.infrastructure.postgres_runtime import postgres_connect
 from src.runtime.framework_application_projection import COMMIT_KEY, _hash, _require
-from src.runtime.framework_message_stages import message_stage_table, validate_message_stage
-from src.runtime.framework_runtime_results import RESULT_KEY, lock_runtime_result_stage, validate_runtime_result
+from src.runtime.framework_runtime_results import RESULT_KEY
+from src.runtime.framework_projection_source import lock_projection_source, validate_projection_result, save_projection_manifest
 from src.schemas.framework_approval import approval_value_hash
 from src.schemas.framework_observation_projection import FrameworkObservationAsset, FrameworkObservationCommits
 
@@ -47,18 +47,15 @@ def observation_commits(stage, asset):
 
 def _save_stage(cur, settings, stage, values):
     manifest = {**stage.source_manifest, **values}
-    updated = validate_message_stage(stage.model_copy(update={"schema_version": max(10, stage.schema_version),
-        "source_manifest": manifest, "source_sha256": approval_value_hash(manifest)}).model_dump())
-    cur.execute(f"UPDATE {message_stage_table(settings)} SET record=%s::jsonb WHERE task_id=%s",
-        (updated.model_dump_json(), stage.task_id))
+    save_projection_manifest(cur, settings, stage, manifest, message_version=10)
 
 
 def _locked_projection(cur, settings, write):
-    stage, task = lock_runtime_result_stage(cur, settings, write.owner)
+    stage, task = lock_projection_source(cur, settings, write)
     manifest = stage.source_manifest or {}
     _require(COMMIT_KEY not in manifest, "Committed observations must use ACK recovery")
     _require(RESULT_KEY in manifest, "Observation projection has no original runtime result")
-    result = validate_runtime_result(cur, settings, write.owner, stage, task, manifest[RESULT_KEY])
+    result = validate_projection_result(cur, settings, write.owner, stage, task, manifest[RESULT_KEY])
     _require(result.asset_sha256 == write.runtime_result_asset_sha256, "Observation runtime result changed")
     return stage, result
 

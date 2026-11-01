@@ -11,6 +11,8 @@ from src.schemas.run_management import RunPlanSnapshotIdentity
 from src.schemas.runtime_binding import RuntimeBinding
 from src.schemas.framework_runtime_result import ControlledCaseRuntimeResultAsset
 from src.schemas.framework_approval import approval_value_hash
+from src.schemas.framework_projection_commit import FrameworkSnapshotProjectionCommit, FrameworkEventProjectionCommits
+from src.schemas.framework_observation_projection import FrameworkObservationAsset, FrameworkObservationCommits
 
 
 CONTROLLED_CASE_ADMISSION_KEY = "controlled_case_admission"
@@ -82,12 +84,50 @@ class ControlledCaseResultCheckpoint(BaseModel):
         return self
 
 
+class ControlledCaseProjectionReceipts(BaseModel):
+    """Only existing application part receipts; not a final commit or replay right."""
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    snapshot_projection_commit: FrameworkSnapshotProjectionCommit | None = None
+    event_projection_commits: FrameworkEventProjectionCommits | None = None
+    observation_projection_asset: FrameworkObservationAsset | None = None
+    observation_projection_commits: FrameworkObservationCommits | None = None
+
+
+class ControlledCaseProjectionCheckpoint(ControlledCaseResultCheckpoint):
+    schema_version: Literal[3]
+    projection_receipts: ControlledCaseProjectionReceipts
+
+    @model_validator(mode="after")
+    def require_part_identities(self):
+        asset, parts = self.runtime_result_asset, self.projection_receipts
+        for receipt in (parts.snapshot_projection_commit, parts.event_projection_commits, parts.observation_projection_asset):
+            if receipt is not None and (receipt.binding_fingerprint != asset.binding.fingerprint
+                or receipt.runtime_result_asset_sha256 != asset.asset_sha256):
+                raise ValueError("Controlled projection part differs from its original result")
+        observations, commits = parts.observation_projection_asset, parts.observation_projection_commits
+        if ((observations is None) != (commits is None)
+            or (commits is not None and (commits.binding_fingerprint != asset.binding.fingerprint
+                or commits.observation_asset_sha256 != observations.asset_sha256))):
+            raise ValueError("Controlled observation parts have no matching original preparation")
+        return self
+
+
+def read_result_checkpoint(attempt) -> ControlledCaseResultCheckpoint | None:
+    if attempt.checkpoint_version == 1:
+        return None
+    reader = {2: ControlledCaseResultCheckpoint, 3: ControlledCaseProjectionCheckpoint}.get(attempt.checkpoint_version)
+    if reader is None:
+        raise ValueError("RunItem has no supported controlled result checkpoint")
+    return reader.model_validate(attempt.checkpoint_payload)
+
+
 def read_admission_checkpoint(attempt) -> ControlledCaseAdmissionCheckpoint:
     """Read the original reservation only; inherited attempts need reconciliation."""
-    if attempt.checkpoint_key != CONTROLLED_CASE_ADMISSION_KEY or attempt.checkpoint_version not in {1, 2}:
+    if attempt.checkpoint_key != CONTROLLED_CASE_ADMISSION_KEY or attempt.checkpoint_version not in {1, 2, 3}:
         raise ValueError("RunItem has no supported original controlled case admission checkpoint")
-    checkpoint = (ControlledCaseResultCheckpoint.model_validate(attempt.checkpoint_payload).admission
-        if attempt.checkpoint_version == 2 else ControlledCaseAdmissionCheckpoint.model_validate(attempt.checkpoint_payload))
+    result = read_result_checkpoint(attempt)
+    checkpoint = result.admission if result is not None else ControlledCaseAdmissionCheckpoint.model_validate(attempt.checkpoint_payload)
     if ((checkpoint.run_id, checkpoint.run_item_id, checkpoint.run_item_execution_attempt_id)
         != (attempt.run_id, attempt.run_item_id, attempt.id)
         or checkpoint.plan_snapshot_identity != attempt.plan_snapshot_identity

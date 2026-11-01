@@ -304,12 +304,15 @@ class PostgresSessionStore:
                     "task_id": framework_projection.owner.task_id,
                 })
             return actual
-        except Exception:
+        except (Exception, asyncio.CancelledError) as exc:
             if framework_projection is not None:
                 LOGGER.warning("framework_snapshot_projection_rejected", extra={
                     "session_id": session_id, "snapshot_id": snapshot.id,
                     "binding_id": framework_projection.owner.binding.binding_id,
                     "task_id": framework_projection.owner.task_id,
+                    "error_type": type(exc).__name__,
+                    "recovery_reason": "snapshot_write_receipt_unknown",
+                    "automatic_replay": False,
                 })
             raise
 

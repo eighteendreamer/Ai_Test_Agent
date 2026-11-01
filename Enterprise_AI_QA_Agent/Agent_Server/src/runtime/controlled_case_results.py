@@ -16,7 +16,7 @@ from src.infrastructure.postgres_runtime import postgres_connect
 from src.runtime.controlled_case_result_reader import ControlledCaseResultReader, _require
 from src.runtime.postgres_runtime_owner import assert_runtime_owner, configure_runtime_owner_transaction
 from src.runtime.framework_application_projection import _model_hash, _tool_hash
-from src.schemas.controlled_case_admission import ControlledCaseResultCheckpoint
+from src.schemas.controlled_case_admission import ControlledCaseResultCheckpoint, read_result_checkpoint
 from src.schemas.controlled_case_task_input import ControlledCaseFinalizationTaskInputAsset, parse_controlled_case_task_input
 from src.schemas.framework_approval import approval_value_hash
 from src.schemas.framework_runtime_result import ControlledCaseRuntimeResultAsset, FrameworkRuntimeResult
@@ -88,28 +88,10 @@ class ControlledCaseResults:
             material = FrameworkRuntimeResult.from_result(result).model_dump(mode="json")
             _require(supplied is None or supplied == material,
                 "Controlled result asset differs from its deterministic original projection")
-            previous = (ControlledCaseResultCheckpoint.model_validate(locked.attempt.checkpoint_payload)
-                if locked.attempt.checkpoint_version == 2 else None)
+            previous = read_result_checkpoint(locked.attempt)
             if previous is not None:
-                asset = previous.runtime_result_asset
                 # Retained verifications are reused, never rebuilt on reentry.
-                _require(asset.runtime_result.model_dump(mode="json") == material
-                    and asset.assistant_message_id == original.runtime_preparation.identity.assistant_message_id
-                    and asset.user_message == original.context.objective
-                    and asset.projection_at == result.events[-1].timestamp
-                    and (asset.task_id, asset.attempt_id, asset.owner_epoch)
-                        == (owner.task_id, owner.attempt_id, owner.owner_epoch)
-                    and asset.model_calls_sha256 == _model_hash(cur, settings, binding)
-                    and asset.tool_jobs_sha256 == _tool_hash(cur, settings, binding),
-                    "Controlled result asset original execution facts changed")
-                from src.runtime.framework_application_projection import _require_event_intent
-
-                event = _retention_event(previous)
-                cur.execute(f"SELECT * FROM {settings.database.postgres_event_table} WHERE session_id=%s AND id=%s",
-                    (binding.session_id, event.id))
-                row = cur.fetchone()
-                _require(row is not None, "Controlled result asset has no atomic retention receipt")
-                _require_event_intent(row, event)
+                asset = require_retained_case_asset(cur, settings, owner, original, previous, material)
                 assert_runtime_owner(cur, settings, owner)
                 return asset
             _require(supplied is not None, "Controlled original result asset is missing")
@@ -140,3 +122,26 @@ class ControlledCaseResults:
             tasks._sessions.append_event_in_transaction(cur, binding.session_id,
                 _retention_event(checkpoint), runtime_owner=owner)
             return asset
+
+
+def require_retained_case_asset(cur, settings, owner, original, checkpoint, material):
+    """Shared original retention checks, AFTER the complete result reader."""
+    asset, binding = checkpoint.runtime_result_asset, owner.binding
+    _require(asset.runtime_result.model_dump(mode="json") == material
+        and asset.assistant_message_id == original.runtime_preparation.identity.assistant_message_id
+        and asset.user_message == original.context.objective
+        and asset.projection_at == asset.runtime_result.events[-1].timestamp
+        and (asset.task_id, asset.attempt_id, asset.owner_epoch)
+            == (owner.task_id, owner.attempt_id, owner.owner_epoch)
+        and asset.model_calls_sha256 == _model_hash(cur, settings, binding)
+        and asset.tool_jobs_sha256 == _tool_hash(cur, settings, binding),
+        "Controlled result asset original execution facts changed")
+    from src.runtime.framework_application_projection import _require_event_intent
+
+    event = _retention_event(checkpoint)
+    cur.execute(f"SELECT * FROM {settings.database.postgres_event_table} WHERE session_id=%s AND id=%s",
+        (binding.session_id, event.id))
+    row = cur.fetchone()
+    _require(row is not None, "Controlled result asset has no atomic retention receipt")
+    _require_event_intent(row, event)
+    return asset

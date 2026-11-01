@@ -9087,3 +9087,79 @@ v4 E／§9.2–9.4、§12.1 → 本节 → 上述 19 文件 → 真实红绿、�
 下一依赖是将本原资产接入**唯一** Session finalizer 的正式 case 来源／分项原意图与回执，再接原 Assessment／证据和 RunItem fenced 原子完成、业务审批继续、失租恢复／独立进程、兼容 Worker／main 与逐模式验收。本步已经留存 Verification 输入与结果，但没有正式 Session Verification 分项写入／最终提交、Assessment 或 RunItem 完成事务，不能因资产存在就裁决通过或调用 finish。旧失败保留，回归创建新运行，不重置原任务／RunItem，不重跑原图。
 
 剩余 A2/A3/B/C/D/E/F、H01–H12、逐模式完整有效输入／质量、空结构化结果／流式／取消等未收口项与历史异常仍保留，整体 goal 维持 active，不标 complete。未运行 Docker、未新增付费调用或外部目标测试、未改实际 .env／生产路由；只由原 fixture 清理本轮自有随机隔离资源。整体剩余仍粗估 **4–8 周有效开发／验收**，外部授权、环境准备和人工发布等待另计，非交付承诺；首个正式 case 唯一 finalizer 闭环和 E3／E4 清单收口后再重估。
+
+## 192. E／§9.4、§12.1：正式 case 复用共享投影分项与原 attempt 回执（2026-11-02）
+
+### 续接、依据与边界
+
+续接 25d1896e9／§191，重读 v4 §9／§12.1、§52 与后续最新记录，并审阅本轮未提交草稿和原调用链。用户 v3 草稿 SHA256 仍为 8A43E94160767A0DE20740F2CB30782F06322CBC3467076DFCB120D4EFDF1AD4，不修改、不暂存；435d9cf7c 的 Conda／pip 迁移不重复执行。§181 四项及 §159／160／166 等历史异常不因本组绿色被撤销。
+
+原 snapshot／event／observation writer 从真实 message-stage 取得结果和分项回执；正式 case 资产在原 RunItem attempt，不能伪造 message-stage 填补来源差异。这是共享写入器的来源端口缺口，不是再复制一套 finalizer。本步只把这些原分项写入器接到原正式来源，并保留同事务回执；没有接入唯一 `_finalize_runtime_result` 的正式来源入口、Session 消息／Verification／最终应用提交、Assessment 或 RunItem 完成。不把部分证明当完成资格，不开生产路由。
+
+依据 → 采用方式：
+
+- 原 framework_application_projection 的 snapshot／event prepare、实际行校验和 receipt，以及 framework_observation_projection 的一次准备／Memory 行回执 → 提取共同来源的 lock／validate／save 端口，原写入算法继续共用，普通 message 路径和最终应用提交保持不变。
+- §190–191 ControlledCaseResultReader.read_in_transaction、原资产／稳定留存事件检查和双 owner fence → 每个正式分项在同一连接完整重读原 native／输入预算／模型账本／ToolJob／事件集合后核留存资产，不仅核 hash 或最后文本；写前再次按 DB clock 核租约。
+- 原 RunItem attempt checkpoint 与 strict Worker codec → checkpoint 3 包装部分回执，保留原 admission、结果、retained_at、key 和 checkpoint_at；同步能力上限，旧读者 defer，不增加表／调度层／公开 DTO。
+- 原 ControlledCaseResults 的 asyncio.to_thread 未知回执日志及 PostgresSessionStore 原 logger → snapshot 等待者取消仍抛 CancelledError，同时明确未知状态，不声称 DB 线程停止或自动重放。
+- 本地《Agent轨迹与协议鲁棒性》的结果＋轨迹、幂等／恢复边界，以及《评测工程化与CICD》的版本化基线 → 用正式来源、漂移反例、数据库事务故障与稳定源码采样验证，不覆盖历史失败或已完成结果。
+
+本轮生产文件：controlled_case_results、framework_application_projection、framework_observation_projection、framework_worker_capabilities、postgres_session_store、schemas/controlled_case_admission，新增 runtime/framework_projection_source；新增 test_controlled_case_projection_parts，更新 runtime-route-controls 和本记录。main／CLI／Dispatcher、DDL、前端源码、依赖／实际 .env 和默认 controlled_case_available=false 均未改。
+
+### 来源、格式与证明范围
+
+`FrameworkProjectionWrite.controlled_case_native` 是默认 None 的内存字段，repr／compare 排除；只带精确官方原生材料，不是持久格式、替代原件或新执行权。显式 ControlledCaseProjectionSource 不是 FrameworkMessageStage，只给原分项算法提供原结果＋部分回执的逻辑视图。正式来源锁原双 owner、任务和 attempt，读取持久 schema 4 输入，复用完整 reader 同连接重读并确定性投影，随后核原留存资产与稳定 test_run.case_result_prepared。缺 native、剥离第二 owner、失租或任一原件漂移拒绝。原消息来源仍调用 lock_runtime_result_stage／validate_runtime_result。
+
+checkpoint 3 新增严格 projection_receipts，复用现有 FrameworkSnapshotProjectionCommit／FrameworkEventProjectionCommits／FrameworkObservationAsset／FrameworkObservationCommits；绑定与原结果摘要一致，观察资产和回执成对。保存只允许上述分项，不替换原结果；不能对整个原资产递归 exclude_none，否则会改变已 hash 原件。原 admission、资产、retained_at 和 checkpoint_at 不变，原 key 不变。写前再次核双租约，日志 controlled_case_projection_parts_recorded 明确 application_finalized=false。普通 message-stage 的原 max8／9／10 与 SQL 保存语义不变；record_application_commit／load_committed_projection 仍是原 message 路径，未为正式 case 开通。
+
+snapshot 实际行与回执同事务；合法数据库分配 version 不修改冻结意图。重入核完整物理行 hash，缺失／内容／版本／时间漂移拒绝。原 Runtime 事件可在完整原行核验后记录分项回执；派生事件要求稳定身份／原投影时间与原回执，已有裸行不收养。观察沿用原 ObservationRuntimeService／MemoryRuntimeService，一次准备原观察与写请求；再次准备禁用 builder 仍复用原件，真实 Memory 行与回执同事务、重复不改原行，缺失／漂移／裸行不修复或收养。并发 snapshot＋event 在原锁内合并，不覆盖其他回执。
+
+Worker checkpoint 上限 2→3，input 上限仍 4，strict codec 同步；原 checkpoint 1／2 可读，reader2 遇到3、未来部分字段、未来 version4 均 defer，原事实摘要不变。兼容测试不是双制品滚动部署。原结果在 checkpoint3 下仍可 load，未再次执行图／模型／工具，也没有创建 message-stage／持久消息／正式 case result；原任务仍 running，finish(completed) 继续要求唯一 finalizer。
+
+### TDD、中间失败与根因
+
+首条正式分项红测实际 **1 failed，13.15 秒**：FrameworkMessageStageRecoveryRequired（Runtime result has no message stage）。新增显式正式来源，而不是假造 stage 或放宽原检查。
+
+实现后的夹具断言先后实际 **1 failed，13.38 秒**、**1 failed，13.00 秒**：前者把持久 JSON untyped state 与 Python datetime 整体比较，后者仍把 aware snapshot intent 与 UTC-naive Store DTO header 等同。查证原 _snapshot_from_row→ensure_utc_datetime 契约，只修测试：非 created_at 的完整 JSON 相等、DTO 时间按既有 UTC-naive 契约相等，同时查真实 TIMESTAMPTZ 行等于原 aware 时间，并核完整物理行 hash。没有修改生产时间语义或忽略时间。新增物理行检查又实际 **1 failed，12.61 秒**：RowMapping 不能直接 JSON 序列化；按原 _snapshot 的 dict(row) 方式修夹具。
+
+其后早期源码专项 **23 passed，119.86 秒**，不当作最终扩展32项结果。扩展 generated event／观察漂移与回滚、写后失租、取消日志后，定向取消红测实际 **1 failed、31 deselected，12.81 秒**：缺 recovery_reason=snapshot_write_receipt_unknown／automatic_replay=false。根因是 save_snapshot 只捕获 Exception，漏掉 CancelledError，但后台 SQL 线程并不随协程停止。沿原 logger 捕获 Exception／CancelledError 并原样 re-raise，记错误类型与未知回执、不重试、不伪称回滚；提交后 ACK 丢失同样不假定数据库未提交。
+
+修复后新专项实际 **32 passed，169.25 秒，exit 0，无 skip／deselect**。取消用例先取消等待者，再释放并等后台 DB 线程真实结束，核已提交的原 snapshot 与 checkpoint3，不把 asyncio 取消当停止证明。snapshot SQL 失败回滚、提交后 ACK 丢失、观察行／回执回滚、snapshot insert 后失租回滚均由隔离真实 PG 事务实测。本组不是独立 case Worker 强杀或失租恢复授权。
+
+### 最终源码验证
+
+每条 backend pytest 前执行 scripts/clear_uv_environment.ps1 -ProcessOnly，固定 E:\MiniConda3\envs\Agent\python.exe，PYTHONIOENCODING=utf-8、RUN_LIVE_POSTGRES_TESTS=1、RUN_LIVE_REDIS_TESTS=1、RUN_LIVE_DOCKER_TESTS=0、RUN_LIVE_MYSQL_TESTS=0、QA_FRAMEWORK_WORKER_DIAGNOSTICS=1。只用已运行且获授权的服务，不启动／重启服务、不使用 UV。工作目录 Agent_Server：
+
+~~~powershell
+& E:\MiniConda3\envs\Agent\python.exe -u -m pytest tests/test_controlled_case_projection_parts.py tests/test_controlled_case_result_asset.py tests/test_controlled_case_result.py tests/test_controlled_case_runtime.py tests/test_controlled_case_executor.py tests/test_controlled_case_task_input.py tests/test_controlled_case_admission.py tests/test_controlled_case_execution_lease.py -q -x -rs --tb=short --log-level=INFO
+~~~
+
+实际 **298 passed，938.30 秒，exit 0，无 skip／deselect**，包含本轮新专项全部32项，以及正式四协议执行／投影、原资产／Verification 输入留存、受理与双租约、格式兼容和原件漂移。日志 .codex-logs/e192-formal-final.log 只作为本地执行证据，不提交。未以等待超时重启命令，原 handle 取得终态。
+
+四个 RUN_LIVE 开关全为0，单跑 tests/test_controlled_case_projection_parts.py 的同一 pytest 参数，实际 **32 skipped，7.48 秒，exit 0**；只证明 opt-in 边界，不计通过。项目根固定 Python 的 compileall -q Agent_Server/src Agent_Server/tests、pip check 均 exit 0，pip 报 No broken requirements found；ruff／mypy 未安装，未新增依赖，未执行独立 backend lint／typecheck。
+
+工作目录 agent_web，npm.cmd run typecheck 实际 exit 0；以下事件消费回归实际 **18 passed，2.45 秒，exit 0**：
+
+~~~powershell
+npm.cmd run test -- src/components/chat/ExecutionTrace.eventCompletion.test.ts src/stores/sessionEventRefresh.test.ts src/features/flow/useFlowSession.lifecycle.test.ts
+~~~
+
+共享分项、普通消息与原部分投影恢复路径在主组取得终态后串行运行，同一最终 Python 源码／测试不变，backend 环境同上：
+
+~~~powershell
+& E:\MiniConda3\envs\Agent\python.exe -u -m pytest tests/test_framework_snapshot_projection.py tests/test_framework_event_projection.py tests/test_framework_observation_projection.py tests/test_framework_runtime_result_asset.py tests/test_framework_application_projection.py tests/test_framework_finalization_projection.py tests/test_framework_partial_projection_recovery.py tests/test_agent_v2_worker_contract.py tests/test_framework_route_rollback.py -q -x -rs --tb=short --log-level=INFO
+~~~
+
+实际 **611 passed，889.68 秒，exit 0，无 skip／deselect**。原 snapshot／event／observation、结果资产、唯一 Session 投影与最终提交、部分投影后继、Worker／路由契约未删断言；不把原 message 后继测试当正式 case 恢复验收。日志 .codex-logs/e192-shared-final.log 不提交，原 handle 已取得终态，两组不累计冒充独立更高级证据。
+
+src 聚合 SHA256 为 9a02624583312d8e97f2cadbc19581523279a9781e1b35f510d68600a9e3deab（863 个 Python 文件），tests 为 96da9b989f3e61b27dc7ace35d15d06de7bc4fdfec9c5392b20284261f1e344b（663 文件）；新专项为 36fdee23a2724cca307924a73b3c223c451c8f3d13b4b6a0ef506bf03dc9e579。按相对 POSIX 路径排序，UTF-8 路径＋NUL＋原文件字节＋NUL；最终主组前、主组运行中／结束后、共享组结束后采样一致，无运行中改源码／测试。v3 草稿 hash 不变；终态检查无本轮两组 pytest 进程残留。git diff --check 通过，只有既有 LF→CRLF 提示；新增行敏感模式扫描未发现匹配，完整 diff 与暂存范围另核，不把模式扫描视为安全审计。
+
+正式来源由原服务在真实隔离 PG 完成草稿／评审／启用、Suite／计划 Run、原 RunItem claim／start、受理与双租约 claim／begin；真实 Redis、固定官方 SDK／LangGraph／PostgresSaver、模型账本／ToolJob／事件、Verification 与 Observation／Memory builder。本轮观察物理行为真实 PostgresVectorMemoryStore／pgvector，未装 embedding；模型 HTTP 对端、handler、规划／配置／Memory／MCP／文档检索等端口是明确的本地合成或替身，不冒充真实供应商／业务领域请求。未做付费供应商／embedding／RustFS／领域 Runner、正式 case 独立 Worker 强杀、全资源 main、E3／E4 双制品／备份恢复、全量前后端、前端 build／浏览器、独立 backend lint／typecheck 或性能基线验收。
+
+### 对应、提交与下一步
+
+v4 E／§9.4、§12.1 → 本节 → 上述7个生产文件＋新专项＋2份文档，共10文件 → 真实红绿、最终298／611项回归、18项前端与类型／compileall／pip check → 独立提交“【feat】接通正式用例共享投影分项与原件回执”，实际 ID 见 Git 与本轮交付。提交前检查完整 status／diff／暂存清单，忽略的新测试只对具体文件 git add -f，不改 ignore，不纳入 v3／日志／认证／测试制品，不推送或创建 PR。
+
+下一依赖是将同一原结果资产、原来源端口与分项回执接入唯一 `_finalize_runtime_result` 的正式 case 入口；再补消息／Session Verification／最终应用提交、正式 Assessment／证据与 RunItem fenced 原子完成，随后业务审批继续、失租恢复／独立进程、兼容 Worker／main 与逐模式验收。本步没有第二 finalizer，也没有正式 Session completion／RunItem 完成，不能把部分回执变成 passed 或 finish 权限。旧失败保留，回归创建新运行，原任务／RunItem 不重置，不自动重跑原图。
+
+完整 v4 剩余 A2/A3/B/C/D/E/F、H01–H12、逐模式完整有效输入／质量、空结构化结果／流式／取消未收口项与历史异常继续保留，整体 goal 仍 active，不标 complete。未运行 Docker、启动／重启服务、新增付费调用或外部目标测试，未改实际 .env／生产路由，仅 fixture 清理本轮自有随机隔离资源。整体剩余仍粗估 **4–8 周有效开发／验收**，外部授权、环境及人工发布等待另计，非承诺；不能用本分项通过替代尚未完成的正式闭环和 E3／E4 出口来缩短估算。

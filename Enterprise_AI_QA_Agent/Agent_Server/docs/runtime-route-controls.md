@@ -332,15 +332,45 @@ schema 2 只执行、schema 3 只投影，不能静默获得 schema 4 的留存�
 `checkpoint_at`／admission 事实不变；`retained_at` 使用本次实际 DB 留存时间，不冒充图结束时间。
 同事务追加稳定身份的 `test_run.case_result_prepared` 审计回执，绑定原资产摘要，
 `application_finalized=false`；它不是 completion 事件或业务裁决。claim 前与锁内均检查
-`controlled_case_input_max_version=4`／`controlled_case_checkpoint_max_version=2` 与 strict codec，
+`controlled_case_input_max_version=4`／checkpoint strict codec（§191 上限 2，当前上限 3，见下节），
 旧能力或未来格式 defer、不改原件；默认 `controlled_case_available=false` 不变，
 本兼容测试不是双制品部署验收。
 
 同一 live 双租约下的 `load_controlled_case()`／重复 freeze 复核原件、资产与原审计回执，
 复用已留存 Verification，不重新调用 builder。未知提交、协程等待者取消或 ACK 丢失不得自动
 重跑图／模型／工具，也不能声称同步 DB 线程已停止。审批等待仍无 result_asset；
-原 `finish(completed)` 仍拒绝。这里没有 Session 分项写入、正式 Assessment／RunItem 完成、
+原 `finish(completed)` 仍拒绝。本留存端口不承担 Session 分项写入、正式 Assessment／RunItem 完成、
 失租恢复许可、独立 case Worker 强杀或 main／CLI／生产 Dispatcher 接线。
+
+### 正式 case 共享分项写入与原 attempt 回执（内部端口）
+
+§192 为原 snapshot／event／observation writer 增加显式正式来源端口，不复制算法或新增 finalizer。
+`FrameworkProjectionWrite.controlled_case_native` 仅传递内存中的精确官方原生读材料，默认 None；
+不是持久字段或公开 DTO，不从文本／简化 JSON 重造 native。普通 message 来源仍走原 stage，
+原 message-stage schema 8／9／10 写法与最终应用提交不变。
+
+正式来源每次在同一连接锁定原 RunItem／attempt 和 AgentTask 双 owner，读取持久 schema 4 输入，
+复用完整 `ControlledCaseResultReader.read_in_transaction()` 复核 native、预算、模型账本、ToolJob、
+有序事件集合和原投影，再核留存资产与稳定审计回执。缺 native、失租、输入或任一原件漂移拒绝，
+不绕过旧检查。写回前再次用 DB clock 核双租约，原分项行与回执同事务。
+
+原 attempt checkpoint 3 保留 admission／原结果资产／retained_at、原 key 和 checkpoint_at；
+只增加 `projection_receipts`，复用现有 snapshot、event、observation asset／commits 类型。
+观察资产与回执成对、绑定与原结果摘要严格匹配，未知字段拒读；
+`controlled_case_checkpoint_max_version=3`，旧 reader2／未来格式 defer，不修改原件。
+默认 `controlled_case_available=false` 仍不变，未做双制品滚动部署验收。
+
+snapshot 重入核实际行头、完整内容与原回执；数据库合法分配 version 不改冻结意图，DTO 时间仍遵守
+既有 UTC-naive 契约，物理 TIMESTAMPTZ 与原 aware 时间一致。runtime event 可核原行后补分项回执，
+新生成事件的裸行不可收养；观察沿用一次准备的原资产／请求，无 embedding 调用，已存在行逐项
+核内容和回执，缺失／漂移转对账，不覆盖。并发分项在原锁内合并，不丢其他回执。
+
+snapshot 等待者取消仍传播 CancelledError，并记录 `snapshot_write_receipt_unknown`、
+`automatic_replay=false`；这不是后台 DB 线程停止或事务回滚证明。提交后 ACK 丢失保留真实事实，
+不得自动重跑图／模型／工具。本步仅保存分项，`application_finalized=false`，
+没有 message-stage／业务用户行，也没有接入唯一 `_finalize_runtime_result` 的正式 case 正常／恢复入口。
+Session 消息／Verification／最终应用提交、正式 Assessment／RunItem 完成、业务审批继续、
+失租恢复／独立进程与 main／生产路由仍待，不能凭这些回执调用 finish 或判通过。
 
 ### 原路由与恢复验证
 
