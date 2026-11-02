@@ -37,7 +37,7 @@ def implementation():
 
 
 @asynccontextmanager
-async def execution(s, config, *, tools=(), gating=None, prepare_input=None):
+async def execution(s, config, *, tools=(), gating=None, prepare_input=None, claim_task=True):
     """Freeze local configuration BEFORE real admission, never edit admitted originals."""
     snapshot = ModelInvocationParameters.from_configuration(config)
     s.binding = RuntimeBinding.model_validate({**s.binding.model_dump(exclude={"fingerprint"}),
@@ -54,7 +54,7 @@ async def execution(s, config, *, tools=(), gating=None, prepare_input=None):
         "model_configurations": {config.key: snapshot},
         "model_config_fingerprints": {config.key: snapshot.fingerprint}})
     await submit(s)
-    task = await claim(s)
+    task = await claim(s) if claim_task else await s.h.tasks.get(s.command.task_id)
     policy = FrameworkModelCallPolicy(calls=s.calls, model_config_resolver=models.get_model_config)
     schema = f"formal_case_graph_{uuid4().hex}"
     s.h.settings.deep_agents.checkpoint_schema = schema

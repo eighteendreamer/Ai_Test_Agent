@@ -723,6 +723,38 @@ lifespan 回归，不把它称为完整生产启动或发布验收。通用 Work
 writer 关闭时不领取、不申请资源、不改写 Result／审计或原生产者。
 联合故障的实际范围和保留失败见实施记录 §204；生产 writer 继续关闭。
 
+### 正式 case_execute 的显式 Worker 组合（§205，writer 仍关闭）
+
+main 将 `ControlledCaseGraphAdapter`／`ControlledCaseExecutor`／`ControlledCaseRuntime`
+接入原 Dispatcher；复用原 model resolver、checkpoint provider、根模型账本、RuntimeService、
+SessionService、Assessment 和原子结算，不新建队列／调度器或打开生产开关。
+`controlled_case_available` 默认仍为 false，生产正式用例入口的受理／选路不由此开放。
+
+原 v2 durable identity／binding 核对后，case_execute 不经过通用 claim／begin／finish。
+首次执行必须在领取前具备完整 schema-4 输入、executor／saver／模型政策、唯一 finalizer／
+Assessment／结算端口与所需工具治理；不兼容或缺装配保持 pending，不分配资源。
+专用 claim 原子核原 RunItem 执行归属，再复用 agent 配额与原监控，同时续资源和捕获的
+Session／RuntimeOwner／原 RunItem 双归属，不调用 legacy Runtime interrupt。
+Executor 仍独占 running 意图、一次性原生图与事件 sink；只由原结算回执证明可 ACK。
+
+资源不足仍沿原 defer 结束本次 AgentTask Attempt、清 Session 租约；资源恢复后创建新
+AgentTask Attempt，不重置或新建原正式执行 Attempt。失租、取消、图／投影／结算异常或
+提交回执丢失不调用通用 finish/fail，不 transfer 或自动重跑。取消等待者不证明 SQL 已停止。
+原 `_monitor` 回调统一为内部 `renew_owner`；仅结算保留原 settlement 日志，新执行使用
+`agent_case_execution_renew_failed`。日志 `agent_case_execution_receipt_unknown`／
+`agent_case_execution_deferred` 保留不确定性与 automatic_replay=false。
+
+终态交付必须通过原 `ControlledCaseSettlements.acknowledge_delivery` 验证原件／回执，
+关闭 writer 或缺少当前 executor 仍可只读确认；不重建 owner、不领取、不申请资源。
+没有完整回执的终态不裸 ACK。原生审批等待尚未投影为正式业务审批，保持 running／pending，
+记录 `framework_case_approval_projection_unavailable`；不宣称完成、不恢复工具或自动续跑。
+完整正式业务审批与异常恢复仍是后续出口，不能据此开放生产 writer。
+
+`tests/test_controlled_case_dispatch.py` 验证真实隔离 PG／Redis、原 Worker 和四种固定官方 SDK
+对本机 HTTP 的图／工具／结果链路；工具 handler 与上游配置／检索为受控夹具。
+main 的组合校验是静态 AST 审计，不能替代真实完整启动、供应商／领域 Runner、独立正式执行
+Worker 强杀或 E3／E4 部署验收。最终回归、失败与边界见实施记录 §205。
+
 ### 原路由与恢复验证
 
 关闭新选路时记录 `deep_agent_new_turn_route_disabled`，带 `session_id`、`turn_id` 和 `recovery_reason=new_turn_admission_disabled`；这是路由决定，不是取消/停止回执。

@@ -60,8 +60,13 @@ async def assessment_case(formal_case, tmp_path, monkeypatch, request):
     monkeypatch.setattr(providers, "_reply", lambda selected: deepcopy(terminal))
     with providers._provider(transport, first_reply=reply) as (url, requests):
         async def prepare_input(models):
-            return await prepare(s, assembly(s, tmp_path / "assembly", models))
-        async with execution(s, providers._config(transport, url), prepare_input=prepare_input) as h:
+            p = assembly(s, tmp_path / "assembly", models)
+            if options.get("approval"):
+                descriptor = p.parts.tool_registry.get("inspect_source").model_copy(update={"permission_level": "ask"})
+                p.parts.tool_registry.register_dynamic(descriptor, "inspect_source")
+            return await prepare(s, p)
+        async with execution(s, providers._config(transport, url), prepare_input=prepare_input,
+                claim_task=not options.get("dispatch")) as h:
             effects = []
             async with business_bridge(h, effects, approval_required=False) as bridge:
                 async def handle(arguments, context):
@@ -102,11 +107,14 @@ async def assessment_case(formal_case, tmp_path, monkeypatch, request):
                 if options.get("settle"):
                     from src.runtime.controlled_case_settlement import ControlledCaseSettlements
                     kwargs["settlement_service"] = ControlledCaseSettlements(s.h.tasks)
-                result = await runtime_implementation().ControlledCaseRuntime(runtime_service=bridge.runtime,
-                    **kwargs).execute(h.task, executor=executor(s, h),
-                        resource_id="isolated-formal-assessment", fencing_token=1)
+                runner = executor(s, h)
+                if options.get("dispatch"):
+                    kwargs["executor"] = runner
+                runtime = runtime_implementation().ControlledCaseRuntime(runtime_service=bridge.runtime, **kwargs)
+                result = (None if options.get("dispatch") else await runtime.execute(h.task, executor=runner,
+                    resource_id="isolated-formal-assessment", fencing_token=1))
                 yield SimpleNamespace(s=s, h=h, result=result, requests=requests, effects=effects,
-                    bridge=bridge, receipt=receipt)
+                    bridge=bridge, receipt=receipt, runtime=runtime, executor=runner)
 
 
 async def freeze(p):

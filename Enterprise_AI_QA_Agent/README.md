@@ -263,6 +263,8 @@ Redis 是交付层，长期运行结果和证据仍在 PostgreSQL；新建消费
 
 通用 `RedisTaskWorker` 的 `ORCHESTRATION__REDIS_TASK_TIMEOUT_SECONDS` 是 Worker 等待总截止，不是数据库或外部操作的停止回执。到期记录 `redis_task_execution_deadline_unconfirmed`（`recovery_reason=execution_deadline_receipt_unknown`），取消并收拢异步等待者，保留原消息 pending；不 ACK、不创建重试消息、不因重试次数耗尽而转死信，指标计入 deferred 而非 handler failure。SQL 线程或远程操作仍可能完成，必须沿原身份查询持久结果；pending 此后可再次投递，但不授予业务重放权限，handler 仍须使用既有幂等、租约与对账规则。handler 自身抛出的 `TimeoutError` 等普通异常仍沿原 transfer／重试上限策略处理，不等同于 Worker 总截止。此变化适用于使用该通用 Worker 的全部 CLI，无需新配置或 schema；不能据此宣称各领域外部效果均已完成恢复验收。
 
+正式 `case_execute` 的原 Worker 已显式组合一次性图、完整冻结输入、唯一 Session finalizer、Assessment 与双归属原子结算，复用原资源／租约监控；默认 `controlled_case_available=false`，未开放生产写者或正式入口选路。只有完整持久结算回执才允许 ACK，重复交付可在 writer 关闭后只读确认；失权／截止／未知回复保持 pending，不通用 finish/fail 或自动重跑。原生审批等待尚无正式业务继续资格，不算执行完成。实际验证与剩余边界见[运行路由说明](Agent_Server/docs/runtime-route-controls.md)及实施记录 §205，不代表完整供应商／领域 Runner／E3／E4 验收。
+
 启用 `ORCHESTRATION__REDIS_TASK_DISPATCH_ENABLED=true` 后，普通/回归 TestRun 的运行记录、RunItem 与首次 dispatch intent 会在同一个 PostgreSQL 事务中提交；Redis 暂时不可用时不会丢失任务意图。
 
 ### 1.2 启动 Agent Turn Worker

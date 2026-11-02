@@ -44,6 +44,11 @@ class ControlledCaseGraphAdapter:
         self._checkpointer_factory = checkpointer_factory
         self._model_call_policy = model_call_policy
 
+    def require_execution_available(self):
+        if (self._model_resolver is None or self._checkpointer_factory is None
+                or self._model_call_policy is None):
+            raise ValueError("Controlled graph requires its model resolver, captured saver and model policy")
+
     @asynccontextmanager
     async def open_native_reader(self, request, *, source):
         """Inspect original native state without acquiring any execution right.
@@ -104,8 +109,8 @@ class ControlledCaseGraphAdapter:
 
     async def _execute(self, request, *, frozen_input=None):
         try:
-            if (not request.session_id or not request.turn_id or not request.model_key
-                or self._checkpointer_factory is None or self._model_call_policy is None):
+            self.require_execution_available()
+            if not request.session_id or not request.turn_id or not request.model_key:
                 raise ValueError("Controlled graph requires its request, captured saver and model policy")
             if request.resume is not None and request.continue_from_checkpoint:
                 raise ValueError("A checkpoint continuation cannot also submit a new decision")

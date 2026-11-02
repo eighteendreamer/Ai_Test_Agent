@@ -323,7 +323,7 @@ class PostgresAgentTaskStore:
         return await asyncio.to_thread(self._renew_framework_execution_sync, task, lease_seconds)
 
     async def claim_controlled_case(self, delivery, *, worker_id: str, framework_capabilities) -> AgentTaskExecution:
-        """Internal case port; the production dispatcher is not enabled by it."""
+        """Dedicated formal claim; composing the Dispatcher never enables its writer."""
         command = framework_capabilities.require_command_format(delivery)
         try:
             task = await self._claim_execution(command.task_id, worker_id,

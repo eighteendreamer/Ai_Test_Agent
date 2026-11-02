@@ -19,13 +19,16 @@ class ControlledCaseExecutor:
     adapter, v4 §9/§12.1): a native graph does not own our formal task start.
     There is no retry/resume, new claim, heartbeat loop or task completion here.
     Native outcomes are read material, NOT RuntimeTurnResult/test verdicts.
-    The caller owns resource admission/heartbeat; main/Worker do not install
-    this port until application projection and recovery contracts are ready.
+    The existing Dispatcher owns resource admission/heartbeat. Installing this
+    port does not enable the production writer or grant recovery authority.
     """
 
     def __init__(self, *, task_store, graph_adapter):
         self._tasks = task_store
         self._adapter = graph_adapter
+
+    def require_execution_available(self):
+        self._adapter.require_execution_available()
 
     async def execute(self, task, *, build_business_tools, resource_id, fencing_token, project_outcome=None):
         # Capture worker-only authority too: serialization deliberately strips

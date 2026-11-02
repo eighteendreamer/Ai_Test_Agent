@@ -178,11 +178,16 @@ from src.modes.api_testing_mode.credential_reference_service import ApiCredentia
 from src.runtime.postgres_task_outbox import PostgresTaskOutbox
 from src.runtime.postgres_agent_task_store import PostgresAgentTaskStore
 from src.runtime.controlled_case_settlement_recovery import ControlledCaseSettlementRecovery
+from src.runtime.controlled_case_assessment import ControlledCaseAssessments
+from src.runtime.controlled_case_settlement import ControlledCaseSettlements
 from src.runtime.postgres_framework_model_calls import PostgresFrameworkModelCalls
 from src.runtime.framework_worker_capabilities import FrameworkWorkerCapabilities
 from src.application.models.framework_model_call_policy import FrameworkModelCallPolicy
 from src.application.models.framework_model_evidence import FrameworkModelEvidence
 from src.application.orchestration.agent_task_dispatcher import AgentTaskDispatcher
+from src.application.runtime.controlled_case_adapter import ControlledCaseGraphAdapter
+from src.application.runtime.controlled_case_executor import ControlledCaseExecutor
+from src.application.runtime.controlled_case_runtime import ControlledCaseRuntime
 from src.application.orchestration.framework_submission_service import FrameworkReleaseSubmissionLoader
 from src.runtime.postgres_resource_allocation_store import PostgresResourceAllocationStore
 from src.runtime.postgres_browser_allocation_store import PostgresBrowserAllocationStore
@@ -902,11 +907,24 @@ async def _initialize_lifespan_resources(
     app.state.coordinator_runtime_service = coordinator_runtime_service
     app.state.session_service = session_service
     session_service.set_agent_task_store(agent_task_store)
+    controlled_case_graph_adapter = ControlledCaseGraphAdapter(
+        model_resolver=model_runtime_service.resolve_langchain_chat_model,
+        checkpointer_factory=(deep_agent_checkpoint_provider.open
+            if deep_agent_checkpoint_provider is not None else None),
+        model_call_policy=framework_model_call_policy,
+    )
+    controlled_case_executor = ControlledCaseExecutor(
+        task_store=agent_task_store, graph_adapter=controlled_case_graph_adapter)
+    controlled_case_runtime = ControlledCaseRuntime(
+        runtime_service=runtime_service, session_service=session_service,
+        assessment_service=ControlledCaseAssessments(agent_task_store),
+        settlement_service=ControlledCaseSettlements(agent_task_store), executor=controlled_case_executor)
     app.state.agent_task_dispatcher = AgentTaskDispatcher(
         settings, agent_task_store, session_service, resource_lease_manager,
         framework_capabilities=app.state.framework_worker_capabilities,
         framework_model_calls=framework_model_calls,
         controlled_case_settlements=ControlledCaseSettlementRecovery(agent_task_store),
+        controlled_case_runtime=controlled_case_runtime,
         framework_native_reader=(deep_agent_bound_runtime_adapter.open_native_reader
             if deep_agent_bound_runtime_adapter is not None else None),
         framework_submission_loader=FrameworkReleaseSubmissionLoader.from_configuration(

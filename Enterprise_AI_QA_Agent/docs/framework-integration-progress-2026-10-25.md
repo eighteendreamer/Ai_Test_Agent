@@ -9943,3 +9943,92 @@ v4 E／§12.1＋A2-3／§11 → §203 → 原Dispatcher／main受限端口、sco
 v4 E／§12.1＋A2-3／§11 → §204 → 原通用Worker截止语义、领域消费方回归、新9项联合矩阵、旧spawn诊断缺口及实际日志修复 → 最终24文件773通过与静态检查 → 中文本地fix提交，实际ID见Git与交付。共14文件（2个生产源码、8个测试／helper、4份文档）精确暂存，不提交用户v3／环境／日志，不推送、不建PR。git diff --cached --check实际通过；新增行高置信度私钥／常见API凭据模式扫描0命中，不称为完整安全审计。用户v3hash仍为`8a43e94160767a0de20740f2cb30782f06322cbc3467076dfcb120d4efdf1ad4`。
 
 该子步不代表v4全系统完成，生产writer仍关闭，旧偶发15秒进程超时未有首因证明，本次轻量入口和单次复验不包装成根因修复。后续仍需逐模式入口与质量、业务审批、真实供应商／领域Runner、A3完整外部补偿与资源清理、E3／E4制品、一致备份恢复和性能基线；通用handler自己的异常分类／跨领域副作用恢复也不能由本步推断已闭合。完整v4及H01–H12范围不缩小，goal保持active，整体剩余仍粗估4–8周有效开发／验收，外部环境／授权／人工发布等待另计，非日期承诺。
+
+
+## §205 · 正式 case_execute 显式 Worker 组合、双归属监控与只读交付（v4 A2-3／E／§12.1 子步）
+
+### 续接、依据与范围
+
+基线为 §204 已提交的 `ce17dcb96406696d6b1ffb307b270245422d01d3`。开工核对仅用户 v3 文档未提交，其 SHA256 仍为 `8a43e94160767a0de20740f2cb30782f06322cbc3467076dfcb120d4efdf1ad4`，不修改、不暂存。前期 Conda＋pip 迁移已经提交，本步不重复迁移、升级依赖或删除历史 uv.lock 绑定证据。
+
+现有正式受理、双归属 claim、完整冻结输入、一次性图、RuntimeTurnResult／资产、唯一 Session finalizer、Assessment、原子结算及只读 ACK（§185–202）均已存在；§203 只安装 case_settle。原 Dispatcher 对 case_execute 仍进入普通 claim，而 Store 已明确禁止该路径，main 未安装正式 runtime，这是组合出口缺失，不是需要再写一个领域 Runner／调度器。本轮只接通这个出口，不把内部接线当作首模式上线或全系统完成。
+
+依据位置 → 采用方式：
+
+- v4 A2-3／§9／§12.1，原 `claim_controlled_case`／`ControlledCaseExecutor`／`ControlledCaseRuntime` → 复用原双归属、frozen schema-4 输入及唯一业务投影，不在 Dispatcher 重拼 Prompt／结果或提前 begin。
+- §203 专用结算的原配额、监控与清理 → 正式执行复用 `_monitor`／`_cleanup_execution` 和原取消收拢；仅将内部回调泛化为 renew_owner，保留 scoped settlement 的事件名与行为，不构造 scoped 图权限。
+- §204 通用 Worker 未知截止与原 `ControlledCaseSettlements.acknowledge_delivery` → 未知结果保留原 PEL；只有原完整结算回执可 ACK，reader 与当前 writer／executor 可用性分开，不自动重放或自动扩大恢复许可。
+- 本地课程 `Agent轨迹与协议鲁棒性.html` 的权限／幂等／补偿与轨迹要求，以及 `评测工程化与CICD.html` 的版本化／基线证据 → 同时核原正式 Attempt、模型／工具次数、结果、pending、资源和失败记录，不用单一成功返回代表完整链路。
+
+### 代码、契约与兼容边界
+
+main 明确组合 ControlledCaseGraphAdapter → Executor → Runtime，使用既有 model resolver、checkpoint provider.open、FrameworkModelCallPolicy、RuntimeService、SessionService、Assessment 与原子结算。没有创建新队列、CLI 开关或生产 writer；`FrameworkWorkerCapabilities.controlled_case_available` 默认仍 false，正式业务入口受理／选路不由此开放。
+
+Dispatcher 在原 durable identity／binding 核对后专门分派 case_execute；领取前核能力、完整 schema-4、executor／saver／模型政策、finalizer／Assessment／settlement 端口以及所需工具治理。缺装配／不兼容不领取、不分配。专用 claim 再原子核 RunItem 原件、两类 Attempt 与租约；资源不足仍用原 defer 结束本次 AgentTask Attempt、清 Session 租约，重领只新建 AgentTask Attempt，不新建或重置原正式 Attempt。
+
+正式监控续 Redis agent 配额和捕获的 Session／RuntimeOwner／原 RunItem 双归属；不向旧 Runtime 发中断。Executor 自己唯一提交 running 意图，执行原图／事件 sink／应用投影；Dispatcher 不通用 begin／finish/fail，不以 Runtime 返回代替结算回执。失租、取消、执行／投影／结算异常或回执丢失转 TaskDeferred／取消传播，保留原身份和未知性，不 transfer、不假称事务已回滚或进程已停止。`agent_case_execution_claimed/committed/delivery_acknowledged` 与 `agent_case_execution_deferred/receipt_unknown/renew_failed` 使用原日志设施、固定原因及非敏感关联 ID；不记录输入、原异常正文或租约秘密。
+
+终态先读原完整回执，不要求 writer、executor 或重建 RuntimeExecutionOwner；没有完整回执不裸 ACK。原生审批等待仍未形成正式业务审批投影／继续许可，返回 running／pending 和 `framework_case_approval_projection_unavailable`，不误算完成、fail 或自动 resume。这是明确待实现出口，不以无审批受控样本冒称全部正式 AgentCase 已支持。
+
+Runtime 新增可选组合 executor 与 preflight／只读交付端口，原显式 `execute(..., executor=...)` 调用兼容保留。GraphAdapter／Executor 共享既有依赖可用性检查，防止 claim 后才发现 saver／政策缺失。全局核对新端口、execute 消费方及 monitor 旧 keyword；原 renew_settlement 调用已成对更新为 renew_owner，未改变公开 DTO／wire／数据库 schema。main 的检查为静态 AST 装配审计，不是完整业务启动／生产发布证明。
+
+### TDD 与中间真实失败
+
+新测试复用原 formal_case／execution／assessment_case 隔离夹具，新增“只准备 queued、不预 claim／execute”选项，原默认流程保留。原正式草稿→评审→启用、plan／suite／run／RunItem／Attempt 和原 PG 表是真实链路；配置／上游检索及 inspect_source handler 为明确替身，四个官方 SDK 只请求本机 HTTP。新文件被既有 ignore 规则覆盖，提交时仅对精确文件 force-add，不改 ignore。
+
+- `e205-dispatch-red.log`：实际 1 failed、13.09秒、exit1，Dispatcher 缺 controlled_case_runtime 构造参数；先红再加组合端口。
+- `e205-main-red.log`：实际 1 failed、14 deselected、6.89秒、exit1，main 的 ControlledCaseRuntime 调用数量为0；再安装既有组件，不放开生产能力。
+- `e205-dispatch-first.log`：实际 1 failed、16.16秒、exit1，首执行已成功，测试错误假定 formal_case 只有一个 RunItem；现有 fixture 实际含多个正式条目。改为精确选择当前 item／attempt，不削弱原身份／结果断言。
+- `e205-dispatch-second.log`：实际 15 passed、78.95秒、exit0；是中间集合，不与后续累加。
+- `e205-faults-first.log`：实际 4 passed、1 failed、51.62秒、exit1，资源等待测试同样错误假定 run 只有一个正式 Attempt。按受理前真实完整 ID 列表作精确比较，并核当前 Attempt 的 attempt_no 不变；不删除“不得新建正式 Attempt”要求。
+- `e205-faults-second.log`：实际 6 passed、1 failed、69.81秒、exit1，故障门把 list_active 的展示 dict 当成 ResourceLease 传给 retire。依据原 API 签名及 §203 同类测试捕获真实 acquire 返回的 lease；不更改生产接口或用例故障断言。
+- `e205-dispatch-full.log`：实际 **29 passed、152.77秒、exit0，无skip／deselect**。四种 SDK 的首次领取→图／工具→正式 passed Result→ACK，后续关闭 writer、禁止普通 claim／finish、图执行／owner构造／资源申请后仍只读 ACK；HTTP2／工具效果1。另核资源等待后 AgentTask Attempt2、原正式 Attempt列表不变；缺13种能力／装配的零领取／分配／transfer；真实资源和双归属续租；资源／Agent owner／原RunItem失租与取消；真实 Worker5秒总截止、Redis XCLAIM 换 owner、外层取消；提交后受控丢失调用回复只读对账；原生审批 pending 与重投无效果。
+
+失权／截止／取消故障门位于 executor 调用入口、尚未 begin／发模型／工具，验证异步取消和原 pending，不声称运行中 SQL／外部命令停止。提交后回复丢失为受控 Python 调用故障，不是供应商／数据库真实网络中断。已有独立 Worker 强杀窗口仅在后续回归中复验原范围，不将其包装成新正式执行 Worker 强杀。
+
+首轮 compileall -q src tests 与 pip check 实际 exit0，后者 No broken requirements found；ruff／mypy 实际未安装，不擅自安装，独立 lint／typecheck 未执行，记录 `e205-static.log`。未改前端，未跑前端测试／build／浏览器。
+
+### 扩大回归与交付状态（待原句柄终态）
+
+已在固定 Python、PG／Redis=1、Docker／MySQL／PLAN_RUN_CREATION=0、QA_FRAMEWORK_WORKER_DIAGNOSTICS=1 下启动17文件单次串行受影响回归 `e205-affected-final.log`。不并行运行其他服务测试，不以此前29或§204的773绿色替代；保留 stdout／stderr。当前仅记录启动事实，最终计数／skip／失败与退出码须等待原句柄返回后追加。本节当前为未提交草稿。
+
+本次生产／测试 aggregate SHA256（路径UTF-8＋NUL＋原字节＋NUL，相对POSIX路径排序，同§199）分别为 src870个py：`7ce66c601b1624c78a2dd50d1887399c2a73cf4d545d7e619bcfa98dc8973c88`，tests681个py：`6f864344da20a9821b08e73b66ac13deb54372d7404c0760658b658b08705624`。最终运行期间仅补文档，不再修改生产／测试字节。
+
+v4 A2-3／E／§12.1 → §205 → 正式 Dispatcher／main／原 Runtime／Executor／GraphAdapter 组合及新真实交付测试 → 定向29通过、扩大回归待实测终态 → 剩余完整正式业务审批／异常恢复、逐模式入口与质量、真实供应商／领域Runner、A3完整外部补偿与资源清理、E3／E4制品／一致备份恢复／性能基线。完整v4与H01–H12范围不缩小，生产writer仍关闭，goal保持active；整体剩余仍粗估4–8周有效开发／验收，外部环境／授权／人工发布等待另计，非日期承诺。
+
+
+### 扩大回归保留失败、故障来源查证与修正
+
+原17文件句柄实际结束，`e205-affected-final.log` 为 **753 passed、1 failed、1 skipped、2347.34秒、exit1**，不能称为全绿或发布通过。MySQL生命周期参数在 `test_lifespan_resource_cleanup.py:183` 因 RUN_LIVE_MYSQL_TESTS=0 明确跳过，不擅自连接MySQL。唯一失败是既有 `test_controlled_case_settlement_delivery_faults.py` 的 `[deadline-inside_sql]`：原消息／SQL／资源状态断言已过，但缺少必须保留的 `redis_task_execution_deadline_unconfirmed`，日志显示 scoped renewal 先失败并取消等待者；不删除该故障来源断言。
+
+先给原断言添加只包含固定事件、operation、错误类型和耗时的诊断，原node定向 `e205-deadline-diagnostic.log` 实际1 passed、24.94秒、exit0，**一次通过不证明旧失败根因已修复**。查现有 `_monitor`／`ControlledCaseRecoverySettlement._transaction`／`configure_runtime_owner_transaction`：监控在同一Session锁上续租，PG锁预算与Worker等待是两个独立时钟；原矩阵只为after_commit隔离监控，inside_sql仍混合两种故障源。
+
+新增真实PG小锁预算负例（合法50ms，生产默认5000ms不改），复用同一SQL门与原5秒Worker截止，保持原9个node ID不变。`e205-lock-budget-red.log` 实际1 failed、21.67秒、exit1，确定性复现 monitor先取消、没有Worker截止事件。随后仅增捕获原renew异常的非敏感SQLSTATE诊断，`e205-lock-state-red.log` 实际1 failed、18.11秒、exit1，明确取得 OperationalError／SQLSTATE **55P03**。没有输出SQL／参数／异常正文，没有替换真实renew、关闭监控或伪造截止事件。
+
+该负例证明矩阵没有隔离故障源的可复现路径；原大组日志未保存SQLSTATE，不能追溯断言原单次失败唯一就是同一数据库码。修正的是测试设计：对inside_sql与after_commit都使用已有合法poll=10秒、资源／Session租约60秒，使请求的真实5秒Worker截止或Redis失权先发生。保留全部截止／heartbeat来源、SQL仍在途、行锁join事务、PEL／原件／唯一结果／效果次数断言，并保留短锁预算新回归。不改变生产poll、锁／statement timeout、总截止或任何业务行为；原真实monitor失租／取消另由专用测试验证。
+
+此后只修改了该故障测试文件与文档，六个生产文件／其他测试字节不变；第一次扩大回归对应的原tests hash保留为历史事实。已启动最终4文件串行交付复验 `e205-delivery-verified.log`，包含新正式Dispatcher、原scoped Dispatcher、其独立进程窗口、全部9个原故障矩阵和短锁预算新例。尚需等其原句柄取得最终终态，不与此前通过数累加或包装成17文件全绿。MySQL未验收项继续保留。
+
+
+### 最终实测与本地交付（2026-11-03）
+
+最终4文件原句柄真实返回 **70 passed、639.56秒、exit0，无skip／deselect**，`e205-delivery-verified.log` 持久记录 DELIVERY_VERIFIED_EXIT_CODE=0。本组在最终生产／测试字节下串行执行，包含本轮29项与原 scoped Dispatcher／3个独立进程窗口、原9个SQL／Redis交付窗口和新的50ms锁预算例；中间29／15与历史753不重复累加。第一次17文件失败结果保留，**未在修正后重新完整跑17文件，不宣称该大组最终全绿**。六个生产文件自该大组起未再改字节；新增／修改的是一个故障测试文件的来源隔离和诊断，相关4文件已最终实测通过。
+
+opt-out 明确PG／Redis等live开关全部0，`e205-optout-final.log` 实际1 passed、38 skipped、8.12秒、exit0；1项是main静态装配检查，38项因缺显式live授权被跳过，不计真实业务通过。最终 `e205-static-final.log` 的 compileall -q src tests 与 pip check 再次实际exit0；ruff／mypy仍未安装，独立lint／typecheck未做。前端未改未跑；全量后端、MySQL／Docker／RustFS、真实供应商／领域目标、完整main业务启动及E3／E4未验收。既有无绑定Worker偶发15秒超时的历史首因仍未有证明，本轮原强杀回归通过不消除该限制。
+
+实际命令（工作目录Agent_Server，固定Python `E:\MiniConda3\envs\Agent\python.exe`，每轮先执行 `../scripts/clear_uv_environment.ps1 -ProcessOnly`，PYTHONIOENCODING=utf-8；服务组PG／Redis=1，Docker／MySQL／PLAN_RUN_CREATION=0，QA_FRAMEWORK_WORKER_DIAGNOSTICS=1）：
+
+~~~powershell
+# 第一次扩大回归：保留753通过／1失败／1跳过，不称全绿。
+& E:\MiniConda3\envs\Agent\python.exe -u -m pytest tests/test_controlled_case_dispatch.py tests/test_controlled_case_adapter.py tests/test_controlled_case_executor.py tests/test_controlled_case_runtime.py tests/test_controlled_case_finalization.py tests/test_controlled_case_assessment.py tests/test_controlled_case_settlement.py tests/test_controlled_case_settlement_ack.py tests/test_controlled_case_execution_lease.py tests/test_controlled_case_settlement_dispatch.py tests/test_agent_task_dispatch.py tests/test_agent_v2_worker_contract.py tests/test_framework_task_control.py tests/test_framework_route_rollback.py tests/test_lifespan_resource_cleanup.py tests/test_controlled_case_settlement_dispatch_process.py tests/test_controlled_case_settlement_delivery_faults.py -q -rs --tb=short
+# 故障门修正后的最终交付复验：70通过。
+& E:\MiniConda3\envs\Agent\python.exe -u -m pytest tests/test_controlled_case_dispatch.py tests/test_controlled_case_settlement_dispatch.py tests/test_controlled_case_settlement_dispatch_process.py tests/test_controlled_case_settlement_delivery_faults.py -q -rs --tb=short
+# PG／Redis等live开关全部0：1静态通过／38跳过，非业务验收。
+& E:\MiniConda3\envs\Agent\python.exe -u -m pytest tests/test_controlled_case_dispatch.py tests/test_controlled_case_settlement_delivery_faults.py -q -rs --tb=short
+& E:\MiniConda3\envs\Agent\python.exe -m compileall -q src tests
+& E:\MiniConda3\envs\Agent\python.exe -m pip check
+~~~
+
+最终src聚合SHA256仍为 `7ce66c601b1624c78a2dd50d1887399c2a73cf4d545d7e619bcfa98dc8973c88`（870个py），tests为 `4a0f9382b76aa9fa3c3221efaf5a5744a64b2349d0e814f3e843ca7edd12eb2a`（681个py）。算法为各src／tests目录内相对POSIX路径排序，路径UTF-8＋NUL＋原字节＋NUL；以HEAD原字节还原旧8个修改文件、排除新增文件时，实际重新得到§204两个原hash，确认算法对齐。最终70项期间及结束后不再修改生产／测试，只追加文档、复编译／pip check；所有pytest句柄均取回终态，系统进程核对无pytest／multiprocessing测试Worker残留。
+
+本子步14文件：6个生产源码、4个测试／helper、4份文档，仅精确暂存本轮文件；用户v3仍原hash且不暂存，日志／制品／配置／依赖锁不提交。git diff --cached --check实际通过，高置信度私钥／常见API凭据新增行扫描0命中（非完整安全审计）。中文本地feat提交，实际commit id见Git／交付；不推送、不建PR。v4 A2-3／E／§12.1 → §205 → 显式正式Worker组合及交付边界 → 定向和最终70通过、扩大组保留失败／MySQL跳过 → 后续正式业务审批、真实模式／供应商／Runner与完整E3／E4等剩余出口，整体goal仍active、生产writer仍关闭。项目整体剩余仍粗估4–8周有效开发／验收，外部等待另计，不承诺完成日期。

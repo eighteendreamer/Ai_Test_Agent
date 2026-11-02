@@ -1,5 +1,38 @@
 # 后端测试分组与执行证据
 
+## 正式 case_execute 接线专项（实施记录 §205）
+
+当前固定环境为 `E:\MiniConda3\envs\Agent\python.exe`，不通过 uv 同步或安装依赖。
+以下从 `Agent_Server` 执行，只使用已运行的隔离 PostgreSQL／Redis：
+
+```powershell
+../scripts/clear_uv_environment.ps1 -ProcessOnly | Out-Null
+$env:PYTHONIOENCODING='utf-8'
+$env:RUN_LIVE_POSTGRES_TESTS='1'
+$env:RUN_LIVE_REDIS_TESTS='1'
+$env:RUN_LIVE_DOCKER_TESTS='0'
+$env:RUN_LIVE_MYSQL_TESTS='0'
+$env:RUN_LIVE_PLAN_RUN_CREATION='0'
+& E:\MiniConda3\envs\Agent\python.exe -u -m pytest tests/test_controlled_case_dispatch.py -q -rs --tb=short
+```
+
+本轮定向实际 29 passed／exit 0：四种官方 SDK 对本机合成 HTTP，正式双归属领取、
+工具证据／唯一 finalizer／Assessment／原子结算、writer 关闭只读 ACK、资源等待和
+缺能力／缺装配、原资源／双租约监控、真实取消／Redis 换 owner／Worker 总截止。
+失权／总截止门设在 executor 进入前，证明取消等待者、pending 与资源收拢，**不是**
+已运行 SQL／外部命令停止证明；提交成功后受控丢失调用回复另核只读 ACK、不增效果。
+审批等待验证原生结果不被误 ACK／失败或自动重放，尚未授予业务审批继续资格。
+
+这不是完整发布质量门：生产 writer 关闭，无付费模型、真实业务目标、独立正式执行
+进程强杀或全 E3／E4 验收。扩大受影响回归的最终真实结果另见 §205，不与该29项重复累加。
+
+最终交付复验4文件实际 **70 passed／exit0，无skip／deselect**：本专项、原仅结算
+Dispatcher／独立进程，以及原9个交付窗口和新增真实PG短锁预算用例。此前17文件大组
+为753 passed／1 failed／1 skipped，失败故障来源保持断言后修正并纳入上述70项；
+未重新完整跑17文件，不称其最终全绿。MySQL生命周期参数仍未验收。
+
+## 原有质量门与历史命令
+
 在 `Agent_Server` 目录使用现有环境运行，不自动安装或升级依赖：
 
 ```powershell

@@ -33,11 +33,24 @@ def join_sql(p):
 async def test_uncertain_delivery_never_transfers_or_replays_and_recovers_only_scoped_facts(
     recovery_case, monkeypatch, caplog, window, fault,
 ):
+    await run_delivery_fault(recovery_case, monkeypatch, caplog, window=window, fault=fault)
+
+
+@pytest.mark.asyncio
+async def test_short_sql_lock_timeout_does_not_replace_the_requested_worker_deadline(recovery_case, monkeypatch, caplog):
+    # Same real SQL fault window with a valid smaller configured lock budget.
+    # It must still prove Worker deadline, not silently accept monitor failure.
+    monkeypatch.setattr(recovery_case.s.h.settings.deep_agents, "checkpoint_lock_timeout_ms", 50)
+    await run_delivery_fault(recovery_case, monkeypatch, caplog, window="inside_sql", fault="deadline")
+
+
+async def run_delivery_fault(recovery_case, monkeypatch, caplog, *, window, fault):
     p = recovery_case
-    if window == "after_commit":
+    if window in {"inside_sql", "after_commit"}:
         # Keep this window before the next ordinary scoped-renew poll. Otherwise
-        # that monitor correctly observes the terminal Task first, so it would
-        # test monitor loss rather than the requested Redis/deadline fault.
+        # renewal can hit the real in-flight Session lock (55P03), or observe
+        # the committed terminal Task first. Neither proves the requested
+        # Redis/deadline fault. Monitor failure has its own dedicated tests.
         config = p.s.h.settings.orchestration
         monkeypatch.setattr(config, "agent_task_control_poll_seconds", 10)
         monkeypatch.setattr(config, "resource_default_lease_seconds", 60)
@@ -48,6 +61,16 @@ async def test_uncertain_delivery_never_transfers_or_replays_and_recovers_only_s
     entries = await queue._client.xrange(queue.stream)
     message_id = entries[0][0]
     dispatcher, service = compose(p)
+    renewal_errors = []
+    renew = service.renew
+    async def observed_renew(*args, **kwargs):
+        try:
+            return await renew(*args, **kwargs)
+        except Exception as exc:
+            renewal_errors.append({"error_type": type(exc).__name__,
+                "sqlstate": getattr(getattr(exc, "orig", exc), "sqlstate", None)})
+            raise
+    monkeypatch.setattr(service, "renew", observed_renew)
     protected = origin_identity(p)
     reached, interrupted = asyncio.Event(), asyncio.Event()
     sql_entered, sql_release, sql_left = Event(), Event(), Event()
@@ -134,7 +157,11 @@ async def test_uncertain_delivery_never_transfers_or_replays_and_recovers_only_s
         assert await p.s.h.resources.list_active() == []
         assert origin_identity(p) == protected
         if fault == "deadline":
-            record, = [r for r in caplog.records if r.message == "redis_task_execution_deadline_unconfirmed"]
+            records = [r for r in caplog.records if r.message == "redis_task_execution_deadline_unconfirmed"]
+            assert len(records) == 1, {"renewal_errors": renewal_errors, "warnings": [(r.message, getattr(r, "monitor_operation", None),
+                getattr(r, "error_type", None), getattr(r, "operation_seconds", None))
+                for r in caplog.records if r.levelno >= 30]}
+            record, = records
             assert record.recovery_reason == "execution_deadline_receipt_unknown" and record.delivery_message_id == message_id
         else:
             record, = [r for r in caplog.records if r.message == "redis_task_heartbeat_failed"]

@@ -67,7 +67,7 @@ class AgentTaskDispatcher:
                  framework_capabilities: FrameworkWorkerCapabilities | None = None,
                  framework_model_calls=None, framework_native_reader=None,
                  framework_submission_preparer=None, framework_submission_loader=None,
-                 controlled_case_settlements=None):
+                 controlled_case_settlements=None, controlled_case_runtime=None):
         if framework_submission_preparer is not None and framework_submission_loader is not None:
             raise ValueError("Configure either a captured preparer or an async material loader, not both")
         self._settings = settings
@@ -82,6 +82,7 @@ class AgentTaskDispatcher:
         self._framework_submission_preparer = framework_submission_preparer
         self._framework_submission_loader = framework_submission_loader
         self._controlled_case_settlements = controlled_case_settlements
+        self._controlled_case_runtime = controlled_case_runtime
         self._coordinator = None
         self._child_reaper_task: asyncio.Task[None] | None = None
         self._child_reaper_stop: asyncio.Event | None = None
@@ -713,6 +714,9 @@ class AgentTaskDispatcher:
                 # send it through ordinary capability/claim/begin/finish.
                 await self._handle_case_settlement(command, stored, capabilities, worker_id, queue)
                 return
+            if command.operation == "case_execute":
+                await self._handle_controlled_case(command, stored, capabilities, worker_id, queue)
+                return
             try:
                 capabilities.require(runtime_binding, operation=command.operation)
                 stage_version = await self._tasks.get_framework_message_stage_version(
@@ -789,6 +793,98 @@ class AgentTaskDispatcher:
             if task.runtime_binding is not None and task.operation in {"approval_resume", "approval_recover", "framework_reconcile"}:
                 await self._tasks.ensure_framework_reconciliation(task.id)
 
+    async def _handle_controlled_case(self, command, stored, capabilities, worker_id, queue):
+        # No upstream counterpart (checked: original _execute, case executor,
+        # atomic settlements, v4 §12.1): generic finish cannot settle both
+        # owners. Keep one-shot execution and receipt-only ACK separate.
+        runtime = self._controlled_case_runtime
+        lease, monitor, execution = None, None, None
+        task, stop = stored, asyncio.Event()
+        clock, completed = monotonic(), False
+        config = self._settings.orchestration
+        try:
+            if runtime is None:
+                raise TaskDeferred("framework_case_execution_port_unavailable")
+            delivery = command.model_dump(mode="json")
+            capabilities.require_runtime_artifact(command.runtime_binding)
+            if stored.status in TERMINAL_AGENT_TASK_STATUSES:
+                receipt = await runtime.acknowledge_delivery(delivery, capabilities=capabilities)
+                LOGGER.info("agent_case_delivery_acknowledged", extra={"task_id": task.id,
+                    "worker_id": worker_id, "result_id": receipt.result_id, "automatic_replay": False})
+                return
+            capabilities.require(command.runtime_binding, operation=command.operation)
+            runtime.require_dispatch_ready(stored, capabilities=capabilities)
+            task = await self._tasks.claim_controlled_case(delivery, worker_id=worker_id,
+                framework_capabilities=capabilities)
+            if task.status in TERMINAL_AGENT_TASK_STATUSES:
+                await runtime.acknowledge_delivery(delivery, capabilities=capabilities)
+                return
+            with bind_request_context(request_id=task.request_id, trace_id=task.trace_id,
+                project_id=task.project_id, session_id=task.session_id, turn_id=task.turn_id,
+                run_id=task.run_id, run_item_id=task.run_item_id, attempt_id=task.attempt_id,
+                worker_id=worker_id, task_type="case_execute", queue=queue):
+                agent_task_wait_seconds().labels(task_type="case_execute").observe(_seconds_since(task.created_at))
+                if task.attempt_no > 1:
+                    agent_task_retries_total().labels(task_type="case_execute").inc()
+                LOGGER.info("agent_case_execution_claimed", extra={"task_id": task.id,
+                    "attempt_id": task.attempt_id, "attempt_no": task.attempt_no, "worker_id": worker_id,
+                    "binding_id": task.runtime_binding.binding_id,
+                    "execution_id": task.runtime_owner.controlled_case_lease.run_item_execution_attempt_id})
+                try:
+                    lease = await self._resources.acquire(resource_type="agent", resource_id=f"turn:{task.id}",
+                        worker_id=worker_id, lease_seconds=config.resource_default_lease_seconds,
+                        session_id=task.session_id, project_id=task.project_id, run_id=task.run_id,
+                        run_item_id=task.run_item_id, attempt_id=task.attempt_id)
+                except ResourceUnavailable as exc:
+                    await self._tasks.defer(task, exc.reason)
+                    raise TaskDeferred(exc.reason) from exc
+
+                async def renew():
+                    if not await self._tasks.renew_framework_execution(task, config.turn_execution_lease_seconds):
+                        raise ContinuationLeaseLostError("Controlled execution lost its original dual owner")
+
+                if not await self._resources.renew(lease, lease_seconds=config.resource_default_lease_seconds):
+                    raise ContinuationLeaseLostError("Controlled admission resource was lost before execution")
+                await renew()
+                monitor = asyncio.create_task(self._monitor(task, lease, stop, renew_owner=renew))
+                execution = asyncio.create_task(runtime.execute(task, resource_id=lease.resource_id,
+                    fencing_token=lease.fencing_token))
+                done, _ = await asyncio.wait({execution, monitor}, return_when=asyncio.FIRST_COMPLETED)
+                if monitor in done:
+                    await monitor
+                outcome = await execution
+                if outcome.settlement_receipt is None:
+                    reason = ("framework_case_approval_projection_unavailable"
+                        if outcome.graph_outcome.native_interrupts else "framework_case_result_unsettled")
+                    raise TaskDeferred(reason)
+                completed = True
+                LOGGER.info("agent_case_execution_committed", extra={"task_id": task.id,
+                    "attempt_id": task.attempt_id, "worker_id": worker_id,
+                    "result_id": outcome.settlement_receipt.result_id, "automatic_replay": False})
+        except asyncio.CancelledError:
+            LOGGER.warning("agent_case_execution_receipt_unknown", extra={"task_id": task.id,
+                "attempt_id": task.attempt_id, "worker_id": worker_id, "automatic_replay": False})
+            raise
+        except Exception as exc:
+            LOGGER.warning("agent_case_execution_deferred", extra={"task_id": task.id,
+                "attempt_id": task.attempt_id, "worker_id": worker_id, "error_type": type(exc).__name__,
+                "defer_reason": str(exc) if isinstance(exc, TaskDeferred) else "execution_requires_reconciliation",
+                "automatic_replay": False})
+            if isinstance(exc, TaskDeferred):
+                raise
+            raise TaskDeferred("framework_case_execution_requires_reconciliation") from None
+        finally:
+            if completed:
+                agent_tasks_finished_total().labels(task_type="case_execute", status="completed").inc()
+                agent_task_execution_seconds().labels(task_type="case_execute").observe(max(0, monotonic()-clock))
+
+            async def cleanup():
+                if execution is not None:
+                    execution.cancel()
+                    await asyncio.gather(execution, return_exceptions=True)
+                await self._cleanup_execution(task, lease, monitor, stop)
+            await self._sessions._settle_execution_tasks(asyncio.create_task(cleanup()))
+
     async def _handle_case_settlement(self, command, stored, capabilities, worker_id, queue):
         service = self._controlled_case_settlements
         if service is None:
@@ -835,7 +931,7 @@ class AgentTaskDispatcher:
                 if not await self._resources.renew(lease, lease_seconds=config.resource_default_lease_seconds):
                     raise ContinuationLeaseLostError("Settlement admission resource was lost before commit")
                 await renew()
-                monitor = asyncio.create_task(self._monitor(task, lease, stop, renew_settlement=renew))
+                monitor = asyncio.create_task(self._monitor(task, lease, stop, renew_owner=renew))
                 execution = asyncio.create_task(service.complete(scoped, capabilities=capabilities))
                 done, _ = await asyncio.wait({execution, monitor}, return_when=asyncio.FIRST_COMPLETED)
                 if monitor in done:
@@ -1118,13 +1214,13 @@ class AgentTaskDispatcher:
                 LOGGER.error("agent_task_slot_release_pending", extra={"task_id": task.id,
                     "error_type": type(exc).__name__})
 
-    async def _monitor(self, task, lease, stop, *, renew_settlement=None):
+    async def _monitor(self, task, lease, stop, *, renew_owner=None):
         config = self._settings.orchestration
         interval = min(
             config.agent_task_control_poll_seconds,
             config.resource_default_lease_seconds / 3,
         )
-        if renew_settlement is not None:
+        if renew_owner is not None:
             interval = min(interval, config.turn_execution_lease_seconds / 3)
         interrupt_sent = False
         monitor_clock = monotonic()
@@ -1146,9 +1242,10 @@ class AgentTaskDispatcher:
                 ):
                     raise ContinuationLeaseLostError("Agent resource admission lease was lost")
                 last_resource_renewal = monotonic()
-                if renew_settlement is not None:
-                    operation, operation_clock = "settlement_renew", monotonic()
-                    await renew_settlement()
+                if renew_owner is not None:
+                    operation = "settlement_renew" if task.operation == "case_settle" else "case_execution_renew"
+                    operation_clock = monotonic()
+                    await renew_owner()
                     continue  # Scoped renewal also checks cancellation; no graph interrupt.
                 operation, operation_clock = "interrupt_poll", monotonic()
                 if not interrupt_sent:
@@ -1173,7 +1270,8 @@ class AgentTaskDispatcher:
                 "resource_renew": "agent_task_resource_renew_failed",
                 "interrupt_poll": "agent_task_interrupt_poll_failed",
                 "interrupt_apply": "agent_task_interrupt_apply_failed",
-                "settlement_renew": "agent_case_settlement_renew_failed"}[operation]
+                "settlement_renew": "agent_case_settlement_renew_failed",
+                "case_execution_renew": "agent_case_execution_renew_failed"}[operation]
             LOGGER.log(logging.WARNING if isinstance(exc, ContinuationLeaseLostError) else logging.ERROR,
                 event, extra={"task_id": task.id, "attempt_id": task.attempt_id, "worker_id": task.worker_id,
                     "resource_id": lease.resource_id, "monitor_operation": operation,

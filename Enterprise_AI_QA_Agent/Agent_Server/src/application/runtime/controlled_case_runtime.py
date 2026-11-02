@@ -53,10 +53,11 @@ class ControlledCaseRuntime:
     No upstream counterpart (checked: TurnContextAssembly, original case
     Session execution, controlled executor, v4 §9.2/§12.1): formal input has
     no business user row/message-stage. Do not fake one or run a second loop.
-    Neither port is installed in main/Worker or grants recovery authority.
+    Explicit Worker composition does not enable writers or grant recovery authority.
     """
 
-    def __init__(self, *, runtime_service, session_service=None, assessment_service=None, settlement_service=None):
+    def __init__(self, *, runtime_service, session_service=None, assessment_service=None, settlement_service=None,
+                 executor=None):
         if assessment_service is not None and session_service is None:
             raise ValueError("Controlled assessment requires explicit Session finalization assembly")
         if settlement_service is not None and assessment_service is None:
@@ -65,6 +66,29 @@ class ControlledCaseRuntime:
         self._sessions = session_service
         self._assessments = assessment_service
         self._settlements = settlement_service
+        self._executor = executor
+
+    def require_dispatch_ready(self, task, *, capabilities):
+        """Check full first-execution composition before taking either owner."""
+        if any(port is None for port in (self._sessions, self._assessments, self._settlements, self._executor)):
+            raise ValueError("Controlled dispatch requires executor, finalizer, assessment and settlement")
+        self._executor.require_execution_available()
+        if set(task.input) != {"case_execution_input"}:
+            raise ValueError("Controlled dispatch requires its single frozen formal input")
+        original = capabilities.require_case_input_format(task.input["case_execution_input"])
+        if not isinstance(original, ControlledCaseFinalizationTaskInputAsset):
+            raise ValueError("Controlled dispatch requires its frozen finalization preparation")
+        state = original.runtime_preparation.initial_state
+        if state["model_visible_tool_keys"] and (not self._runtime._deep_agent_governed_tools_enabled
+                or self._runtime._tool_governance_service is None):
+            raise ValueError("Controlled dispatch requires original business tool governance")
+
+    async def acknowledge_delivery(self, delivery, *, capabilities):
+        # Read-only receipt admission is deliberately independent of executor
+        # availability and the current writer switch.
+        if self._settlements is None:
+            raise ValueError("Controlled delivery requires its original settlement reader")
+        return await self._settlements.acknowledge_delivery(delivery, capabilities=capabilities)
 
     async def prepare_input(self, session, request, *, detail, item, version, attempt_id, projection_identity):
         # Capture all mutable inputs before retrieval/configuration awaits.
@@ -155,7 +179,10 @@ class ControlledCaseRuntime:
             "artifact_id": asset.asset_sha256, "visible_tool_count": len(state["model_visible_tool_keys"])})
         return asset
 
-    async def execute(self, task, *, executor, resource_id, fencing_token):
+    async def execute(self, task, *, executor=None, resource_id, fencing_token):
+        executor = executor if executor is not None else self._executor
+        if executor is None:
+            raise ValueError("Controlled runtime requires its explicit original executor")
         # This application port cannot silently upgrade historical schema 1.
         try:
             original = parse_controlled_case_task_input(task.input.get("case_execution_input"))
