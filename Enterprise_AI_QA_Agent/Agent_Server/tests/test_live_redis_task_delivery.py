@@ -145,19 +145,36 @@ async def test_running_delivery_heartbeat_prevents_reclaim(queue):
 
 
 @pytest.mark.asyncio
-async def test_timeout_and_deferred_delivery_are_distinct(queue):
-    await queue.enqueue(payload())
-    async def never_returns(task):
+@pytest.mark.parametrize("outcome", ["deadline", "deferred", "reported_timeout"])
+@pytest.mark.parametrize("max_retries", [0, 3])
+async def test_worker_deadline_preserves_unknown_delivery_but_reported_failure_transfers(queue, outcome, max_retries):
+    message_id = await queue.enqueue(payload())
+    entries = await queue._client.xrange(queue.stream)
+    received = []
+    async def handler(task):
+        received.append(task)
+        if outcome == "deferred":
+            raise TaskDeferred("waiting for resources")
+        if outcome == "reported_timeout":
+            raise TimeoutError("handler reported failure")
         await asyncio.Event().wait()
-    assert await worker(queue, never_returns, max_retries=0, task_timeout_seconds=.03).run_once() == 0
-    assert not await queue.pending()
-    assert await queue._client.xlen(f"{queue.stream}:dead_letter") == 1
-    await queue.enqueue(payload())
-    async def deferred(task):
-        raise TaskDeferred("waiting for resources")
-    await worker(queue, deferred, max_retries=0).run_once()
-    assert len(await queue.pending()) == 1
-    assert await queue._client.xlen(f"{queue.stream}:dead_letter") == 1
+    assert await worker(queue, handler, max_retries=max_retries, task_timeout_seconds=.03).run_once() == 0
+    assert len(received) == 1 and received[0].message_id == message_id and received[0].retry_count == 0
+    pending = await queue.pending()
+    destination = f"{queue.stream}:dead_letter"
+    if outcome != "reported_timeout":
+        assert len(pending) == 1 and pending[0]["message_id"] == message_id
+        assert pending[0]["consumer"] == "worker-test"
+        assert await queue._client.xrange(queue.stream) == entries
+        assert await queue._client.xlen(destination) == 0
+    else:
+        assert not pending
+        assert await queue._client.xlen(destination) == int(max_retries == 0)
+        assert await queue._client.xlen(queue.stream) == (1 if max_retries == 0 else 2)
+        if max_retries:
+            successor, = await queue.consume(consumer="reported-failure-reader", block_ms=0)
+            assert successor.message_id != message_id and successor.retry_count == 1
+            assert successor.payload == received[0].payload
 
 
 @pytest.mark.asyncio

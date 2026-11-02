@@ -46,6 +46,7 @@ from src.schemas.session import (
     ToolApprovalStatus,
 )
 from tests.live_postgres_config import LivePostgresTestConfig
+from tests.framework_worker_diagnostics import agent_worker_process as worker_process
 from tests.test_live_postgres_concurrency import _drop_tables
 
 
@@ -783,7 +784,7 @@ async def test_other_api_instance_can_interrupt_worker_and_cancel_queued_input(h
         await asyncio.gather(running, return_exceptions=True)
 
 
-def worker_process(settings, prefix, entered=None):
+def _run_agent_worker(settings, prefix, entered=None):
     async def run():
         resources = RedisResourceLeaseManager(settings.database.redis_url, key_prefix=prefix)
         await resources.connect()

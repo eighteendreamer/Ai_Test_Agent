@@ -220,3 +220,62 @@ def test_configured_handler_renders_heartbeat_diagnostics_without_opening_arbitr
     assert len(lines) == 2 and private not in output.getvalue()
     assert json.loads(lines[0].split(" diagnostics=", 1)[1]) == expected
     assert lines[1].endswith(": ordinary_event")
+
+
+class TransferProbe(QueueStub):
+    stream = "unit-execution-deadline"
+
+    def __init__(self):
+        super().__init__([QueuedTask("1-0", {"task_id": "deadline-probe", "body": "private-deadline-input"})])
+        self.transfers = []
+
+    async def transfer(self, task, **kwargs):
+        self.transfers.append(kwargs)
+        return "retry-1"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("max_retries", [0, 3])
+@pytest.mark.parametrize("cancellation", ["raise", "return", "error"])
+async def test_worker_forced_deadline_never_means_confirmed_failure_or_retry(caplog, max_retries, cancellation):
+    queue = TransferProbe()
+    entered, settled = asyncio.Event(), asyncio.Event()
+    async def handler(task):
+        entered.set()
+        try:
+            await asyncio.Event().wait()
+        except asyncio.CancelledError:
+            if cancellation == "return":
+                return
+            if cancellation == "error":
+                raise RuntimeError("private-deadline-cleanup-error") from None
+            raise
+        finally:
+            settled.set()
+    worker = RedisTaskWorker(queue, consumer="deadline-worker", handler=handler,
+        task_timeout_seconds=.05, max_retries=max_retries)
+    assert await asyncio.wait_for(worker.run_once(), 2) == 0
+    assert entered.is_set() and settled.is_set()
+    assert queue.acked == [] and queue.transfers == []
+    records = [r for r in caplog.records if r.message == "redis_task_execution_deadline_unconfirmed"]
+    assert len(records) == 1
+    record = records[0]
+    assert record.recovery_reason == "execution_deadline_receipt_unknown"
+    assert record.delivery_message_id == "1-0" and record.worker_id == "deadline-worker"
+    assert record.task_id == "deadline-probe" and record.delivery_stream == queue.stream
+    assert record.operation_seconds >= 0
+    assert "private-" not in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_handler_reported_timeout_keeps_existing_failure_transfer_policy(caplog):
+    queue = TransferProbe()
+    async def handler(task):
+        raise TimeoutError("private-handler-timeout")
+    worker = RedisTaskWorker(queue, consumer="handler-timeout-worker", handler=handler,
+        max_retries=0, task_timeout_seconds=2)
+    assert await worker.run_once() == 0
+    assert len(queue.transfers) == 1 and queue.transfers[0]["dead_letter_reason"] == "TimeoutError"
+    assert queue.acked == []
+    assert not any(r.message == "redis_task_execution_deadline_unconfirmed" for r in caplog.records)
+    assert "private-" not in caplog.text

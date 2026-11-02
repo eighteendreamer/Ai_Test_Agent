@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import re
 from datetime import datetime, timezone
 from types import SimpleNamespace
@@ -160,6 +161,27 @@ async def test_worker_exports_deferral_failure_and_iteration_time():
     assert queue.transfers == ["RuntimeError"]
 
 
+@pytest.mark.asyncio
+@pytest.mark.parametrize("max_retries", [0, 3])
+async def test_worker_deadline_counts_uncertainty_as_deferred_not_failure(max_retries):
+    stream = "qa:tasks:metrics-deadline"
+    queue = FakeQueue(stream)
+    queue.deliveries = [QueuedTask("1-1", {"task_id": "deadline"})]
+    async def handler(task):
+        await asyncio.Event().wait()
+    worker = RedisTaskWorker(queue, consumer="deadline-metrics", handler=handler,
+        block_ms=0, max_retries=max_retries, task_timeout_seconds=.03)
+    assert await worker.run_once() == 0
+    values = samples(render())
+    labels = (("stream", stream),)
+    assert values[("qa_task_deferred_total", labels)] == 1
+    assert values[("qa_worker_iteration_seconds_count", labels)] == 1
+    assert values[("qa_worker_active", labels)] == 0
+    assert values.get(("qa_worker_errors_total", labels), 0) == 0
+    assert values.get(("qa_task_dead_letter_total", labels), 0) == 0
+    assert queue.transfers == []
+
+
 @pytest_asyncio.fixture
 async def harness():
     """Random tables, Redis prefix and stream, mirroring the durable dispatch suite."""
@@ -171,6 +193,11 @@ async def harness():
     tables = [f"metrics_test_{field}_{suffix}" for field in fields]
     for field, table in zip(fields, tables):
         setattr(settings.database, f"postgres_{field}_table", table)
+    # Match the durable dispatch fixture: drop dependent framework tables first,
+    # never CASCADE an incomplete list of test-owned resources.
+    tables.append(f"{settings.database.postgres_agent_task_table}_runtime")
+    tables.extend(f"{settings.database.postgres_agent_task_table}_{kind}" for kind in ("interrupt", "decision"))
+    tables.append(f"{settings.database.postgres_agent_task_table}_message_stage")
     prefix = f"metrics_test_{suffix}"
     stream = f"{prefix}:tasks:agent"
     settings.orchestration.agent_task_stream = stream

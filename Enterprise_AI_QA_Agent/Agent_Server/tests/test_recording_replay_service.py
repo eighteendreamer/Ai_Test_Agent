@@ -1,3 +1,4 @@
+import logging
 from datetime import datetime, timezone
 from types import SimpleNamespace
 
@@ -118,7 +119,8 @@ async def test_replay_is_project_scoped_persisted_and_idempotent():
 
 
 @pytest.mark.asyncio
-async def test_registered_dispatch_persists_outbox_intent_without_running_browser():
+async def test_registered_dispatch_persists_outbox_intent_without_running_browser(caplog):
+    caplog.set_level(logging.INFO, logger="src.application.recorder.replay_service")
     Executor.calls = 0
     store = DispatchStore()
     service = RecordingReplayService(recordings=Recordings(), projects=Projects(), store=store,
@@ -133,6 +135,9 @@ async def test_registered_dispatch_persists_outbox_intent_without_running_browse
         request_id="background-request", project_id="project-1"))
     assert duplicate == result and len(store.submissions) == 2
     assert Executor.calls == 0
+    submissions = [r for r in caplog.records if r.message == "recording_replay_submitted"]
+    assert [r.created_new for r in submissions] == [True, False]
+    assert all(r.replay_id == result.id and type(r.created) is float for r in submissions)
 
 
 @pytest.mark.asyncio

@@ -9873,3 +9873,73 @@ main只显式注入`ControlledCaseSettlementRecovery(agent_task_store)`，没有
 v4 E／§12.1＋A2-3／§11 → §203 → 原Dispatcher／main受限端口、scoped defer与TaskControl权限边界、两文件新矩阵 → 真实红绿与上述最终验证 → 独立提交“【feat】接通仅结算Worker与范围内停止控制”，实际commit ID见Git与交付。仅完成此受限接线子步，不代表全系统或全部Worker故障窗口完成；默认生产writer保持关闭。
 
 总体仍包括完整v4及H01–H12。本步不改变通用Redis Worker重试／转移策略；总截止、交付所有权变化与SQL在途的联合窗口仍是下一出口，不能在该边界未闭合时开放生产writer。其余逐模式入口／质量、真实供应商／领域Runner、业务审批、A3完整补偿与清理、E3／E4、备份恢复与性能基线仍未完成。goal保持active，整体剩余仍粗估4–8周有效开发／验收，环境、授权与人工发布等待另计，不承诺日期。
+
+## 204. v4 E／A2-3＋§11：Worker 总截止保留未知交付，联合 SQL／失权／持久 ACK 验证（2026-11-02）
+
+基线 `9afd0fec6`（§203）。续接先核对现有 Worker／单元测试草稿及原红绿日志，不覆盖；用户v3仍为原hash，不修改或暂存。Conda＋pip迁移已在 `435d9cf7c` 完成，本步不重做迁移、不删除历史uv.lock、不改变环境或依赖版本。
+
+### 依据 → 根因 → 采用方式
+
+- v4 §11要求总体截止不能直接证明无效果，§10.1 A2-3／§12.1要求结算与原执行分权 → `_run_handler` 的 Worker等待到期抛普通TimeoutError，被run_once当作handler失败自动transfer，max_retries=0甚至立即死信 → 只将Worker自己的总截止改为既有TaskDeferred，保留原PEL；不造新的调度层、重试流或结果状态。
+- 原Worker的ownership heartbeat、TaskDeferred、finally收拢和handler异常分支 → 复用已有边界，等待截止记录原交付及固定原因，取消并收拢asyncio任务；handler自己抛出的TimeoutError等异常仍沿原transfer策略。该兼容保留不意味着所有领域TimeoutError已证明无副作用。
+- §203真实Dispatcher／scoped service／资源清理及持久ACK → 新矩阵只在原链路设置故障门，SQL取消等待者后必须实际join Session行锁，不能以线程门退出证明事务结束。
+- 本地课程`Agent轨迹与协议鲁棒性.html`的轨迹、幂等与补偿要求 → 同时核对原件、唯一Result／审计、PEL、Attempt fence、资源以及请求2／效果1，不以单一返回值替代证明。
+
+### 实现与兼容边界
+
+生产Worker仅修改总截止分支：日志`redis_task_execution_deadline_unconfirmed`携带task_id／delivery_message_id／worker_id／delivery_stream／operation_seconds，固定`recovery_reason=execution_deadline_receipt_unknown`，automatic_replay=false。沿TaskDeferred计入deferred指标，不记handler error；不ACK／transfer／新增重试消息／耗尽后死信。原取消／heartbeat／known-exception分支及参数、wire格式、公共DTO和数据库schema未改。
+
+这是所有使用RedisTaskWorker的CLI共用语义，不仅case_settle。全局核对TestRun／普通及v2 Agent、压缩、embedding、vector rebuild、规划、文档解析／比较／影响／生成、录制回放和资源清理入口；它们仍经from_settings使用原配置、handler和领域持久幂等／租约。pending可以被原reclaim再次投递，不提供再次执行外部效果的权限；各领域仍须对账，不能把本步当作全领域超时恢复或完整A3验收。README及运行路由文档同步该差异，默认生产writer仍关闭。
+
+消费方回归另外真实暴露两处既有缺口，按首因最小修复而非降低日志或跳过测试：
+
+1. 指标fixture遗漏Task Store的runtime／interrupt／decision／message_stage派生表，teardown被真实PG外键拒绝。对齐`test_agent_task_dispatch.harness`现有清单，按反向依赖清理。仅清理首轮已核对的12个随机测试表，不使用CASCADE或通配删除；生产建表逻辑不改。
+2. 录制回放提交INFO日志把布尔值写入Python LogRecord保留字段created，实际抛KeyError阻断提交返回。对齐项目文档导入日志既有created_new命名，仅改一个extra键；定向测试显式打开该logger的INFO，核对首次／重复提交True／False、标准created仍是浮点时间，并保留无浏览器、请求幂等断言。没有变更公开created_at或回放契约。
+
+### TDD、故障门与保留失败
+
+`e204-deadline-red.log`实际1 failed、14 deselected、0.74秒、exit1：取消等待者后仍调用transfer，dead_letter_reason=TimeoutError／retry_count=0。最小Worker修复后`e204-deadline-fixed.log`实际20 passed、0.86秒、exit0。新7个单元案例覆盖max_retries=0／3与handler取消后raise／return／清理抛异常，另核handler主动TimeoutError仍走原失败路径；没有靠吞错让测试假绿。
+
+续接实际运行旧真实Redis测试，`e204-live-contract-red.log`为1 failed、29 deselected、1.44秒、exit1：旧测试期待总截止死信，但真实PEL保留原message_id。将该契约成对扩为6例（截止／显式defer／handler主动TimeoutError×0／3重试预算），分别核原PEL及原stream字段不变、DLQ=0，或普通错误的真实重试／死信；不是删除失败断言。
+
+联合矩阵首轮`e204-joint-first.log`实际1 failed、2 passed、90.68秒、exit1。after_commit门中原scoped monitor先于总截止观察到终态并取消等待者，故没有预期的Worker总截止日志；这不是总截止修复又失败。依据原_monitor的min间隔规则，仅在该测试窗口使用合法配置poll=10秒、资源／Session租约60秒，确保5秒Worker截止或Redis失权先发生；不替换monitor、不修改生产默认值、不在运行中改变截止参数，也不删除故障来源断言。
+
+`e204-faults-final.log`实际 **64 passed、224.44秒、exit0，无skip／deselect**。9个联合窗口为before_sql／inside_sql／after_commit×Worker真实总截止／真实XCLAIM换owner／真实touch成功后受控丢失回复。后两类不是停Redis或真实网络中断演练。SQL门内取消时确认线程仍阻塞，放行后以真实行锁join事务，再核后继已完成；before_sql仅保留claimed Attempt1，无Result，过期后新建Attempt2，旧租约明确被fence。已提交结果的后继／重复交付均由writer关闭的reader只读ACK，不领取、分配或重写结果。全部原消息仍pending，stream不自动新增、DLQ0；资源收拢、原Task／Attempt／RuntimeOwner完整物理摘要不变，最终唯一Result／结算审计、HTTP仍2／工具效果仍1。禁止图owner构造、普通claim／begin／finish、finalizer或transfer的替身另计调用次数，防止异常被defer后假绿。
+
+该组另外包含20个Worker单元及35个真实Redis投递回归；不将64项全部称为PG正式链路。它早于上述录制回放日志一行修复，不把64项当作该日志缺陷的覆盖；Worker／scoped生产字节未再变化。最终重跑另记，不重复累加。
+
+消费者首轮`e204-consumers-final.log`实际13 passed、1 teardown error、29.78秒、exit1，首因是上述PG派生表漏清。修正清单后`e204-consumers-verified.log`实际149 passed、1 failed、92.92秒、exit1，捕获上述created保留字段问题。定向`e204-replay-log-red.log`实际1 failed、2 deselected、1.37秒、exit1，独立显式INFO仍复现相同KeyError，排除仅依赖组内日志顺序的假设。
+
+最终消费者12文件`e204-consumers-verified-final.log`实际 **155 passed、67.42秒、exit0，无skip／deselect**，持久记录CONSUMERS_VERIFIED_FINAL_EXIT_CODE=0。覆盖普通重试／死信、CLI配置、TestRun dispatch、指标及其真实PG／Redis生命周期、压缩、向量和embedding协议、资源清理及查询账本、回放服务／handler、投递诊断。纯协议／服务替身与真实PG／Redis按各夹具区分，不冒充真实embedding／浏览器／Docker或录制产品验收。中间2个指标定向绿色不重复累加。
+
+新矩阵opt-out `e204-optout-final.log`实际9 skipped、14.33秒、exit0，PG／Redis均显式关闭；没有执行真实服务，不计通过。首轮compileall -q src tests与pip check均exit0；ruff／mypy未安装，独立lint／typecheck未执行。此时仍在等待最终框架交付回归，以下最终交付记录待实际终态补齐，本节尚未提交。
+
+框架组首次`e204-framework-verified.log`实际18 passed、1 failed、150.83秒、exit1：旧`test_killed_worker_pending_is_reclaimed_without_replaying_started_agent`在原entered.wait(15)期限内未进入运行门。此前§203的旧进程等待失败也未查明根因；本次不增加期限、不删除强杀断言。原日志未捕获该子进程首因，失败fixture已终止子进程，系统进程核对无遗留；不能直接归因为环境负载或总截止改动。
+
+先补现有诊断入口断言，`e204-agent-diagnostics-red.log`实际1 failed、1 passed、6 deselected、12.08秒、exit1，证明旧spawn target仍位于重型fixture模块，无法在其导入前启用诊断。复用`tests.framework_worker_diagnostics`现有轻量目标及context，不新增watchdog或调度：新增agent_worker_process，原test_agent_task_dispatch.worker_process继续导出兼容别名，原执行体仅改名_run_agent_worker。开关、三个阶段事件、原异常／取消传播和默认WARNING均沿原实现；服务、队列、15秒父期限、强杀点及终态断言不改。
+
+将原诊断单元／子进程慢导入负例成对参数化到两个入口，分别覆盖未启用、正常、普通异常、取消和真实8.2秒导入失败；不执行真实业务。定向诊断＋原强杀用例`e204-agent-diagnostics-fixed.log`实际 **14 passed、42.55秒、exit0**：13项诊断协议／真实独立Python子进程证据，另1项真实PG／Redis Worker强杀。该次实际fixture导入5.969秒，随后领取并到达原运行门；它只证明新诊断可用及本次行为通过，不能证明历史15秒超时首因已经定位或修复。运行路由和质量门文档保留此限制。
+
+### 最终验证与交付
+
+最后在同一固定Python／配置／源码下启动24文件单次回归`e204-all-verified.log`，串行执行、不并行压服务，不以此前155／64／14或§203绿色替代。本次保留失败stdout／stderr捕获，不再使用show-capture=no隐藏子进程阶段信息。等待原句柄真实终态后再补结果与提交，本节当前仍是未提交草稿。
+
+原句柄最终实际返回 **773 passed、1605.40秒、exit0，无skip／deselect**，持久记录ALL_VERIFIED_EXIT_CODE=0。此前各分组及中间失败进度不再重复累加；本次773是在最后生产／测试字节下的一次完整选择集，不宣称全量后端或全部真实服务。包含原Agent dispatch／v2兼容及15秒独立进程、正式框架控制／projected与approval结算／Worker活动、仅结算Dispatcher及3个独立Worker强杀窗口、新9个交付联合窗口、通用Redis／指标／CLI及上述领域handler回归。原强杀窗口不是新deadline矩阵，正常图及模型／工具事实仍按各测试真实范围核对。
+
+实际命令（工作目录Agent_Server；`E:\MiniConda3\envs\Agent\python.exe`，先执行`../scripts/clear_uv_environment.ps1 -ProcessOnly`；PYTHONIOENCODING=utf-8，PG／Redis=1，Docker／MySQL／PLAN_RUN_CREATION=0，QA_FRAMEWORK_WORKER_DIAGNOSTICS=1）：
+
+~~~powershell
+& E:\MiniConda3\envs\Agent\python.exe -u -m pytest tests/test_agent_task_dispatch.py tests/test_agent_v2_worker_contract.py tests/test_framework_task_control.py tests/test_framework_projected_settlement.py tests/test_framework_approval_settlement.py tests/test_framework_worker_activity.py tests/test_controlled_case_settlement_dispatch.py tests/test_controlled_case_settlement_dispatch_process.py tests/test_framework_worker_diagnostics.py tests/test_controlled_case_settlement_delivery_faults.py tests/test_redis_task_worker.py tests/test_live_redis_task_delivery.py tests/test_redis_task_retry.py tests/test_redis_worker_entrypoint.py tests/test_redis_execution_dispatcher.py tests/test_metrics_business.py tests/test_compaction_task_dispatch.py tests/test_vector_rebuild_task_dispatch.py tests/test_test_case_embedding_pipeline.py tests/test_resource_cleanup_worker.py tests/test_resource_cleanup_query_journal.py tests/test_resource_cleanup_entrypoint.py tests/test_recording_replay_service.py tests/test_framework_delivery_diagnostics.py -q -rs --tb=short
+& E:\MiniConda3\envs\Agent\python.exe -m compileall -q src tests
+& E:\MiniConda3\envs\Agent\python.exe -m pip check
+~~~
+
+最终compileall与pip check再次实际exit0，后者No broken requirements found，`e204-static-final.log`；ruff／mypy仍实际未安装，不擅自安装，独立backend lint／typecheck未执行。未改前端，未执行前端测试／typecheck／build／浏览器；未运行全量后端、真实供应商／领域目标、Docker／MySQL／RustFS、真实embedding或付费模型验收。仅使用已运行PG／Redis与既有隔离夹具，不启停服务、不改生产路由。
+
+最终src聚合SHA256为`5773538683e8cde0c76896c46fda725832e685ff8549a2dfbfcc9419b419dd1c`（870个py），tests为`955796c1f6a9d676d436f558cd178b73047972d1078d29cadc23bc240f2d48cc`（680个py），算法同§199：相对POSIX路径排序，路径UTF-8＋NUL＋原字节＋NUL。最终773项运行期间未再修改生产或测试；结束后仅补文档、复编译与pip check。所有原pytest句柄已取得终态，系统核对无残留pytest／multiprocessing测试Worker。未提交日志或运行制品。
+
+### 对应与剩余出口
+
+v4 E／§12.1＋A2-3／§11 → §204 → 原通用Worker截止语义、领域消费方回归、新9项联合矩阵、旧spawn诊断缺口及实际日志修复 → 最终24文件773通过与静态检查 → 中文本地fix提交，实际ID见Git与交付。共14文件（2个生产源码、8个测试／helper、4份文档）精确暂存，不提交用户v3／环境／日志，不推送、不建PR。git diff --cached --check实际通过；新增行高置信度私钥／常见API凭据模式扫描0命中，不称为完整安全审计。用户v3hash仍为`8a43e94160767a0de20740f2cb30782f06322cbc3467076dfcb120d4efdf1ad4`。
+
+该子步不代表v4全系统完成，生产writer仍关闭，旧偶发15秒进程超时未有首因证明，本次轻量入口和单次复验不包装成根因修复。后续仍需逐模式入口与质量、业务审批、真实供应商／领域Runner、A3完整外部补偿与资源清理、E3／E4制品、一致备份恢复和性能基线；通用handler自己的异常分类／跨领域副作用恢复也不能由本步推断已闭合。完整v4及H01–H12范围不缩小，goal保持active，整体剩余仍粗估4–8周有效开发／验收，外部环境／授权／人工发布等待另计，非日期承诺。

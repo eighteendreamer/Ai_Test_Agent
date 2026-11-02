@@ -261,6 +261,8 @@ python -m src.cli.run_task_outbox_relay --once --batch-size 100
 
 Redis 是交付层，长期运行结果和证据仍在 PostgreSQL；新建消费组或手动回拨游标不能保证重放已回收历史。旧部署由 Relay 创建的闲置基础组仍会阻挡回收，需核查真实消费者后单独制定迁移，程序不会自动销毁组。死信流保存人工恢复材料，旧向量索引与死信流的保留策略仍待治理。维护失败会记录 `redis_task_history_trim_failed`，业务投递继续；持续失败和旧 pending 应单独排查。
 
+通用 `RedisTaskWorker` 的 `ORCHESTRATION__REDIS_TASK_TIMEOUT_SECONDS` 是 Worker 等待总截止，不是数据库或外部操作的停止回执。到期记录 `redis_task_execution_deadline_unconfirmed`（`recovery_reason=execution_deadline_receipt_unknown`），取消并收拢异步等待者，保留原消息 pending；不 ACK、不创建重试消息、不因重试次数耗尽而转死信，指标计入 deferred 而非 handler failure。SQL 线程或远程操作仍可能完成，必须沿原身份查询持久结果；pending 此后可再次投递，但不授予业务重放权限，handler 仍须使用既有幂等、租约与对账规则。handler 自身抛出的 `TimeoutError` 等普通异常仍沿原 transfer／重试上限策略处理，不等同于 Worker 总截止。此变化适用于使用该通用 Worker 的全部 CLI，无需新配置或 schema；不能据此宣称各领域外部效果均已完成恢复验收。
+
 启用 `ORCHESTRATION__REDIS_TASK_DISPATCH_ENABLED=true` 后，普通/回归 TestRun 的运行记录、RunItem 与首次 dispatch intent 会在同一个 PostgreSQL 事务中提交；Redis 暂时不可用时不会丢失任务意图。
 
 ### 1.2 启动 Agent Turn Worker

@@ -44,7 +44,7 @@ class RecordingReplayService:
             stored, created = await self._store.submit(pending, stream=self._dispatch_stream)
             logger.info("recording_replay_submitted", extra={"recording_id": recording_id,
                 "project_id": request.project_id, "replay_id": stored.id,
-                "dispatch_stream": self._dispatch_stream, "created": created})
+                "dispatch_stream": self._dispatch_stream, "created_new": created})
             return stored
         stored, created = await self._store.create_or_get(pending)
         if not created:

@@ -709,6 +709,20 @@ to_thread 内 SQL 已停止；日志 `agent_case_settlement_receipt_unknown` 保
 lifespan 回归，不把它称为完整生产启动或发布验收。通用 Worker 总截止／交付所有权变化
 与 SQL 在途的联合窗口仍须后续闭合；本步不改变通用重试／转移策略，也不据此开放 writer。
 
+### 通用 Worker 总截止与仅结算交付的不确定性
+
+后续 §204 将通用 Worker 自己的等待截止与 handler 报告的失败分开：
+`redis_task_execution_deadline_unconfirmed` 带原 task／delivery／worker／stream、等待时长和
+`recovery_reason=execution_deadline_receipt_unknown`。复用 TaskDeferred 保留原 PEL，
+不 ACK／transfer／耗尽后死信；收拢 asyncio 任务不等于停止 to_thread SQL 或远程效果。
+指标记 deferred，不记 handler error。handler 自己抛出的 TimeoutError 等异常仍沿原失败策略，
+此处没有将全部领域超时改成可恢复成功，也没有禁止正常 reclaim 原 pending。
+
+仅结算在后续投递时依然必须核对持久身份、原件与 scoped 租约；未提交的过期 Attempt
+只能新建后继 Attempt，旧 token 被 fence；已提交的结果由兼容 reader 核对并 ACK，
+writer 关闭时不领取、不申请资源、不改写 Result／审计或原生产者。
+联合故障的实际范围和保留失败见实施记录 §204；生产 writer 继续关闭。
+
 ### 原路由与恢复验证
 
 关闭新选路时记录 `deep_agent_new_turn_route_disabled`，带 `session_id`、`turn_id` 和 `recovery_reason=new_turn_admission_disabled`；这是路由决定，不是取消/停止回执。

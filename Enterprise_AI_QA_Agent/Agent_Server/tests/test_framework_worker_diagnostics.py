@@ -12,22 +12,24 @@ from types import SimpleNamespace
 import pytest
 
 from src.core import log_format
+from tests.test_agent_task_dispatch import worker_process as agent_worker_process
 from tests.test_framework_task_control import framework_worker_process
 
 
-def test_spawn_entry_arms_diagnostics_before_importing_heavy_worker_fixtures():
-    assert framework_worker_process.__module__ == "tests.framework_worker_diagnostics", (
+@pytest.mark.parametrize("entry", [framework_worker_process, agent_worker_process])
+def test_spawn_entry_arms_diagnostics_before_importing_heavy_worker_fixtures(entry):
+    assert entry.__module__ == "tests.framework_worker_diagnostics", (
         "spawn imports the target module before calling it; diagnostics inside the fixture module start too late"
     )
 
 
-def probe(monkeypatch, caplog, *, enabled, error=None):
+def probe(monkeypatch, caplog, *, enabled, error=None, entry=framework_worker_process):
     # Restore stdlib hooks before pytest's own faulthandler failure reporting.
     with monkeypatch.context() as scoped:
-        return _probe(scoped, caplog, enabled=enabled, error=error)
+        return _probe(scoped, caplog, enabled=enabled, error=error, entry=entry)
 
 
-def _probe(monkeypatch, caplog, *, enabled, error=None):
+def _probe(monkeypatch, caplog, *, enabled, error=None, entry=framework_worker_process):
     private = "fixture-private-worker-arguments"
     if enabled:
         monkeypatch.setenv("QA_FRAMEWORK_WORKER_DIAGNOSTICS", "1")
@@ -53,26 +55,30 @@ def _probe(monkeypatch, caplog, *, enabled, error=None):
     monkeypatch.setattr(faulthandler, "cancel_dump_traceback_later", cancel)
     monkeypatch.setattr(asyncio, "run", run)
     args = (SimpleNamespace(private=private), private, SimpleNamespace(private=private), "none")
+    if entry is agent_worker_process:
+        args = args[:3]
     if error is None:
-        framework_worker_process(*args)
+        entry(*args)
     else:
         with pytest.raises(type(error)) as caught:
-            framework_worker_process(*args)
+            entry(*args)
         assert caught.value is error, "Diagnostics replaced the original execution exception"
     assert private not in repr([record.__dict__ for record in caplog.records])
     return calls
 
 
-def test_default_worker_does_not_arm_diagnostics_or_change_logging(monkeypatch, caplog):
-    calls = probe(monkeypatch, caplog, enabled=False)
+@pytest.mark.parametrize("entry", [framework_worker_process, agent_worker_process])
+def test_default_worker_does_not_arm_diagnostics_or_change_logging(monkeypatch, caplog, entry):
+    calls = probe(monkeypatch, caplog, enabled=False, entry=entry)
     assert calls == [("logging", "WARNING"), ("run",)]
     assert not [record for record in caplog.records if record.name == "tests.framework_worker_diagnostics"]
 
 
 @pytest.mark.parametrize("failure", [None, RuntimeError("fixture-private-worker-arguments"),
     asyncio.CancelledError("fixture-private-worker-arguments")])
-def test_enabled_worker_records_phases_without_native_watchdog_or_masking_execution(monkeypatch, caplog, failure):
-    calls = probe(monkeypatch, caplog, enabled=True, error=failure)
+@pytest.mark.parametrize("entry", [framework_worker_process, agent_worker_process])
+def test_enabled_worker_records_phases_without_native_watchdog_or_masking_execution(monkeypatch, caplog, failure, entry):
+    calls = probe(monkeypatch, caplog, enabled=True, error=failure, entry=entry)
     assert calls == [("logging", "INFO"), ("run",)]
     records = [record for record in caplog.records if record.name == "tests.framework_worker_diagnostics"]
     assert [record.getMessage() for record in records] == ["framework_test_worker_entered",
@@ -102,7 +108,9 @@ print('worker_returned_normally')
     assert "framework_test_worker_exited" in result.stderr
 
 
-def test_real_child_diagnoses_slow_fixture_import_without_masking_its_failure():
+@pytest.mark.parametrize("entry,fixture", [(framework_worker_process, "tests.test_framework_task_control"),
+    (agent_worker_process, "tests.test_agent_task_dispatch")])
+def test_real_child_diagnoses_slow_fixture_import_without_masking_its_failure(entry, fixture):
     script = """
 import builtins
 import sys
@@ -112,15 +120,16 @@ original_import = builtins.__import__
 failure = ImportError('fixture-private-import-failure')
 
 def slow_fixture_import(name, *args, **kwargs):
-    if name == 'tests.test_framework_task_control':
+    if name == sys.argv[3]:
         time.sleep(8.2)
         raise failure
     return original_import(name, *args, **kwargs)
 
 builtins.__import__ = slow_fixture_import
 try:
-    entry = __import__(sys.argv[1], fromlist=['framework_worker_process'])
-    entry.framework_worker_process(None, None, None, 'none')
+    module = __import__(sys.argv[1], fromlist=[sys.argv[2]])
+    args = (None, None, None) if sys.argv[2] == 'agent_worker_process' else (None, None, None, 'none')
+    getattr(module, sys.argv[2])(*args)
 except ImportError as exc:
     assert exc is failure
     print('original_import_failure_preserved')
@@ -129,7 +138,7 @@ else:
 finally:
     builtins.__import__ = original_import
 """
-    result = subprocess.run([sys.executable, "-c", script, framework_worker_process.__module__],
+    result = subprocess.run([sys.executable, "-c", script, entry.__module__, entry.__name__, fixture],
         cwd=Path(__file__).resolve().parents[1],
         env={**os.environ, "QA_FRAMEWORK_WORKER_DIAGNOSTICS": "1"},
         capture_output=True, text=True, timeout=20)

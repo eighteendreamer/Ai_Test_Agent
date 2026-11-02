@@ -32,6 +32,9 @@ class RedisTaskWorker:
 
     Handlers must commit PostgreSQL facts before returning and enforce business
     idempotency/fencing there. Stream ownership is not a substitute for that.
+    A Worker deadline leaves the original delivery pending: cancellation cannot
+    prove SQL/remote work stopped. A later handler must reconcile durable facts;
+    pending redelivery alone never authorizes replay of effects.
     """
 
     def __init__(
@@ -232,6 +235,7 @@ class RedisTaskWorker:
                 last_touch = perf_counter()
                 successful_touches += 1
 
+        handler_clock = perf_counter()
         execution = asyncio.ensure_future(self._handler(task))
         renewal = asyncio.create_task(heartbeat())
         try:
@@ -240,7 +244,15 @@ class RedisTaskWorker:
                 return_when=asyncio.FIRST_COMPLETED,
             )
             if not done:
-                raise TimeoutError("Redis task execution deadline exceeded")
+                # The Worker stopped waiting, not the database thread/remote
+                # effect. Reuse pending reconciliation, never the failure retry
+                # or dead-letter path. A handler's own exception is unchanged.
+                LOGGER.warning("redis_task_execution_deadline_unconfirmed", extra={
+                    "task_id": task.payload.get("task_id"), "delivery_message_id": task.message_id,
+                    "worker_id": self._consumer, "delivery_stream": str(getattr(self._queue, "stream", "") or ""),
+                    "operation_seconds": perf_counter() - handler_clock,
+                    "recovery_reason": "execution_deadline_receipt_unknown", "automatic_replay": False})
+                raise TaskDeferred("execution_deadline_receipt_unknown")
             if renewal in done:
                 try:
                     await renewal

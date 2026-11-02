@@ -10,6 +10,18 @@ from time import monotonic
 logger = logging.getLogger(__name__)
 
 
+def agent_worker_process(settings, prefix, entered=None):
+    """Apply the same evidence scope to the original, unbound Agent Worker."""
+    with framework_worker_diagnostics() as started:
+        from tests.test_agent_task_dispatch import _run_agent_worker
+
+        if started is not None:
+            logger.info("framework_test_worker_fixtures_loaded", extra={
+                "worker_id": str(os.getpid()), "operation_seconds": monotonic() - started,
+            })
+        _run_agent_worker(settings, prefix, entered)
+
+
 def framework_worker_process(settings, prefix, binding, pause_at, recovery_mode=None):
     """Spawn through a light module, then import the real v2 Worker fixtures."""
     with framework_worker_diagnostics() as started:

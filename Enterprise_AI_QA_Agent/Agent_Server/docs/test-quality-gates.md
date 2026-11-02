@@ -84,6 +84,8 @@ exit $result
 
 这个开关只被测试子进程 helper 读取，不是生产 Settings 配置，也不会启用模型、目标或生产路由。当前共用该 helper 的原生审批、原结果投影和仅结算 Worker 均可沿原调用使用；其他自建进程入口不会自动获得此诊断。
 
+实施记录 §204 将原无绑定 Agent 测试的 `tests.test_agent_task_dispatch.worker_process` 也接到同一轻量模块：它继续导出兼容别名，实际 target 为 `tests.framework_worker_diagnostics.agent_worker_process`；原执行体保留为 `_run_agent_worker`。仍使用同一开关、同一三个阶段事件和异常传播规则，不改变原父进程15秒期限、强杀位置、队列、领域状态或租约。该接入只补诊断缺口；某次复验通过不证明此前未捕获首因的进程超时已经修复。
+
 启用后：
 
 - 沿现有 `configure_logging` 输出 INFO 生命周期事件，以 task／attempt／worker 关联原领取、执行、原生继续、收尾及资源释放；不新建一套业务 Trace。
