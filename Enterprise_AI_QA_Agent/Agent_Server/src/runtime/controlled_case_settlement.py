@@ -62,6 +62,11 @@ class ControlledCaseSettlements:
         """Read only an already proven atomic settlement; never create/repair it."""
         return await self._run(owner, native, create=False)
 
+    async def ensure_recovery(self, delivery, *, capabilities):
+        from src.runtime.controlled_case_settlement_recovery import ControlledCaseSettlementRecovery
+
+        return await ControlledCaseSettlementRecovery(self._tasks).ensure(delivery, capabilities=capabilities)
+
     async def acknowledge_delivery(self, delivery, *, capabilities):
         """ACK persisted originals, without acquiring/reconstructing a live owner."""
         scope = {"operation": "terminal_delivery_ack"}

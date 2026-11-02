@@ -14,6 +14,7 @@ from src.schemas.controlled_case_task_input import (
 )
 from src.schemas.session import ConversationResponse
 from src.schemas.runtime_binding import RuntimeBinding, RuntimeExecutionOwner
+from src.schemas.controlled_case_settlement_recovery import ControlledCaseSettlementReference, settlement_recovery_task_id
 
 
 AgentTaskStatus = Literal[
@@ -36,7 +37,7 @@ LegacyAgentTaskOperation = Literal[
     "coordinator_child",
     "coordinator_resume",
 ]
-AgentTaskOperation = Literal[LegacyAgentTaskOperation, "framework_reconcile", "approval_recover", "message_recover", "case_execute"]
+AgentTaskOperation = Literal[LegacyAgentTaskOperation, "framework_reconcile", "approval_recover", "message_recover", "case_execute", "case_settle"]
 TERMINAL_AGENT_TASK_STATUSES = frozenset(
     {"completed", "interrupted", "failed", "cancelled", "recovery_required"}
 )
@@ -96,6 +97,7 @@ class AgentTaskCommandV2(BaseModel):
     case_execution_input: ControlledCaseFinalizationTaskInputAsset | ControlledCaseResultTaskInputAsset | ControlledCasePreparedTaskInputAsset | ControlledCaseTaskInputAsset | None = Field(
         default=None, exclude_if=lambda value: value is None)
     case_execution_reference: ControlledCaseTaskInputReference | None = Field(default=None, exclude_if=lambda value: value is None)
+    case_settlement_reference: ControlledCaseSettlementReference | None = Field(default=None, exclude_if=lambda value: value is None)
 
     @field_validator("case_execution_input", mode="before")
     @classmethod
@@ -128,6 +130,18 @@ class AgentTaskCommandV2(BaseModel):
                 raise ValueError("case_execute delivery differs from its original RunItem turn or fixed scope")
         elif asset is not None or reference is not None:
             raise ValueError("Only case_execute may carry frozen case input")
+        settlement = self.case_settlement_reference
+        if self.operation == "case_settle":
+            if (settlement is None or self.task_type != "agent_turn" or self.runtime_binding.runtime_kind != "langgraph"
+                or self.parent_task_id != settlement.origin_task_id
+                or self.task_id != settlement_recovery_task_id(settlement.origin_task_id, settlement.origin_attempt_id)
+                or not all((self.project_id, self.run_id, self.run_item_id, self.reference_id))
+                or self.turn_id != str(uuid5(NAMESPACE_URL,
+                    f"case-run:{self.run_id}:{self.run_item_id}:{settlement.run_item_execution_attempt_id}"))
+                or any(value is not None for value in (self.attempt_id, self.worker_id, self.resource_id)) or self.payload):
+                raise ValueError("case_settle requires its exact identity-only settlement lineage")
+        elif settlement is not None:
+            raise ValueError("Only case_settle may carry settlement lineage")
         return self
 
 

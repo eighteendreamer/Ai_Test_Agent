@@ -323,7 +323,12 @@ async def test_first_admission_rejects_changed_formal_sources_without_any_writes
             session.metadata["run_item_id"] = str(uuid4())
         await s.h.store.save_session(session)
     elif change == "deadline":
-        options["model_budget"] = s.budget.model_copy(update={"deadline_at": s.now - timedelta(seconds=1)})
+        # Admission uses the database clock. A host timestamp minus one second
+        # can still be future-dated on a drifting Docker/test database clock.
+        with postgres_connect(s.h.settings) as conn, conn.cursor() as cur:
+            cur.execute("SELECT clock_timestamp() - INTERVAL '1 second' AS expired")
+            expired = cur.fetchone()["expired"]
+        options["model_budget"] = s.budget.model_copy(update={"deadline_at": expired})
     else:
         raw = s.budget.model_dump(mode="json", exclude={"model_configurations"})
         options["model_budget"] = FrameworkModelBudget.model_validate({**raw, "schema_version": 1})
@@ -586,8 +591,24 @@ async def test_expired_original_receipt_stays_readable_but_new_run_attempt_canno
     s = formal_case
     first = await submit(s)
     future = s.now + timedelta(minutes=3)
+    original_item = await s.d.runs.get_item(s.item.id)
+    original_attempt = await asyncio.to_thread(s.d.runs._get_latest_attempt_sync, s.item.id)
     await s.d.runs.recover_expired(s.detail.run.id, future)
     claims = await s.d.runs.claim_items(run_id=s.detail.run.id, worker_id="new-run-worker",
+        limit=20, lease_seconds=120, now=future)
+    assert all(item.id != s.item.id for item, _ in claims)
+    assert await s.d.runs.get_item(s.item.id) == original_item
+    assert await asyncio.to_thread(s.d.runs._get_latest_attempt_sync, s.item.id) == original_attempt
+    # Like the execution-lease compatibility test, explicitly persist the old
+    # reaper's historical failure sample. Current reapers must not produce it.
+    # Even such a legacy successor cannot refreeze the original admission.
+    with postgres_connect(s.h.settings) as conn, conn.cursor() as cur:
+        item = s.d.runs._lock_item(cur, s.item.id)
+        attempt = s.d.runs._lock_attempt(cur, s.item.id, s.item.lease_token)
+        s.d.runs._write_attempt(cur, attempt.model_copy(update={"status": "expired", "completed_at": future}))
+        s.d.runs._write_item(cur, item.model_copy(update={"status": "queued", "lease_owner": None,
+            "lease_token": None, "lease_expires_at": None, "heartbeat_at": None, "started_at": None}))
+    claims = await s.d.runs.claim_items(run_id=s.detail.run.id, worker_id="legacy-successor-worker",
         limit=20, lease_seconds=120, now=future)
     item, attempt = next((item, attempt) for item, attempt in claims if item.id == s.item.id)
     await s.d.runs.start_item(item.id, item.lease_token, future)

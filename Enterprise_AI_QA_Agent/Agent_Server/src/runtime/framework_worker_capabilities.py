@@ -47,6 +47,8 @@ class FrameworkWorkerCapabilities:
     controlled_case_available: bool = False
     controlled_case_input_max_version: int = 4
     controlled_case_checkpoint_max_version: int = 6
+    controlled_case_settlement_admission_available: bool = False
+    controlled_case_settlement_max_version: int = 1
 
     @classmethod
     def from_artifact(cls, *, deepagents_available: bool):
@@ -295,6 +297,17 @@ class FrameworkWorkerCapabilities:
         if type(version) is not int or version != model.model_fields["schema_version"].default:
             raise TaskDeferred(reason)
         self._read_compatible(model.model_validate, value, reason)
+
+    def require_case_settlement_format(self, value):
+        """A compatible lineage reader is not permission to claim or execute."""
+        from src.schemas.controlled_case_settlement_recovery import ControlledCaseSettlementAdmission
+
+        reason = "framework_case_settlement_format_unavailable"
+        version = value.get("schema_version") if isinstance(value, dict) else None
+        if type(version) is not int or not 1 <= version <= self.controlled_case_settlement_max_version:
+            raise TaskDeferred(reason)
+        return self._read_compatible(ControlledCaseSettlementAdmission.model_validate, value, reason,
+            literal_fields=("scope",))
 
     @staticmethod
     def defer_unsupported_format(exc: ValidationError, *, reason: str, literal_fields=()) -> None:

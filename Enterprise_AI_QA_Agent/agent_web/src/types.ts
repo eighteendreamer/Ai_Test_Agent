@@ -1036,6 +1036,7 @@ export interface AgentTaskRecord {
     | "approval_recover"
     | "message_recover"
     | "case_execute"
+    | "case_settle"
     | "coordinator_child"
     | "coordinator_resume";
   session_id: string;

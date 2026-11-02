@@ -607,6 +607,37 @@ Assessment 读者共用同一事务内的原交付、schema5、制品兼容、�
 未增加持久格式、DDL、公开 REST／前端契约、main／Worker 装配或生产路由。
 实际验证与未完成出口见实施记录 §200；只读对账不等于 A3 补偿或正式仅结算恢复已完成。
 
+### 正式 case 失租后的仅结算后继准入（v4 E／§12.1；内部显式端口）
+
+`ControlledCaseSettlements.ensure_recovery(delivery, capabilities=...)` 复用 §199–200
+的失租 Assessment 原件读者和原 Session／RunItem／attempt／owner／task 锁序。
+只有原 `case_execute` 已进入 `recovery_required/execution_owner_expired`、
+schema5 原 Assessment、应用提交及必需观察等完整原件仍可核验时，才可准入。
+首次写入还核对 Session 无活动租约、非 running／waiting_approval／cancelled，
+Run 未 completed／cancelled、原 RunItem／attempt 仍 running 且无 result_id。
+不借用 `message_recover`，不伪造用户消息或阶段，不重建执行 owner。
+
+同一原 task／attempt 派生稳定的 `case_settle` 后继，沿已有 AgentTask／v2 outbox
+和 `test_run.case_settlement_admitted` 审计同事务写入。其 schema1
+`controlled_case_settlement_admission_only` 原件仅保存身份与摘要，绑定原输入、
+应用提交、Assessment、原 task／attempt／owner 和 RunItem／attempt 物理事实。
+原生产者终态、owner、RunItem 与 checkpoint 不修改；Session 只更新既有事件头。
+Redis 只携谱系引用，不复制 Prompt／业务输入／原租约 token。
+
+`controlled_case_settlement_admission_available` 默认 false；
+`controlled_case_settlement_max_version` 的格式读者默认支持 1，但**可读不等于可写或可领**。
+关闭写者后可核对已存在的同一回执；不兼容格式 TaskDeferred，原件／outbox／审计漂移
+则拒绝且不补造。普通 `claim` 明确拒绝 case_settle，Dispatcher 能力检查在领取前 defer。
+后继保持 queued，无 attempt／worker／执行 owner；本步尚未实现专用 claim 或正式结算。
+未新增 DDL、公开受理 API、main 接线或生产路由，旧读者不能因 wire 主版本仍为 2
+就视为兼容新增 operation／引用字段；须 reader-first 或隔离消费者后才可开放写者。
+
+成功日志 `controlled_case_settlement_admitted/reused`；拒绝日志
+`controlled_case_settlement_admission_rejected` 保留错误类型／兼容性原因。
+等待者取消记录 `controlled_case_settlement_admission_unknown`，
+`recovery_reason=admission_receipt_unknown`，不宣称后台事务已回滚，必须复核原回执。
+全部日志带 `automatic_replay=false`。实际红绿、并发／回滚和独立强杀范围见实施记录 §201。
+
 ### 原路由与恢复验证
 
 关闭新选路时记录 `deep_agent_new_turn_route_disabled`，带 `session_id`、`turn_id` 和 `recovery_reason=new_turn_admission_disabled`；这是路由决定，不是取消/停止回执。

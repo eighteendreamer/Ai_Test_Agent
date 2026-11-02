@@ -2,7 +2,7 @@
 
 日期：2026-10-25 起。当前实施依据：[完整 v4 方案](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/docs/langgraph-deepagents-integration-plan-v4-2026-10-27.md)；[v3 方案](langgraph-deepagents-integration-plan-v3-2026-10-26.md)及[v2 方案](langgraph-deepagents-integration-plan-v2-2026-10-25.md)保留历史。
 
-**当前子步：v4 P0 的原生消息比较失败收敛（§54），承接 §52 已提交实现和 §53 原生终态草稿。已复现并修正固定版本 Delta 回放排序根因，保留消息严格比较；只读终态证明不授予应用恢复权。无原结果资产的自动恢复仍未开放；下一步按 §53 材料清单冻结应用投影输入并复用确定性投影器，再闭合 A2-3 projected→任务结算。完整 A2/A3/B/C/D/E/F 均不得用本子步替代；生产默认关闭。**
+**当前子步：v4 E／§12.1 的正式用例失租仅结算谱系准入（§201），承接 §198–200 原终态保留、Assessment／派生 Memory 只读对账。仅沿原 task／outbox 原子创建身份引用、不可变准入和审计；普通 Worker 不可领取，专用 claim／唯一事务结算尚未开放。§52–54 等历史结果保留原证据范围，不代替当前实现或全系统验收。完整 v4 及 H01–H12 仍按实际依赖推进，生产默认关闭。**
 
 2026-10-26 附件再复核见 §37；冻结请求恢复见 §38，语义输入冻结见 §39，结算响应绑定及已结算 DTO 只读导入见 §40，语义服务消费原结算见 §41，冻结语义输入的应用编排消费见 §42，orchestrating 安全后继与代码制品指纹见 §43，Deep Agents 图输入资产见 §44。各阶段记录保留当时结果，以本页顶部快照及最新阶段的限定范围为准。
 
@@ -9677,3 +9677,63 @@ v4 E／§12.1＋A3原件对账 → §200 → 上述代码／测试／文档 → 
 仅只读对账不是完整A3补偿，更不是正式失租恢复完成。下一出口必须进入原task／outbox机制上的正式仅结算谱系准入、兼容能力读者及受限claim／唯一事务结算；保留原task／attempt终态和RunItem原事实，不借message_recover伪造用户消息、不重跑图／模型／工具或Session finalizer。业务审批继续、其他关键故障窗口、main／逐模式实际入口与质量、真实供应商／领域Runner、E3／E4制品、一致备份恢复及性能基线仍未完成。
 
 完整v4及H01–H12范围不缩小，goal保持active；未执行生产切换、付费模型／embedding、实际业务目标测试、Docker／实际MySQL／RustFS或全量前后端。整体剩余仍粗估 **4–8周有效开发／验收**，外部授权、环境及人工发布等待另计，非承诺，不把本子步当整体完成。
+
+## 201. v4 E／§12.1：正式失租仅结算后继的谱系准入与兼容读者（2026-11-02）
+
+基线 `3aa167649`（§200）。续接时实际存在6个已跟踪改动（含用户v3文档）及2个生产新文件；另有3个被上层ignore覆盖的新测试。先核对原草稿、日志和既有实现，不覆盖或归入用户v3。本步只收口正式失租后继的准入，不把该任务当作图执行或授权正式结算。
+
+### 依据 → 架构缺口 → 本步采用
+
+- v4 §10.1 的 A2-3、§12.1 正式用例及§14.1 reader-first → 原 task／attempt 已失租终态，不可重置，也不能从只读 Assessment 获得执行权 → 沿原 AgentTask／v2 outbox 创建独立 `case_settle`，只保存不可变准入与身份引用。
+- `ControlledCaseSettlements._expired_assessment_source`、原 `ControlledCaseAdmission`、`FrameworkMessageRecovery` → 复用原锁序、原件校验、稳定谱系与原事务，不复制 finalizer／调度器，也不借 message_recover 制造用户消息或消息阶段。
+- 本地课程 `Agent轨迹与协议鲁棒性.html` 的04.5／04.6／07 → 不只检查非空回执，核对源事实不变、效果次数、幂等、格式漂移、取消、真实事务回滚与独立进程强杀。
+
+### 实现与权限边界
+
+新增 `src/schemas/controlled_case_settlement_recovery.py` 的 schema1 准入／交付引用，以及 `src/runtime/controlled_case_settlement_recovery.py` 的原事务实现；在原 `ControlledCaseSettlements.ensure_recovery` 暴露内部端口。复用当前原件读者，在同一连接核完整native终态／messages、模型账本、ToolJob／artifact、完成事件、结果留存／审计、application proof、必需观察及原Assessment。只接受同一原task／attempt／owner的 `recovery_required/execution_owner_expired` 与schema5，不能收养手工待对账、运行中、未准备或已schema6结算来源。
+
+首次准入在原Session→plan／RunItem／attempt→owner／task／task attempt及Run锁内，再按数据库时钟核Session无活动租约、非running／waiting_approval／cancelled；Run非completed／cancelled、原RunItem／attempt仍running且无result_id。稳定task ID来自原task＋attempt，准入保存原输入／应用提交／Assessment、原task／attempt／owner和RunItem／attempt物理事实摘要；不保存或重建原执行token。原AgentTask、v2 outbox及 `test_run.case_settlement_admitted` 审计在一个原事务中写入，Session只推进既有审计头。原生产者终态、attempt、owner、RunItem与checkpoint原样保留。
+
+重入先复核原件、准入摘要和全部信封字段，再核原outbox与原审计；缺失／漂移不修补。并发仅一个后继／outbox／审计。写者 `controlled_case_settlement_admission_available` 默认false，格式读者上界 `controlled_case_settlement_max_version=1`；关闭写者仍可读取已有兼容回执，旧／未来格式defer，不降级。`AgentTaskCommandV2` 与前端 `AgentTaskRecord.operation` 同步增加case_settle，引用只含原身份与摘要，禁止payload、业务执行input、attempt／worker／resource或其他运行时。wire仍为v2不代表旧读者支持新operation／字段；上线必须reader-first或隔离消费者。
+
+普通PostgresAgentTaskStore.claim无论有无框架capabilities都拒绝case_settle，原Dispatcher在领取前defer；后继仍queued、attempt_no=0，无执行owner。没有新增DDL、公开受理API、main／生产Worker装配、图／模型／工具／Session finalizer／Assessment重跑或正式结果写入。日志admitted／reused／rejected与兼容原因可检索；等待者取消明确记录admission_receipt_unknown和automatic_replay=false，不冒称后台事务已回滚。
+
+### 真实红测、失败与修复
+
+缺入口红测实际 **1 failed，18.29秒，exit1**，`e201-recovery-red.log`：真实正式来源和失租分类已成功，到ensure_recovery缺失处才报AttributeError。最小实现后第一次 **1 failed，18.60秒**，不是生产者被篡改，而是样本把允许的Session审计头也算成原源事实；按原append_event写者，比较只排除Session的event_count／updated_at，独立精确断言计数+1且重入整头不变，原task／owner／RunItem不做归一化。修正后原首条 **1 passed，17.35秒，exit0**。
+
+扩展第一次 **1 failed、23 passed，18.35秒**，`e201-recovery-expanded.log`：错误断言两种时钟生成的updated_at必须单调；原事件头用宿主机datetime.utcnow，owner流转用PG时钟，真实观察先后差约0.99秒。不改变生产时间协议，保留原head精确幂等与唯一事件计数，不把跨时钟大小当本步契约。
+
+新三文件第一轮 **1 failed、48 passed，292.19秒**，`e201-recovery-final.log`；原契约组第一轮 **1 failed、419 passed，313.43秒**，`e201-contract-regression.log`。前者在独立进程到达门点前触发Redis socket timeout；实际查固定安装Redis客户端默认orig_socket_timeout=5，而测试BLPOP等待40秒，新spawn导入超过5秒。再次单项诊断 **1 failed，32.61秒**，`e201-process-diagnostic.log`，复现同一原因。对齐原test_controlled_case_settlement_process.py的独立等待连接socket_timeout=65，子进程阻塞门也显式65，不修改服务Redis设置或生产重试。
+
+后者的deadline负例用host的s.now减1秒，不保证在数据库clock_timestamp之前；生产本来正确使用DB时钟。只把失败样本的过期deadline改由同一数据库clock_timestamp减1秒构造，未放宽准入校验。两个强杀窗口＋该deadline定向实际 **3 passed，94.22秒，exit0**，`e201-process-clock-fixed.log`。
+
+扩大后的七文件契约组实际 **1 failed、533 passed，1149.36秒，exit1**，`e201-contract-verified.log`：旧 `test_expired_original_receipt_stays_readable_but_new_run_attempt_cannot_refreeze_it` 仍期待generic reaper重新排队受理后的正式case，next(claims)因无该item报StopIteration。核对§198的can_requeue_expired_attempt及原lease_reconciliation／execution_lease测试，确认生产“不重领”保护正确。仅修旧夹具：先实际回收／claim并断言原item／attempt完全不变、未重领；再按原execution_lease兼容测试显式写入旧reaper曾产生的历史失败样本，继续保留“历史后继不得重冻原准入、原回执可读、所有事实不再变化”的断言。没有恢复自动requeue、删除失败断言或放宽生产边界。该项定向实际 **1 passed，12.41秒，exit0**，`e201-legacy-fixture-fixed.log`，随后重跑完整七文件矩阵。
+
+### 最终验证
+
+所有backend命令使用 `E:\MiniConda3\envs\Agent\python.exe`、工作目录Agent_Server；清当前子进程UV变量，PYTHONIOENCODING=utf-8，实际服务组RUN_LIVE_POSTGRES_TESTS=1／RUN_LIVE_REDIS_TESTS=1、Docker／MySQL／PLAN_RUN_CREATION=0，QA_FRAMEWORK_WORKER_DIAGNOSTICS=1。复用已运行PG／Redis，不启停服务；隔离表／schema／Redis前缀，stdout＋stderr保存不提交的.codex-logs。各最终组使用相同生产Python源码；新55项后、原145项运行期间，仅修改旧admission中上段历史兼容测试的函数体，全部共享fixture／导入／生产字节不变。随后七文件完整矩阵以最终测试字节重新运行；不把最终整个tests摘要冒充前两组启动时整个测试树的摘要。
+
+~~~powershell
+& E:\MiniConda3\envs\Agent\python.exe -u -m pytest tests/test_controlled_case_settlement_protocol.py tests/test_controlled_case_settlement_recovery.py tests/test_controlled_case_settlement_recovery_process.py -q -x -rs --tb=short --show-capture=no --log-level=INFO
+& E:\MiniConda3\envs\Agent\python.exe -u -m pytest tests/test_agent_v2_worker_contract.py tests/test_runtime_binding_contract.py tests/test_runtime_binding_persistence.py tests/test_framework_release_binding.py tests/test_controlled_case_task_input.py tests/test_controlled_case_admission.py tests/test_controlled_case_execution_lease.py -q -x -rs --tb=short --show-capture=no --log-level=INFO
+& E:\MiniConda3\envs\Agent\python.exe -u -m pytest tests/test_controlled_case_assessment_reconciliation.py tests/test_controlled_case_settlement_ack.py tests/test_controlled_case_settlement.py tests/test_controlled_case_finalization.py tests/test_controlled_case_settlement_process.py -q -x -rs --tb=short --show-capture=no --log-level=INFO
+~~~
+
+新准入／协议／独立进程组实际 **55 passed，531.71秒，exit0，无skip／deselect**，`e201-admission-verified.log`，取得ADMISSION_VERIFIED_EXIT_CODE=0。其中23纯协议、30真实准入、2独立强杀窗口。覆盖原身份保留、禁执行owner／图和结果写者、5项写者／读者／制品能力、关闭写者只读、4并发、写审计后真实回滚、8项准入／信封／outbox／原件漂移、4项不合来源、5项Session活动状态／租约与Run取消、普通claim／Dispatcher拒绝、真实Redis relay与取消等待者。事务内强杀实际回滚task／outbox／审计；提交后ACK前强杀保留一份，两个新spawn只读者关闭写者、各重复读取两次，exit0且无额外模型／工具调用。不是后继领取后强杀，也不是后继正式结算强杀验收。
+
+新三文件全LIVE与PLAN_RUN_CREATION=0的opt-out实际 **23 passed、32 skipped，12.21秒，exit0**，`e201-optout-verified.log`；32真实服务未执行，不计绿色服务覆盖，也不重复累加23纯协议。前端当前源码 `npm.cmd run typecheck` 实际exit0；任务池页面／API、完成事件／刷新／Flow五文件测试实际 **25 passed，5.08秒，exit0**，`e201-frontend-verified.log`；类型变化已通过消费方检查，未执行全量前端／build／浏览器。
+
+原正式原件／结算／Session finalization／独立进程组实际 **145 passed，1565.00秒，exit0，无skip／deselect**，`e201-formal-verified.log`，取得FORMAL_VERIFIED_EXIT_CODE=0。原30 Assessment读取、22持久交付ACK、59正式结算、31 Session finalization与3原producer强杀窗口均实际重跑，保留完整messages／原件漂移、双owner、终态ACK、结果／task／totals原子性、回滚和派生失败范围。原producer三个窗口不是本步后继专用claim／结算验收，不把单元替身和本地合成HTTP称为实际供应商或领域Runner。
+
+七文件完整契约矩阵最终实际 **582 passed，883.34秒，exit0，无skip／deselect**，`e201-contract-final.log`，取得CONTRACT_FINAL_EXIT_CODE=0。包括旧／新Worker、命令／RuntimeBinding、持久绑定、发布制品、正式输入、原子受理和双租约领取，修正的两个旧admission测试均在完整矩阵中重跑。前述533通过的中间失败组不累加；三组最终backend共 **782 passed**，包含大量纯协议／参数矩阵与真实隔离PG／Redis用例，不称782项全部为真实服务。前端25项另计，opt-out不并入该总数。全部pytest原handle已取回终态，未留后台测试。
+
+固定Python最终实际 `-m compileall -q Agent_Server/src Agent_Server/tests`、`-m pip check` 均exit0，后者No broken requirements found；实际检查ruff／mypy未安装，不新增依赖，独立backend lint／typecheck未运行。`git diff --cached --check` 实际通过；新增行私钥／常见API凭据等高置信度模式扫描0命中，不把模式扫描称为完整安全审计。最终工作区src聚合SHA256为 `73a138f5038e2f667d18a76f4c833044522ae6c631bcd46f33ebfbadfb60929c`（869个py），tests为 `e8e3de9adac67783a7bb9f2df569c4dd0dc31a3eabeb7bbd15baefd7f37124ed`（675个py），算法同§199，提交前复核。用户v3工作区原hash保持 `8a43e94160767a0de20740f2cb30782f06322cbc3467076dfcb120d4efdf1ad4`，未改写或暂存。
+
+### 对应、提交与剩余出口
+
+v4 E／§12.1＋A2-3正式域准入 → §201 → 6后端生产／4测试／1前端类型／2文档 → 真实红绿、782项backend／25项frontend、opt-out／compileall／pip check → 独立提交“【feat】接通正式失租仅结算谱系准入”，实际ID见Git与交付。只暂存本轮13文件，新增ignore测试精确单文件force-add；不纳入用户v3、认证、环境、日志或运行制品，不推送、不建PR。
+
+下一出口仍是专用仅结算claim／lease、原件与谱系复核后的唯一正式结算事务、提交后持久ACK，以及后继领取后／结算提交前后强杀。准入不是结算完成，不重置原task／attempt终态，不将其当图执行，不重跑图／模型／工具／Session finalizer。业务审批继续、其他故障窗口、main／逐模式实际入口与质量、真实供应商／领域Runner、A3完整补偿／资源清理、E3／E4制品、一致备份恢复及性能基线仍未完成。
+
+本步不更改依赖声明、锁或运行时指纹；既有requirements.lock迁移已在README记录，历史uv.lock仍是被动绑定证据，不能直接删除。未执行付费模型／embedding、生产切换、实际目标测试、Docker／MySQL／RustFS或全量前后端。本轮范围之外的完整v4及H01–H12保持，goal仍active；整体剩余仍粗估 **4–8周有效开发／验收**，外部授权、环境及人工发布等待另计，不承诺交付日期。
