@@ -103,7 +103,7 @@ def execution_worker(settings_data, config_data, raw, gate, window):
     asyncio.run(work())
 
 
-def ack_worker(settings_data, raw, gate):
+def ack_worker(settings_data, raw, gate, *, expired_assessment=False):
     """Fresh interpreter receives settings+delivery only: no owner/native/model."""
     from redis.asyncio import Redis
     from src.core.config import Settings
@@ -121,10 +121,11 @@ def ack_worker(settings_data, raw, gate):
         tasks.claim_controlled_case = tasks.begin = tasks._update_status = forbidden
         service = ControlledCaseSettlements(tasks)
         try:
-            receipts = [await service.acknowledge_delivery(raw, capabilities=FrameworkWorkerCapabilities("a" * 64, False))
+            read = service.read_expired_assessment if expired_assessment else service.acknowledge_delivery
+            receipts = [await read(raw, capabilities=FrameworkWorkerCapabilities("a" * 64, False))
                 for _ in range(2)]
             assert receipts[0] == receipts[1]
-            result = {"receipt": receipts[0].model_dump(mode="json")}
+            result = {"assessment" if expired_assessment else "receipt": receipts[0].model_dump(mode="json")}
         except (RuntimeError, ValueError) as exc:
             result = {"rejected": type(exc).__name__}
         redis = Redis.from_url(settings.database.redis_url, decode_responses=True)
@@ -216,6 +217,33 @@ async def test_hard_kill_never_invents_settlement_and_new_reader_only_acks_commi
             else:
                 assert response["rejected"] in {"FrameworkMessageStageRecoveryRequired", "ValueError"}
             assert originals_digest(p) == before and len(requests) == 1
+            if not committed:
+                from datetime import datetime, timezone
+                from tests.test_controlled_case_lease_reconciliation import expire
+                from tests.test_controlled_case_execution_lease import claim
+
+                # Only after the actual producer is dead: classify its original
+                # task, never recreate its Python owner/native objects. Generic
+                # recovery preserves the RunItem and cannot requeue execution.
+                now = datetime.now(timezone.utc)
+                expire(s, now)
+                assert await s.d.runs.recover_expired(s.item.run_id, now) == 0
+                assert await s.h.store.renew_turn_execution(s.session.id, task.lease_token, 0)
+                expired = await claim(s)
+                assert expired.status == "recovery_required" and expired.error_code == "execution_owner_expired"
+                assert (expired.id, expired.attempt_id, expired.attempt_no) == (task.id, task.attempt_id, 1)
+                before = originals_digest(p)
+                reader = ctx.Process(target=ack_worker, args=(settings.model_dump(mode="json"), raw, gate + ":expired"),
+                    kwargs={"expired_assessment": True})
+                reader.start()
+                observed = await waiting.blpop(gate + ":expired", timeout=30)
+                assert observed is not None, f"expired reader child exitcode={reader.exitcode}"
+                await asyncio.to_thread(reader.join, 10)
+                assert not reader.is_alive() and reader.exitcode == 0
+                assert json.loads(observed[1]) == {"assessment": checkpoint["assessment"]}
+                assert originals_digest(p) == before and len(requests) == 1
+                assert (await s.d.runs.get_item(s.item.id)).result_id is None
+                assert (await s.h.tasks.get(task.id)).status == "recovery_required"
     finally:
         for child in (process, reader):
             if child is not None and child.is_alive():

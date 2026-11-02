@@ -22,7 +22,9 @@ from src.runtime.execution_context import current_framework_owner, current_graph
 from src.runtime.framework_application_projection import _require, _require_event_intent, require_application_commit
 from src.runtime.framework_projection_source import ControlledCaseProjectionSource
 from src.runtime.postgres_runtime_owner import configure_runtime_owner_transaction, assert_runtime_owner, lock_owner_row
-from src.schemas.controlled_case_admission import ControlledCaseSettlementCheckpoint, read_result_checkpoint
+from src.schemas.controlled_case_admission import (
+    ControlledCaseAssessmentCheckpoint, ControlledCaseSettlementCheckpoint, read_result_checkpoint,
+)
 from src.schemas.controlled_case_settlement import ControlledCaseSettlementReceipt
 from src.schemas.controlled_case_task_input import parse_controlled_case_task_input, ControlledCaseFinalizationTaskInputAsset
 from src.schemas.framework_approval import approval_value_hash
@@ -76,6 +78,53 @@ class ControlledCaseSettlements:
             "result_id": receipt.result_id, "settlement_sha256": receipt.receipt_sha256, "automatic_replay": False})
         return receipt
 
+    async def read_expired_assessment(self, delivery, *, capabilities):
+        """Read the retained assessment, not a recovery/settlement grant.
+
+        The original execution owner is deliberately not reconstructed. The
+        returned asset keeps its preparation-only scope; admission/claim of
+        any successor must recheck its own lineage and current facts.
+        """
+        scope = {"operation": "expired_assessment_read"}
+        try:
+            command = deepcopy(capabilities.require_command_format(delivery))
+            scope["task_id"] = command.task_id
+            capabilities.require_runtime_artifact(command.runtime_binding)
+            asset = await asyncio.to_thread(self._expired_assessment_original, command, capabilities)
+        except (Exception, asyncio.CancelledError) as exc:
+            logger.warning("controlled_case_expired_assessment_unsettled", extra={**scope,
+                "error_type": type(exc).__name__, "recovery_reason": "expired_assessment_originals_unsettled",
+                "automatic_replay": False})
+            raise
+        logger.info("controlled_case_expired_assessment_read", extra={**scope,
+            "run_item_id": asset.run_item_id, "assessment_sha256": asset.asset_sha256, "automatic_replay": False})
+        return asset
+
+    def _expired_assessment_original(self, command, capabilities):
+        from src.runtime.framework_event_completion import original_checkpoint_source
+        from src.runtime.postgres_framework_model_calls import PostgresFrameworkModelCalls
+
+        tasks, settings = self._tasks, self._tasks._settings
+        with postgres_connect(settings) as conn, conn.cursor() as cur:
+            configure_runtime_owner_transaction(cur, settings)
+            session = tasks._lock_session(cur, command.session_id)
+            case, row = lock_case_delivery(cur, tasks, command, capabilities)
+            checkpoint = read_result_checkpoint(case.attempt)
+            _require(isinstance(checkpoint, ControlledCaseAssessmentCheckpoint)
+                and not isinstance(checkpoint, ControlledCaseSettlementCheckpoint),
+                "Controlled expired original assessment is missing or already settled")
+            source = original_checkpoint_source(cur, settings, command.runtime_binding, row, checkpoint.assessment.owner_epoch)
+            task, attempt, saved_owner = self._lock_identity_rows(cur, source)
+            self._require_case_identity(case)
+            _require(task["status"] == attempt["status"] == saved_owner["execution_state"] == "recovery_required"
+                and task["error_code"] == attempt["error_code"] == "execution_owner_expired"
+                and attempt["finished_at"] is not None and not task["interrupt_requested"],
+                "Controlled assessment producer is not an expired execution original")
+            case.store._lock_run(cur, case.item.run_id)
+            PostgresFrameworkModelCalls(settings).require_worker_compatibility(cur, command.runtime_binding,
+                capabilities, require_budget=False)
+            return self._application_assessment_original(cur, source, None, case, session, task, checkpoint)
+
     def _delivery_original(self, command, capabilities):
         from src.runtime.framework_event_completion import original_checkpoint_source
         from src.runtime.postgres_framework_model_calls import PostgresFrameworkModelCalls
@@ -121,15 +170,19 @@ class ControlledCaseSettlements:
         case = lock_case_execution(cur, settings, owner.controlled_case_lease,
             task_id=owner.task_id, binding=owner.binding, require_active=False)
         task, attempt, saved_owner = self._lock_identity_rows(cur, owner)
-        _require(task["lease_token"] == owner.owner_token
-            and (case.item.lease_token, case.attempt.lease_token, case.item.lease_owner, case.attempt.worker_id,
-                case.item.attempt_no, case.attempt.attempt_no, case.attempt.recovered_from_attempt_id)
-            == (owner.controlled_case_lease.lease_token, owner.controlled_case_lease.lease_token,
-                owner.controlled_case_lease.worker_id, owner.controlled_case_lease.worker_id,
-                owner.controlled_case_lease.attempt_no, owner.controlled_case_lease.attempt_no, None),
-            "Controlled settlement differs from its original dual execution identity")
+        _require(task["lease_token"] == owner.owner_token,
+            "Controlled settlement differs from its captured task lease")
+        self._require_case_identity(case)
         case.store._lock_run(cur, case.item.run_id)
         return case, session, task, attempt, saved_owner
+
+    def _require_case_identity(self, case):
+        lease = case.lease
+        _require((case.item.lease_token, case.attempt.lease_token, case.item.lease_owner, case.attempt.worker_id,
+                case.item.attempt_no, case.attempt.attempt_no, case.attempt.recovered_from_attempt_id)
+            == (lease.lease_token, lease.lease_token, lease.worker_id, lease.worker_id,
+                lease.attempt_no, lease.attempt_no, None),
+            "Controlled settlement differs from its original dual execution identity")
 
     def _lock_identity_rows(self, cur, owner):
         """Producer identity is not execution authority; terminal hashes follow."""
@@ -209,6 +262,20 @@ class ControlledCaseSettlements:
         hashes = self._terminal_materials(cur, owner, locked, receipt.result_id)
         _require(all(getattr(receipt, key) == value for key, value in hashes.items()),
             "Controlled settlement original terminal rows changed")
+        self._application_assessment_original(cur, owner, native, case, session, task, checkpoint)
+        event = settlement_event(receipt, checkpoint)
+        cur.execute(f"SELECT * FROM {self._tasks._settings.database.postgres_event_table} WHERE id=%s FOR SHARE", (event.id,))
+        row = cur.fetchone()
+        _require(row is not None, "Controlled settlement has no atomic audit receipt")
+        _require_event_intent(row, event)
+        return receipt
+
+    def _application_assessment_original(self, cur, owner, native, case, session, task, checkpoint):
+        """Shared facts only, after the caller verifies its scoped originals.
+
+        Both terminal ACK and lost-producer reads use the same native/result/
+        application/evidence checks. Neither call grants execution authority.
+        """
         original = parse_controlled_case_task_input(task["input_payload"]["case_execution_input"])
         _require(isinstance(original, ControlledCaseFinalizationTaskInputAsset),
             "Controlled settlement has no original finalization input")
@@ -217,21 +284,13 @@ class ControlledCaseSettlements:
 
             proof = checkpoint.runtime_result_asset.runtime_result.state["model_response_summary"]["native_terminal"]
             native = read_native_terminal_original(cur, self._tasks._settings, owner, proof, original.graph_input)
-        # Only this proof-scoped ACK reaches the common facts without live
-        # authority. Ordinary readers/writers still reject completed owners.
         result = ControlledCaseResultReader(self._tasks)._read_originals_in_transaction(
             cur, owner, original, native, case, task)
         require_retained_case_asset(cur, self._tasks._settings, owner, original, checkpoint,
             FrameworkRuntimeResult.from_result(result).model_dump(mode="json"))
         source = ControlledCaseProjectionSource(case, owner, checkpoint)
         require_application_commit(cur, self._tasks._settings, session, owner.binding, source)
-        self._assessments._require_original(cur, source, original)
-        event = settlement_event(receipt, checkpoint)
-        cur.execute(f"SELECT * FROM {self._tasks._settings.database.postgres_event_table} WHERE id=%s FOR SHARE", (event.id,))
-        row = cur.fetchone()
-        _require(row is not None, "Controlled settlement has no atomic audit receipt")
-        _require_event_intent(row, event)
-        return receipt
+        return self._assessments._require_original(cur, source, original)
 
     def _material(self, owner, native, create):
         tasks, settings = self._tasks, self._tasks._settings

@@ -549,6 +549,33 @@ checkpoint，不解析、升级或丢弃其 payload；旧版本和未知未来�
 不改变生产开关。正式失租后原件对账与仅结算资格仍是后续出口，不借普通
 `message_recover` 的准入伪造 case 的用户消息／阶段。实际验证与剩余项见实施记录 §198。
 
+### 正式 case 失租 Assessment 只读原件（v4 E／§12.1；内部端口）
+
+`ControlledCaseSettlements.read_expired_assessment(delivery, capabilities=...)` 消费原
+reference-only 交付，在原 Session→plan／RunItem／attempt→owner／task／task attempt
+锁序内核对严格格式、制品、完整交付／冻结输入、原双执行身份和失租分类。
+只接受已有 schema5 Assessment、同一原 task／attempt／owner 的
+`recovery_required`／`execution_owner_expired`；未准备、仍执行、手工待对账、
+已结算、未知格式或身份漂移不自动转换为该读取范围。
+
+读取只使用无 token 的 `RuntimeCheckpointSource`，不重建 `RuntimeExecutionOwner`。
+与 schema6 终态 ACK 共用原生终态／完整消息物化、模型账本、ToolJob／artifact、
+事件完成、结果资产及留存审计、application commit、原 Assessment／证据／审计校验。
+不复制评估器或 finalizer，不只凭原件 ID 或摘要存在便返回成功。
+兼容只读制品无需开启新执行开关；旧 reader／未来版本和字段仍 defer，不降级重写。
+
+返回值是原 `ControlledCaseAssessmentAsset`，scope 仍是
+`controlled_case_assessment_preparation_only`，不是结算 receipt 或恢复资格。
+不 claim／begin／续租／重评／写结果／改终态／补 Memory／创建后继，也不运行模型、
+图、工具或 Session finalizer。派生 Memory 当前是否存在不在本端口证明范围内。
+新读者也不能把原 asset 传回旧 owner 绕过 live fence；原 ACK 仍要求完整 schema6。
+
+成功日志 `controlled_case_expired_assessment_read`；拒绝／取消记录
+`controlled_case_expired_assessment_unsettled`、
+`recovery_reason=expired_assessment_originals_unsettled`、`automatic_replay=false`。
+取消等待者不证明后台只读线程已结束，不产生可重跑许可。
+未增加持久格式、DDL、公开 REST 或生产装配；真实验证与剩余出口见实施记录 §199。
+
 ### 原路由与恢复验证
 
 关闭新选路时记录 `deep_agent_new_turn_route_disabled`，带 `session_id`、`turn_id` 和 `recovery_reason=new_turn_admission_disabled`；这是路由决定，不是取消/停止回执。
