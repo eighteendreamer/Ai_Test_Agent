@@ -847,8 +847,26 @@ class AgentTaskDispatcher:
                     raise TaskDeferred(exc.reason) from exc
 
                 async def renew():
-                    if not await self._tasks.renew_framework_execution(task, config.turn_execution_lease_seconds):
+                    if await self._tasks.renew_framework_execution(task, config.turn_execution_lease_seconds):
+                        return
+                    # The atomic return deliberately closes both running
+                    # leases before the Python waiter receives its receipt.
+                    # End monitoring only after the existing scoped reader
+                    # proves THIS attempt's commit; never renew a terminal
+                    # owner or turn an unknown/foreign result into success.
+                    returned = await self._tasks.get(task.id, framework_capabilities=capabilities)
+                    if (returned.status != "completed" or returned.attempt_id != task.attempt_id
+                            or returned.attempt_no != task.attempt_no):
                         raise ContinuationLeaseLostError("Controlled execution lost its original dual owner")
+                    receipt = await runtime.acknowledge_delivery(delivery, capabilities=capabilities)
+                    if (receipt.task_id != task.id or receipt.attempt_id != task.attempt_id
+                            or receipt.owner_epoch != task.runtime_owner.owner_epoch
+                            or receipt.binding_fingerprint != task.runtime_binding.fingerprint):
+                        raise ValueError("Controlled monitor return differs from its captured attempt")
+                    stop.set()
+                    LOGGER.info("agent_case_execution_monitor_completed", extra={"task_id": task.id,
+                        "attempt_id": task.attempt_id, "worker_id": worker_id,
+                        **_case_receipt_fields(receipt), "automatic_replay": False})
 
                 if not await self._resources.renew(lease, lease_seconds=config.resource_default_lease_seconds):
                     raise ContinuationLeaseLostError("Controlled admission resource was lost before execution")

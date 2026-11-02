@@ -31,6 +31,7 @@ from tests.test_runtime_binding_persistence import make_command
 @pytest_asyncio.fixture
 async def pending_formal(formal_case, tmp_path, request):
     s = formal_case
+    options = getattr(request, "param", {})
     reply = _tool_reply("openai_chat_completions")
     calls = reply["choices"][0]["message"]["tool_calls"]
     calls[0]["id"], calls[0]["function"]["arguments"] = "A", '{"path":"a.py"}'
@@ -44,21 +45,24 @@ async def pending_formal(formal_case, tmp_path, request):
             p.parts.tool_registry.register_dynamic(tool, "inspect_source")
             return await prepare(s, p)
 
-        async with execution(s, _config("openai_chat_completions", url), prepare_input=prepare_input) as h:
+        config = _config("openai_chat_completions", url)
+        async with execution(s, config, prepare_input=prepare_input, claim_task=not options.get("dispatch")) as h:
             effects = []
             async with business_bridge(h, effects, approval_required=True) as bridge:
                 ports = {}
-                if getattr(request, "param", {}).get("runtime_wait"):
+                if options.get("runtime_wait"):
                     from src.runtime.controlled_case_approval_wait import ControlledCaseApprovalWaits
 
                     ports["approval_wait_service"] = ControlledCaseApprovalWaits(s.h.tasks, projection=bridge.projection)
-                outcome = await ControlledCaseRuntime(runtime_service=bridge.runtime, **ports).execute(
-                    h.task, executor=executor(s, h), resource_id="isolated-pending-originals", fencing_token=1)
-                assert outcome.graph_outcome.native_terminal is None
-                assert len(outcome.graph_outcome.native_interrupts) == 2 and len(requests) == 1 and effects == []
-                source = RuntimeCheckpointSource.model_validate(h.task.runtime_owner.model_dump(exclude={"owner_token"}))
+                outcome, source = None, None
+                if not options.get("dispatch"):
+                    outcome = await ControlledCaseRuntime(runtime_service=bridge.runtime, **ports).execute(
+                        h.task, executor=executor(s, h), resource_id="isolated-pending-originals", fencing_token=1)
+                    assert outcome.graph_outcome.native_terminal is None
+                    assert len(outcome.graph_outcome.native_interrupts) == 2 and len(requests) == 1 and effects == []
+                    source = RuntimeCheckpointSource.model_validate(h.task.runtime_owner.model_dump(exclude={"owner_token"}))
                 yield SimpleNamespace(s=s, h=h, bridge=bridge, outcome=outcome,
-                    source=source, requests=requests, effects=effects)
+                    source=source, requests=requests, effects=effects, config=config)
 
 
 def require_originals(p, cur, *, expected=None, source=None, graph_input=None):

@@ -871,6 +871,31 @@ journal 和来源 AI 核；不读“最新根”代替原件，不放开 saver �
 领域 Runner 或完整 main lifespan。普通决定入口仍隔离正式审批，专用决定准入／双归属后继与
 继续执行尚待实现。无公共 HTTP／数据库 schema／依赖变更。
 
+### 正式停车独立 Worker 强杀（§210，仍无决定／继续权限）
+
+新增专项沿原 Dispatcher／RedisTaskWorker 验证四个进程窗口：进入停车事务前、最后停车审计
+写入后但未提交、实际提交后 Python 回执返回前、原 ack_owned 之前。仅一次性执行子进程领取
+正式任务并调用官方图及本机合成 HTTP；父进程只完成正式版本冻结／受理，不预先执行图。
+未提交窗口没有半批审批、停车回执或正式结果；提交窗口保留原完整批次，独立只读 Worker
+在 writer 关闭时核历史原件并 ACK，原投递再次入队仍只读。旧格式读者保持 pending。
+
+测试同时核对原正式 Attempt、Task 输入／代次、全表与 native 摘要、唯一模型请求／已结账本、
+零工具效果和零正式结果。读者的执行／新归属／资源获取误调用会写隔离 Redis 计数，避免
+Dispatcher 的延期处理掩盖测试禁用路径。未提交失租仅沿原机制分类 recovery_required，不能
+重领原正式条目或凭原生 pending 自动重跑。资源槽使用实际 TTL／reaper 回收，不借用已死
+Worker 的资源凭据；SQL 租约到期采用隔离夹具的受控到期，不称为生产长时间失租演练。
+
+这补齐了该正式停车组合的独立进程故障证据，不是实际供应商／领域 Runner、完整 main
+lifespan、部署滚动／回滚或正式决定后继续执行验收。默认 writer 未改变；专用决定准入、
+双归属后继与继续执行仍待实现。真实测试结果及命令见实施记录 §210。
+
+扩大组实际发现停车提交清除运行租约与监控轮询竞态。正式 Dispatcher 的原 renew 回调现在
+只有在续租返回 false 后，才读取持久 Task；必须 completed 且仍为本次 Agent Attempt／代次，
+再经既有 Runtime 专用读者核回执、原件和本次 owner epoch／binding，才能设置原 stop Event
+结束运行态监控。缺审计／回执／身份漂移仍失败延期，不重续终态租约、不捕获任意异常转成功。
+此处只结束监控，不直接 ACK Redis，也不跳过原 execution 返回及正常回执比较；仍需原
+Worker ack_owned。确定性回归同时覆盖停车和正式结算的原件完好／审计漂移／回执缺失。
+
 ### 原路由与恢复验证
 
 关闭新选路时记录 `deep_agent_new_turn_route_disabled`，带 `session_id`、`turn_id` 和 `recovery_reason=new_turn_admission_disabled`；这是路由决定，不是取消/停止回执。

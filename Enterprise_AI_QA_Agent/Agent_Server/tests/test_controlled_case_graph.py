@@ -105,8 +105,11 @@ async def business_bridge(h, effects, *, approval_required, table_names=None):
     try:
         yield SimpleNamespace(runtime=runtime, projection=projection, jobs=jobs, state=state, records=[])
     finally:
-        _drop_tables(h.settings, [h.settings.database.postgres_tool_artifact_table,
-            h.settings.database.postgres_tool_job_table])
+        # Explicit names borrow the parent's tables in process-loss tests.
+        # Only their creator may clean them up, including on child failures.
+        if table_names is None:
+            _drop_tables(h.settings, [h.settings.database.postgres_tool_artifact_table,
+                h.settings.database.postgres_tool_job_table])
 
 
 @pytest.mark.asyncio

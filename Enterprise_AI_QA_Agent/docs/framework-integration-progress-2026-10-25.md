@@ -10277,3 +10277,90 @@ v4 §7／§8–10／§12.1 → §209 → 历史停车原件 ACK＋首次／重�
 同一冻结源码／测试将全部 live 开关设 0 后，e209-optout-final.log 实际 **2 passed、91 skipped、10.08 秒、exit0**。2 项是组合准入与 main 静态装配，91 项按显式 PG／Redis 授权门跳过，不算业务通过。e209-static-final.log 在扩大组后重新运行 compileall 与 pip check，均 exit0；src／tests 聚合与上文冻结值完全一致，ruff／mypy 仍缺包，独立 lint／typecheck 未做。前端未改未运行，未运行全量后端、真实供应商／Runner、完整 main lifespan、Docker／MySQL／RustFS 或完整 E3／E4。
 
 本轮所有 pytest／静态句柄已回收；核对固定环境的 pytest／multiprocessing 进程为 0。用户 v3 原 SHA256 保持不变。提交前精确检查 12 文件及完整暂存 diff、diff --cached --check 和高置信度敏感新增行，不包含日志、原始制品、环境／依赖锁或用户 v3；只本地提交，不推送／建 PR。下一步仍为正式停车跨进程故障及专用决定／后继／继续权限，不将当前 ACK 子步当作全系统完成，整体 goal 保持 active。
+
+## §210 正式停车独立 Worker 强杀与只读重投递
+
+### 续接、依据与范围
+
+基线为 §209 已提交 cb70941f2。先核 active goal、v4 和较新实施记录、Git 与被 ignore 的测试草稿及 e210-queue-contract-red.log；没有把交接摘要当成实测。用户 v3 原 SHA256 仍为 8a43e94160767a0de20740f2cb30782f06322cbc3467076dfcb120d4efdf1ad4，不改／不暂存。Conda＋pip 迁移已提交，固定 E:\MiniConda3\envs\Agent\python.exe；不重装／升级依赖或删除历史 uv.lock。现有服务已运行，本轮不启停服务、不开生产 writer、不调用付费模型或业务目标。
+
+v4 A2-3／E、§7／§8–10／§12.1 → §210 → 正式停车跨进程故障与 reference-only 重投递，只补该组合的验证出口，不新造调度层或恢复权限。依据如下：
+
+- 原 test_controlled_case_settlement_dispatch_process 的真实 Redis Worker、SQL 事务内门与 ack_owned 门，test_controlled_case_settlement_process 的正式冻结输入／原模型策略／官方图组合 → 相同原调度链上放置四个精确故障窗口，只有一次性子进程可领取／执行，父进程不持有执行 owner。
+- 原 pending_formal／execution 的 prepare_input 与 claim_task，原 business_bridge → 共享夹具新增显式 dispatch 选项，仅准备／冻结／受理，默认 pending 测试保持原语义；保存本机模型配置供执行子进程加载，不重新装配 Prompt 或检索。
+- 原 framework_worker_diagnostics 轻量 spawn 入口 → 加同类正式停车入口，在重夹具导入前记录可选诊断；同一单测核默认关闭、普通异常／取消原样传播和慢导入失败，不加 native watchdog 或放宽进程门期限。
+- 本地课程 Agent轨迹与协议鲁棒性.html §04.5（重复执行的全状态一致性／补偿）和 v4 的未知效果不重放 → 比较完整持久摘要与调用／效果次数，缺回执不能当重执行许可；不只断言 handler 返回值。
+
+初始范围不改生产 Python，仅测试／helper 与文档。首次扩大组后来揭示真实监控竞态，按下节的确定性红测与原件契约扩大为一个 Dispatcher 根因修复；仍不改公共 API、schema、依赖、配置或主路由。正式决定准入／双归属后继／继续不在本步实现中。
+
+### 四个窗口及权限边界
+
+新 test_controlled_case_approval_wait_process 使用 Windows spawn 独立解释器和 Process.kill／join，不以 asyncio 取消模拟进程死亡。窗口为 before_transaction、inside_transaction（原停车审计已写但事务未提交）、after_commit_before_reply（原 _park 退出连接上下文已提交，Python 等待者未收到回执）、before_redis_ack（Dispatcher 已复核停车回执，原 ack_owned 尚未执行）。不在杀进程后释放事务门来模拟提交；连接断开由真实 PG 回滚未提交事务。
+
+四窗口均保留原 reference-only Redis 投递，pending=1、stream 一条、原 Task 输入／一次 Agent Attempt 和正式执行 Attempt 不变。提交前两窗口没有半批 Job／approval／link、停车审计／completed 事件、停车回执或正式 Result；提交后两窗口完整保留两项 batch、waiting_approval 与原持久回执。根账本保留一次已结调用、原 policy 和一次本机 OpenAI Chat SDK 请求，待审批工具零效果。
+
+新解释器只接 settings 和原投递，不接执行 owner、模型配置或 native 返回对象。旧 codec 读者不领取／不写入，保持 pending；兼容读者在 controlled_case_available=false 下确认已提交历史原件并 ACK，再将完全相同 raw 重新入队，仍相同回执、全表／native 摘要不变。读者对 owner 构造、执行器、模型解析、工具投影、Session finalizer、资源 acquire 等禁用路径采用隔离 Redis 计数，误调用即使被 Dispatcher 转延期也不能伪绿。受控工具 handler 也另有跨进程效果计数，不能用父进程空列表证明子进程没有执行。
+
+未提交窗口先证明 writer 关闭读者只保持 pending；然后仅在本轮随机表受控缩短原 SQL 租约，原 RunStore reaper 不重置已受理正式条目，原 Task claim 仅分类 execution_owner_expired／recovery_required。无新 owner、Agent Attempt、模型调用、Result 或原生重执行，随后只读投递仍不 ACK。资源槽则实际等待 Redis TTL／reaper 回收，不冒用死 Worker 凭据。该 SQL 到期是故障夹具，不冒称生产长时间失租／部署演练。
+
+### TDD、失败证据与真实修正
+
+1. 续接草稿 e210-queue-contract-red.log 为 1 failed、3 deselected、18.35 秒：dispatch 参数未被 pending_formal 处理，父进程已执行图。沿原 execution 的 claim_task 开关修正夹具准备边界；没有更改生产执行规则。
+2. e210-entry-red.log 为 1 failed、3 deselected、11.60 秒：父进程零执行断言已过，缺新轻量 spawn 入口而 AttributeError。随后实现同类入口与真实 Worker 组合。
+3. e210-process-first.log 为 4 failed、53.91 秒：四个真实强杀门均已到达，草稿错误将多条正式 Attempt 全体解包为单条。按原正式 execution ID 选择，仍严格断言原 ID／版本／无 Result。
+4. e210-process-diagnostics.log 为 4 failed、19 passed、86.82 秒：新诊断入口全部通过，四窗口在验证零决定时发现原 counts helper 不含 decisions 键。核原 helper、正式 reader／claim、TTL API 及后续断言后，以同一随机 _decision 表真实 SQL count=0 验证，不删除断言、不改原 helper 或生产行为。
+5. e210-process-contracts.log 为 **4 passed、160.19 秒、exit0，无 skip／deselect**，实际跑完四个强杀、独立旧 codec／只读读者、未提交失租分类与提交后再次重投全部断言。19 项诊断结果是此前中间运行，不能合并成最终23绿；扩大组将按同一冻结字节重跑。
+
+这些验证是原正式冻结／PG 业务事务、真实 Redis Worker、官方 LangGraph／SDK 和本机合成 HTTP 的组合；配置／检索／业务工具仍受控，未调用实际供应商、RustFS 或领域目标。四项不是四个真实业务用例通过，也没有执行待审批工具。
+
+### 冻结回归与待补终态
+
+已启动10文件单次串行 e210-affected-final.log：新 process、pending originals、wait、wait ACK、Worker diagnostics、framework task control、原 agent dispatch、正式 dispatch、pip migration 与 framework dependencies。工作目录 Agent_Server；先执行 ../scripts/clear_uv_environment.ps1 -ProcessOnly，PYTHONIOENCODING=utf-8，RUN_LIVE_POSTGRES_TESTS／REDIS=1，Docker／MySQL／PLAN_RUN_CREATION=0，QA_FRAMEWORK_WORKER_DIAGNOSTICS=1；必须取得原句柄终态后追加真实结果，不能沿用 §209 的765条代表本轮通过。
+
+~~~powershell
+& E:\MiniConda3\envs\Agent\python.exe -u -m pytest tests/test_controlled_case_approval_wait_process.py tests/test_controlled_case_pending_approvals.py tests/test_controlled_case_approval_wait.py tests/test_controlled_case_approval_wait_ack.py tests/test_framework_worker_diagnostics.py tests/test_framework_task_control.py tests/test_agent_task_dispatch.py tests/test_controlled_case_dispatch.py tests/test_pip_environment_migration.py tests/test_framework_dependencies.py -q -rs --tb=short
+~~~
+
+最终组开始时 src 873 个 py、SHA256 33f7e6dcc00be5caebc275f4fc33510726ea1cb289a9d439c5d59079de6e01bd，与 §209 相同；tests 687 个 py、SHA256 142c8cdb7b9713940e6e3c7d2bebd5b87465728208fa722f7b656fc32acab426。算法明确为 Agent_Server 相对 POSIX 路径排序，路径 UTF8＋NUL＋原文件字节＋NUL（含 src/ 或 tests/ 前缀）。开始后仅写文档，不改源码／测试。compileall -q Agent_Server/src Agent_Server/tests 与 pip check 已实际 exit0，后者 No broken requirements found；最终组后复核静态与 opt-out，缺失 ruff／mypy 不擅自安装。
+
+下一出口仍为正式决定专用准入、保留原人工决定与原 Attempt 的双归属后继／继续和恢复矩阵；完整 v4、H01–H12、真实供应商／逐模式 Runner、完整 A3／E3／E4、备份恢复与性能基线仍未完成。未改前端未跑前端；未跑全量后端、Docker／MySQL／RustFS 或完整 main lifespan。默认 writer 关闭、整体 goal 保持 active。整体剩余沿既有粗估4–8周有效开发／验收，外部授权、环境／发布等待另计，不能从当前测试子步推算确定完成日期。
+
+### 扩大组真实失败：运行租约与已提交返回的生命周期竞态
+
+原10文件 e210-affected-final.log 已取得终态：**200 passed、2 failed、971.21秒、exit1，无skip／deselect**。失败均为新 process 的提交后窗口，旧文件198项及新前两窗口通过，不能把它说成最终全绿。日志证实原子停车已提交并清除 Session／RunItem 的运行租约；原 .05 秒 monitor 的 renew 将这一正常生命周期终点返回 false，Dispatcher 先收到 monitor 异常，取消仍在等 Python 回执的执行协程，子进程因此在目标 ACK 门前退出。after_commit_before_reply 还触发借用父进程表的 business_bridge 退出清理，造成父进程 UndefinedTable；before_redis_ack 明确 Original Worker missed its hard-kill window。没有延长轮询间隔或关闭 monitor 来获取绿色。
+
+先按该真实时序补确定性测试：原 _park 确实退出连接提交后，SQL 线程暂不把回执交给等待者，让真实监控执行并等待其终态；原件完好不应误取消，审计漂移／回执缺失应失败延期。e210-monitor-red.log 实际 **1 failed、2 passed、30 deselected、23.89秒**，完整原件仍收到 ContinuationLeaseLostError，确认不是只因 kill 测试门竞态或环境速度。根因是运行监控缺少与原子返回的生命周期交接，不是租约时间不够。
+
+唯一生产修改位于 AgentTaskDispatcher._handle_controlled_case 的原 renew 回调：活动双租约仍走原续租；只有返回 false，才按持久 completed＋本次 AgentAttempt／代次分流，复用 runtime.acknowledge_delivery 的停车／正式结算专用读者，核原回执／原件和本次 task／attempt／owner epoch／binding。成功仅设置既有 stop Event 结束运行态监控，并记录 agent_case_execution_monitor_completed／原回执身份；不再续租已终态 owner，不创建新执行权，不新造 recovery 服务，不把 SQL／网络异常无条件当成功。缺件、漂移、活跃／别代任务仍延期。它不直接 ACK Redis，不绕过原 execution 返回与首次停车回执一致性检查；Python 等待者实际失败仍 pending，后续只读确认保留。
+
+e210-monitor-process-green.log 为 **37 passed、346.45秒、exit0，无skip／deselect**，包含四个独立强杀窗口和当时33项wait ACK，其中3项新确定性监控测试。随后将同一监控契约扩大到正式 settlement：e210-monitor-both-scopes.log 实际 **5 passed、1 failed、30 deselected、57.19秒**；失败是新测试以 Task.result_payload=NULL 模拟缺正式 settlement 回执，但该回执原本保存在正式 Attempt checkpoint_version=6／checkpoint_payload.settlement，Task 该列本就不承担此事实。查原 writer／ACK reader与既有receipt_field测试后，改为在同一隔离正式 Attempt 真正清空 settlement 原件，未改生产reader。e210-monitor-both-verified.log 最终 **6 passed、30 deselected、59.06秒、exit0**，同时验证停车／正式结算的完整原件、审计漂移和真缺件；中间passed不累加为最终总数。
+
+另修正测试表生命周期：business_bridge 无显式 table_names 时仍由创建者清理；明确借用父进程表的两个进程测试消费方不得删除父表，即使子任务正常返回或异常。新增两项真实PG准备态测试核正常／异常退出后全表摘要不变、零模型／工具调用。没有更改生产表或数据清理策略；原正式 settlement process 同样纳入最终组。
+
+### 最终字节复验（等待原句柄）
+
+生产修正及最终测试后，已启动16文件单次串行 e210-affected-verified.log，原10文件全部重跑，并增加正式 settlement process、Redis Worker、v2 Worker contract、controlled graph、settlement ACK、settlement。仍用前述固定环境、PG／Redis=1及其他live关闭；没有把之前200通过搬作最终通过。精确命令：
+
+~~~powershell
+& E:\MiniConda3\envs\Agent\python.exe -u -m pytest tests/test_controlled_case_approval_wait_process.py tests/test_controlled_case_pending_approvals.py tests/test_controlled_case_approval_wait.py tests/test_controlled_case_approval_wait_ack.py tests/test_framework_worker_diagnostics.py tests/test_framework_task_control.py tests/test_agent_task_dispatch.py tests/test_controlled_case_dispatch.py tests/test_pip_environment_migration.py tests/test_framework_dependencies.py tests/test_controlled_case_settlement_process.py tests/test_redis_task_worker.py tests/test_agent_v2_worker_contract.py tests/test_controlled_case_graph.py tests/test_controlled_case_settlement_ack.py tests/test_controlled_case_settlement.py -q -rs --tb=short
+~~~
+
+复验冻结 src 873个py、SHA256 0ebcb5dd6914a3959480970ef05e961495d6bd69a50ca03d68f0de875627bbef；tests 687个py、SHA256 229e66c1a508122551ae012516bf021acde90e029f11708cf23944b20aa15ba4。算法同上，最终组后重核。最终范围预计9文件：1生产、6测试／helper（含新专项）、2文档；用户v3不含在内。仅本地中文fix提交，不推送／建PR，实际ID与最终结果在原句柄完成后追加；缺ruff／mypy、全量与外部验收继续明确保留。
+
+### 最终实测与提交核对
+
+16文件原句柄已取得终态：e210-affected-verified.log 实际 **691 passed、1886.90秒、exit0，无skip／deselect**。包括新专项6项（4个独立强杀＋2个借用表生命周期）、6项确定性停车／结算监控正反例和19项诊断测试，以及全部上列旧消费者；不累加中间37／6等绿色运行。它是官方固定框架／SDK、真实隔离PG／Redis、本机合成HTTP、内存／协议／静态／测试替身的混合证据，不是691个真实业务目标通过。初始200通过／2失败和其余红测保留，不能据本轮成功宣称全部历史偶发进程超时或完整E3／E4已解决。
+
+最终同字节PG／Redis／Docker／MySQL／PLAN_RUN_CREATION全部0，QA_FRAMEWORK_WORKER_DIAGNOSTICS=0 后运行 opt-out，e210-optout-final.log 实际 **20 passed、111 skipped、43.04秒、exit0**。20条是19项无服务诊断测试和1项main静态装配，111条明确requires real PostgreSQL and Redis，不计业务通过；没有启停实际服务。
+
+~~~powershell
+& E:\MiniConda3\envs\Agent\python.exe -u -m pytest tests/test_controlled_case_approval_wait_process.py tests/test_controlled_case_pending_approvals.py tests/test_controlled_case_approval_wait.py tests/test_controlled_case_approval_wait_ack.py tests/test_framework_worker_diagnostics.py -q -rs --tb=short
+& E:\MiniConda3\envs\Agent\python.exe -m compileall -q Agent_Server/src Agent_Server/tests
+& E:\MiniConda3\envs\Agent\python.exe -m pip check
+~~~
+
+opt-out命令工作目录Agent_Server；静态两条工作目录仓库根，e210-static-final.log 明确compileall_exit=0、No broken requirements found、pip_check_exit=0。Python3.11.18；ruff／mypy实际缺包，未跑独立lint／typecheck，不擅自加依赖。所有最终回归／opt-out／静态句柄均取回终态，核对pytest／multiprocessing进程为0；src／tests摘要与最终冻结值完全一致。用户v3原hash仍不变。
+
+只精确暂存9个本轮相关文件，新专项按单文件force-add，不修改ignore；检查完整暂存diff、git diff --cached --check及高置信度敏感新增行，不提交原始日志、环境、缓存、依赖锁或用户v3。本地fix提交“【fix】衔接正式停车提交与运行监控生命周期”，实际commit id见Git／交付，不推送或建PR。
+
+v4 A2-3／E、§7／§8–10／§12.1 → §210 → 正式停车四个独立Worker强杀出口＋本次已提交回执结束运行监控＋只读重投递 → 691项最终回归与opt-out／静态 → 专用正式决定准入、双归属后继／继续、完整v4及H01–H12和真实依赖／部署验收仍待完成。默认writer关闭，整体goal继续active；整体仍粗估4–8周有效开发／验收，外部授权／环境／人工发布等待另计，不作完成日期承诺。

@@ -14,9 +14,13 @@ import pytest
 from src.core import log_format
 from tests.test_agent_task_dispatch import worker_process as agent_worker_process
 from tests.test_framework_task_control import framework_worker_process
+from tests.framework_worker_diagnostics import controlled_case_wait_worker_process
 
 
-@pytest.mark.parametrize("entry", [framework_worker_process, agent_worker_process])
+ENTRIES = [framework_worker_process, agent_worker_process, controlled_case_wait_worker_process]
+
+
+@pytest.mark.parametrize("entry", ENTRIES)
 def test_spawn_entry_arms_diagnostics_before_importing_heavy_worker_fixtures(entry):
     assert entry.__module__ == "tests.framework_worker_diagnostics", (
         "spawn imports the target module before calling it; diagnostics inside the fixture module start too late"
@@ -57,6 +61,8 @@ def _probe(monkeypatch, caplog, *, enabled, error=None, entry=framework_worker_p
     args = (SimpleNamespace(private=private), private, SimpleNamespace(private=private), "none")
     if entry is agent_worker_process:
         args = args[:3]
+    elif entry is controlled_case_wait_worker_process:
+        args = (SimpleNamespace(private=private), None, private, {}, private, "read")
     if error is None:
         entry(*args)
     else:
@@ -67,7 +73,7 @@ def _probe(monkeypatch, caplog, *, enabled, error=None, entry=framework_worker_p
     return calls
 
 
-@pytest.mark.parametrize("entry", [framework_worker_process, agent_worker_process])
+@pytest.mark.parametrize("entry", ENTRIES)
 def test_default_worker_does_not_arm_diagnostics_or_change_logging(monkeypatch, caplog, entry):
     calls = probe(monkeypatch, caplog, enabled=False, entry=entry)
     assert calls == [("logging", "WARNING"), ("run",)]
@@ -76,7 +82,7 @@ def test_default_worker_does_not_arm_diagnostics_or_change_logging(monkeypatch, 
 
 @pytest.mark.parametrize("failure", [None, RuntimeError("fixture-private-worker-arguments"),
     asyncio.CancelledError("fixture-private-worker-arguments")])
-@pytest.mark.parametrize("entry", [framework_worker_process, agent_worker_process])
+@pytest.mark.parametrize("entry", ENTRIES)
 def test_enabled_worker_records_phases_without_native_watchdog_or_masking_execution(monkeypatch, caplog, failure, entry):
     calls = probe(monkeypatch, caplog, enabled=True, error=failure, entry=entry)
     assert calls == [("logging", "INFO"), ("run",)]
@@ -109,7 +115,8 @@ print('worker_returned_normally')
 
 
 @pytest.mark.parametrize("entry,fixture", [(framework_worker_process, "tests.test_framework_task_control"),
-    (agent_worker_process, "tests.test_agent_task_dispatch")])
+    (agent_worker_process, "tests.test_agent_task_dispatch"),
+    (controlled_case_wait_worker_process, "tests.test_controlled_case_approval_wait_process")])
 def test_real_child_diagnoses_slow_fixture_import_without_masking_its_failure(entry, fixture):
     script = """
 import builtins
@@ -128,7 +135,9 @@ def slow_fixture_import(name, *args, **kwargs):
 builtins.__import__ = slow_fixture_import
 try:
     module = __import__(sys.argv[1], fromlist=[sys.argv[2]])
-    args = (None, None, None) if sys.argv[2] == 'agent_worker_process' else (None, None, None, 'none')
+    args = {'agent_worker_process': (None, None, None),
+        'framework_worker_process': (None, None, None, 'none'),
+        'controlled_case_wait_worker_process': (None, None, None, None, None, 'read')}[sys.argv[2]]
     getattr(module, sys.argv[2])(*args)
 except ImportError as exc:
     assert exc is failure

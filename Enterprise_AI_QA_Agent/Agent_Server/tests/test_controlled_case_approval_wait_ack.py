@@ -201,6 +201,90 @@ async def test_first_worker_parks_then_acks_and_duplicate_only_reads_originals(a
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("assessment_case", [{**DISPATCH, "approval": value} for value in (True, False)], indirect=True)
+@pytest.mark.parametrize("drift", [None, "audit", "receipt"])
+async def test_monitor_finishes_only_after_verifying_its_own_committed_return(assessment_case, drift, monkeypatch):
+    """Actual failed §210 schedule: commit clears leases before Python returns."""
+    p = assessment_case
+    waiting = bool(p.s.asset.graph_input.interrupt_on)
+    p.runtime._approval_waits = ControlledCaseApprovalWaits(p.s.h.tasks, projection=p.bridge.projection)
+    service = p.runtime._approval_waits if waiting else p.runtime._settlements
+    dispatcher = compose(p)
+    queue = await queue_for(p, delivery(p.s))
+    entered, release, left = Event(), Event(), Event()
+    monitor_done, waiter_cancelled = asyncio.Event(), asyncio.Event()
+    monitor_errors, receipts = [], []
+    material_name, public_name = ("_park", "park") if waiting else ("_material", "complete")
+    material, park, monitor = getattr(service, material_name), getattr(service, public_name), dispatcher._monitor
+
+    def committed_gate(*args, **kwargs):
+        try:
+            result = material(*args, **kwargs)
+            receipt = result if waiting else result[0]
+            receipts.append(receipt)
+            with postgres_connect(p.s.h.settings) as conn, conn.cursor() as cur:
+                if drift == "audit":
+                    cur.execute(f"UPDATE {p.s.h.settings.database.postgres_event_table} SET payload=payload || "
+                        "'{\"fixture_drift\":true}'::jsonb WHERE type=%s",
+                        ("test_run.case_approval_waiting" if waiting else "test_run.case_settled",))
+                    assert cur.rowcount == 1
+                elif drift == "receipt":
+                    if waiting:
+                        cur.execute(f"UPDATE {p.s.h.tasks._tasks} SET result_payload=NULL WHERE id=%s", (p.h.task.id,))
+                    else:
+                        cur.execute(f"UPDATE {p.s.d.runs._attempt_table} SET record=jsonb_set(record,"
+                            "'{checkpoint_payload,settlement}','null'::jsonb) WHERE id=%s", (p.s.attempt.id,))
+                    assert cur.rowcount == 1
+            entered.set()
+            assert release.wait(30), "Committed wait monitor gate timed out"
+            return result
+        finally:
+            left.set()
+
+    async def observed_park(*args, **kwargs):
+        try:
+            return await park(*args, **kwargs)
+        except asyncio.CancelledError:
+            waiter_cancelled.set()
+            raise
+
+    async def observed_monitor(*args, **kwargs):
+        try:
+            return await monitor(*args, **kwargs)
+        except Exception as exc:
+            monitor_errors.append(type(exc).__name__)
+            raise
+        finally:
+            monitor_done.set()
+
+    monkeypatch.setattr(service, material_name, committed_gate)
+    monkeypatch.setattr(service, public_name, observed_park)
+    monkeypatch.setattr(dispatcher, "_monitor", observed_monitor)
+    running = asyncio.create_task(worker(p, dispatcher, queue).run_once())
+    try:
+        assert await asyncio.to_thread(entered.wait, 10)
+        await asyncio.wait_for(monitor_done.wait(), 10)
+        assert bool(monitor_errors) is (drift is not None), monitor_errors
+        if drift is None:
+            assert not waiter_cancelled.is_set() and not running.done()
+        release.set()
+        assert await asyncio.wait_for(running, 15) == int(drift is None)
+        assert await asyncio.to_thread(left.wait, 10)
+        assert (await p.s.h.redis.xpending(queue.stream, queue.group))["pending"] == int(drift is not None)
+        assert len(receipts) == 1 and len(p.requests) == (1 if waiting else 2)
+        assert len(p.effects) == int(not waiting)
+        assert (await p.s.h.tasks.get(p.h.task.id)).attempt_id == receipts[0].attempt_id
+        assert (await p.s.d.runs.get_item(p.s.item.id)).result_id == (None if waiting else receipts[0].result_id)
+        assert await p.s.h.resources.list_active() == []
+    finally:
+        release.set()
+        running.cancel()
+        await asyncio.gather(running, return_exceptions=True)
+        if entered.is_set():
+            assert await asyncio.to_thread(left.wait, 10)
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize("assessment_case", [{**DISPATCH, "approval": True}], indirect=True)
 @pytest.mark.parametrize("fault", ["sql_receipt_loss", "redis_ack_loss", "cancel_sql_waiter"])
 async def test_committed_wait_with_lost_reply_only_acks_on_redelivery(assessment_case, fault, monkeypatch):

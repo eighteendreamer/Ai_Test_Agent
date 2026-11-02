@@ -36,6 +36,18 @@ def framework_worker_process(settings, prefix, binding, pause_at, recovery_mode=
         _run_framework_worker(settings, prefix, binding, pause_at, recovery_mode)
 
 
+def controlled_case_wait_worker_process(settings, config, prefix, raw, gate, mode):
+    """Diagnose cold imports before entering the isolated formal Worker."""
+    with framework_worker_diagnostics() as started:
+        from tests.test_controlled_case_approval_wait_process import wait_worker
+
+        if started is not None:
+            logger.info("framework_test_worker_fixtures_loaded", extra={
+                "worker_id": str(os.getpid()), "operation_seconds": monotonic() - started,
+            })
+        wait_worker(settings, config, prefix, raw, gate, mode)
+
+
 @contextmanager
 def framework_worker_diagnostics():
     from src.core.log_format import configure_logging
