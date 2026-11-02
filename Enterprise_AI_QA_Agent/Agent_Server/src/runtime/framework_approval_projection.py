@@ -187,14 +187,55 @@ class FrameworkApprovalProjection:
         identities = [item.approval.id for item in proposals]
         if len(identities) != len(set(identities)):
             raise FrameworkApprovalRecoveryRequired("Native approval batch contains duplicate business identities")
-        assert_runtime_owner(cur, self._settings, owner)
-        results = [self._project_in_transaction(cur, owner, item) for item in proposals]
+        case = assert_runtime_owner(cur, self._settings, owner)
+        formal_scope = None
+        if case is not None and proposals:
+            self._require_formal_batch_original(cur, owner, case, proposals)
+            # The pure governance candidate is not the authority for formal
+            # routing. Use the locked original admission and execution Attempt,
+            # never the AgentTask attempt or caller-provided source metadata.
+            formal_scope = {"source": "test_run_agent_execution", "project_id": case.checkpoint.project_id,
+                "run_id": case.item.run_id, "run_item_id": case.item.id, "attempt_id": case.attempt.id}
+            for item in proposals:
+                if (any(item.job.metadata.get(key) != value for key, value in formal_scope.items() if key != "source")
+                    or any(key in item.approval.metadata and item.approval.metadata[key] != value
+                        for key, value in formal_scope.items())):
+                    raise FrameworkApprovalRecoveryRequired("Formal approval scope differs from its original admission")
+                item.approval.metadata.update(formal_scope)
+        results = [self._project_in_transaction(cur, owner, item, formal_scope=formal_scope) for item in proposals]
         # Job/event locks can wait past either lease, including the final item.
         # Recheck on a fresh DB clock after every potentially blocking write.
         assert_runtime_owner(cur, self._settings, owner)
         return results
 
-    def _project_in_transaction(self, cur, owner, proposal):
+    def _require_formal_batch_original(self, cur, owner, case, proposals):
+        from src.application.deep_agents.native_approval_batch import require_pending_tool_interrupts_original
+        from src.schemas.controlled_case_task_input import parse_controlled_case_task_input
+        from src.schemas.runtime_binding import RuntimeCheckpointSource
+
+        cur.execute(f"SELECT * FROM {self._settings.database.postgres_agent_task_table} WHERE id=%s FOR UPDATE",
+            (owner.task_id,))
+        task = cur.fetchone()
+        if (task is None or (task["operation"], task["status"], task["attempt_id"], task["worker_id"])
+            != ("case_execute", "running", owner.attempt_id, owner.worker_id)
+            or task["input_hash"] != case.checkpoint.submission_sha256
+            or task["runtime_binding"] != owner.binding.model_dump(mode="json")
+            or not isinstance(task["input_payload"], dict) or set(task["input_payload"]) != {"case_execution_input"}):
+            raise FrameworkApprovalRecoveryRequired("Formal approval has no original running execution task")
+        original = parse_controlled_case_task_input(task["input_payload"]["case_execution_input"])
+        if (original.asset_sha256 != case.checkpoint.input_sha256 or original.graph_input.binding != owner.binding
+            or original.run_item_execution_attempt_id != case.attempt.id
+            or original.plan_snapshot_identity != case.checkpoint.plan_snapshot_identity
+            or (original.context.project_id, original.context.run_id, original.context.run_item_id)
+                != (case.checkpoint.project_id, case.item.run_id, case.item.id)
+            or case.attempt.checkpoint_version != 1):
+            raise FrameworkApprovalRecoveryRequired("Formal approval input differs from its original admission")
+        source = RuntimeCheckpointSource.model_validate(owner.model_dump(exclude={"owner_token"}))
+        require_pending_tool_interrupts_original(cur, self._settings, source, original.graph_input,
+            [NativeToolInterrupt.model_validate(item.link.model_dump(include=set(NativeToolInterrupt.model_fields)))
+                for item in proposals])
+
+    def _project_in_transaction(self, cur, owner, proposal, *, formal_scope=None):
         binding, link, approval, job = owner.binding, proposal.link, proposal.approval, proposal.job
         native = NativeToolInterrupt.model_validate(link.model_dump(include=set(NativeToolInterrupt.model_fields)))
         call_id = framework_tool_call_id(binding, native)
@@ -219,6 +260,8 @@ class FrameworkApprovalProjection:
         if existing is not None:
             saved = ToolApprovalRequest.model_validate(existing)
             if (saved.session_id != approval.session_id or saved.tool_key != approval.tool_key
+                or (formal_scope is not None and any(saved.metadata.get(key) != value
+                    for key, value in formal_scope.items()))
                 or any(saved.metadata.get(key) != approval.metadata.get(key) for key in (
                     "turn_id", "call_id", "tool_job_id", "approval_scope_hash", "framework_binding_id",
                     "framework_call_id", "framework_native_identity"))):
@@ -230,6 +273,8 @@ class FrameworkApprovalProjection:
             or approval_value_hash(stored_job.input_payload) != approval_value_hash(job.input_payload)
             or stored_job.metadata.get("framework_native_identity") != job.metadata["framework_native_identity"]
             or stored_job.metadata.get("framework_binding_id") != binding.binding_id
+            or (formal_scope is not None and any(stored_job.metadata.get(key) != value
+                for key, value in formal_scope.items() if key != "source"))
             or (existing is None and stored_job.status.value != "waiting_approval")):
             raise FrameworkApprovalRecoveryRequired("Existing ToolJob requires native approval reconciliation")
         if existing is None:

@@ -776,6 +776,34 @@ running／pending 和 `framework_case_approval_projection_unavailable`。专门�
 获得 ACK 或后继恢复资格。完整停车事务、决定准入／交付、继续和故障矩阵仍待后续实现。
 公共 HTTP／DTO、数据库 schema、依赖、生产开关不变。
 
+### 正式原生审批的完整批次原件与专用范围（§207，仍非业务停车）
+
+正式 `case_execute` 的非空投影批次现在必须在原双租约锁下读取持久 Task 的唯一冻结输入，
+对账原 admission／计划／RunItem／执行 Attempt，再通过同一 PostgreSQL 连接上的官方
+`get_tuple`／`get_state(subgraphs=True)` 读取最新原生批次。候选顺序可不同，但必须逐字段
+覆盖全部当前待审批身份；遗漏、重复、参数／路径／位置漂移、未结 native error、只有
+resume 而没有原生工具结果，以及试图拿历史等待冒充最新状态，均不能发布正式审批。
+空投影仍是 §206 的 fenced noop，**不是**“没有其他待审批”的证明。
+
+`require_pending_tool_interrupts_original` 只授予 `native_pending_identities_only` 的读取语义。
+它复用原共享身份解析核和 `BoundPostgresReader` 的物理 namespace 映射；显式 journal
+回调仅在原连接读取 pending writes，不伪造 owner，不放开 source-only saver 的审批／
+写入入口，不执行图／模型／工具、不部署 checkpoint 表，也不提交调用方事务。
+独立的 source-only 读取即使在过期后成功，也不能获得双归属写权、恢复或 ACK。
+
+审批 `source=test_run_agent_execution`、project/run/item/attempt 范围由锁定的正式原件生成；
+其中 attempt 指正式执行 Attempt，不是 AgentTask Attempt。候选和已有 ToolJob 的同组
+范围也须匹配。已有审批缺少专用标记或范围漂移时不自动补写／覆盖人工决定，保留原件，
+要求显式对账。普通 v2 决定受理还会核对相同 binding 下的持久 `case_execute` 原任务，
+不依靠可变 metadata 标记决定路由；旧的未标记正式审批同样被拒绝，不能创建普通决定、
+receipt、续跑任务或 outbox。已存在的错误续跑不在本步删除、改写或重新投递。
+
+现有 Session 决定入口／普通审批进度视图仍按既有专用 source 分流；旧正式 RunItem
+决定入口要求原 legacy checkpoint，不因新增标记就获得新框架继续权限。本步不接通
+Session／RunItem／AgentTask 原子 waiting 状态、预算等待边界、持久停车回执、正式决定
+准入／后继或 ACK。§205 自动执行遇到 native wait 仍保持原 running／pending 及
+unavailable 语义，生产 writer／默认能力和公共 DTO／数据库 schema 不变。
+
 ### 原路由与恢复验证
 
 关闭新选路时记录 `deep_agent_new_turn_route_disabled`，带 `session_id`、`turn_id` 和 `recovery_reason=new_turn_admission_disabled`；这是路由决定，不是取消/停止回执。

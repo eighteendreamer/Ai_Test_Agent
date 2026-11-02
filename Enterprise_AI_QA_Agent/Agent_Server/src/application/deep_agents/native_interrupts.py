@@ -45,63 +45,78 @@ def executing_tool_identity(binding, runtime, tool_name, arguments) -> Framework
         source_message_id=source.id, tool_call_id=call["id"], tool_name=tool_name, arguments=arguments)
 
 
+def _pending_tool_tasks(state):
+    for task in state.tasks:
+        if isinstance(task.state, StateSnapshot):
+            yield from _pending_tool_tasks(task.state)
+            continue
+        if not task.interrupts:
+            continue
+        if task.name != "tools" or task.state is not None or len(task.interrupts) != 1:
+            raise FrameworkApprovalRecoveryRequired("Unsupported pending tool interrupt task")
+        if not state.config["configurable"].get("checkpoint_id"):
+            raise FrameworkApprovalRecoveryRequired("Pending tool task has no saved checkpoint")
+        yield state, task
+
+
+def _pending_tool_identity(state, task, rows):
+    if task.error is not None:
+        raise FrameworkApprovalRecoveryRequired("Pending native tool task has an unresolved error; reconcile before projection")
+    pending = rows.get("__interrupt__")
+    resumes = rows.get("__resume__", {}).get("value", [])
+    interrupt = task.interrupts[0]
+    matches = [item for item in (pending or {}).get("value", []) if item.id == interrupt.id]
+    if (len(matches) != 1 or approval_value_hash(matches[0].value) != approval_value_hash(interrupt.value)
+        or not isinstance(resumes, list)):
+        raise FrameworkApprovalRecoveryRequired("Pending tool interrupt has no matching durable fact")
+    action = interrupt.value
+    if not isinstance(action, dict) or action.get("type") != "tool_approval":
+        raise FrameworkApprovalRecoveryRequired("Pending interrupt is not a native per-call tool approval")
+    # 1.2.12 StateSnapshot.interrupts includes old INTERRUPT writes of
+    # completed siblings. A matching native task result is the evidence
+    # that this sibling has settled; resume writes alone are not.
+    results = task.result.get("messages", []) if isinstance(task.result, dict) else []
+    if task.error is None and resumes and any(isinstance(item, ToolMessage)
+        and item.tool_call_id == action.get("tool_call_id")
+        and item.name == action.get("name") for item in results):
+        return None
+    if resumes:
+        raise FrameworkApprovalRecoveryRequired(
+            "Native per-call decision has no settled tool result; reconcile before projection")
+    # Official per-call tools fan out from the current model response.
+    # Searching older AI messages would alias reused provider call IDs.
+    messages = state.values.get("messages", []) if isinstance(state.values, dict) else []
+    source, call = _source_call(messages, action.get("tool_call_id"), action.get("name"), action.get("args"))
+    location = state.config["configurable"]
+    return NativeToolInterrupt(
+        checkpoint_namespace=location.get("checkpoint_ns", ""), checkpoint_id=location["checkpoint_id"],
+        graph_task_id=task.id, task_path=pending["task_path"], interrupt_id=interrupt.id,
+        resume_index=len(resumes), source_message_id=source.id, tool_call_id=call["id"],
+        tool_name=call["name"], arguments=call["args"])
+
+
+def _complete_pending_batch(snapshot, observed):
+    identities = [identity for _, identity in observed if identity is not None]
+    settled = {task.interrupts[0].id for task, identity in observed if identity is None}
+    expected = {item.id for item in snapshot.interrupts} - settled
+    found = [item.interrupt_id for item in identities]
+    if len(found) != len(set(found)) or set(found) != expected:
+        raise FrameworkApprovalRecoveryRequired("Pending native interrupts cannot be mapped uniquely")
+    return identities
+
+
+def collect_pending_tool_interrupts_from_snapshot(snapshot, *, read_task) -> list[NativeToolInterrupt]:
+    """Same identity kernel, with caller-owned synchronous durable task reads."""
+    return _complete_pending_batch(snapshot, [(task, _pending_tool_identity(state, task,
+        read_task(state.config, task.id))) for state, task in _pending_tool_tasks(snapshot)])
+
+
 async def collect_pending_tool_interrupts(agent, saver, config) -> list[NativeToolInterrupt]:
     snapshot = await agent.aget_state(config, subgraphs=True)
-    identities: list[NativeToolInterrupt] = []
-    settled: set[str] = set()
-
-    async def visit(state):
-        for task in state.tasks:
-            if isinstance(task.state, StateSnapshot):
-                await visit(task.state)
-                continue
-            if not task.interrupts:
-                continue
-            if task.name != "tools" or task.state is not None or len(task.interrupts) != 1:
-                raise FrameworkApprovalRecoveryRequired("Unsupported pending tool interrupt task")
-            location = state.config["configurable"]
-            checkpoint_id = location.get("checkpoint_id")
-            if not checkpoint_id:
-                raise FrameworkApprovalRecoveryRequired("Pending tool task has no saved checkpoint")
-            rows = await saver.aget_interrupt_task(state.config, task.id)
-            pending = rows.get("__interrupt__")
-            resumes = rows.get("__resume__", {}).get("value", [])
-            interrupt = task.interrupts[0]
-            matches = [item for item in (pending or {}).get("value", []) if item.id == interrupt.id]
-            if (len(matches) != 1 or approval_value_hash(matches[0].value) != approval_value_hash(interrupt.value)
-                or not isinstance(resumes, list)):
-                raise FrameworkApprovalRecoveryRequired("Pending tool interrupt has no matching durable fact")
-            action = interrupt.value
-            if not isinstance(action, dict) or action.get("type") != "tool_approval":
-                raise FrameworkApprovalRecoveryRequired("Pending interrupt is not a native per-call tool approval")
-            # 1.2.12 StateSnapshot.interrupts includes old INTERRUPT writes of
-            # completed siblings. A matching native task result is the evidence
-            # that this sibling has settled; resume writes alone are not.
-            results = task.result.get("messages", []) if isinstance(task.result, dict) else []
-            if task.error is None and resumes and any(isinstance(item, ToolMessage)
-                and item.tool_call_id == action.get("tool_call_id")
-                and item.name == action.get("name") for item in results):
-                settled.add(interrupt.id)
-                continue
-            if resumes:
-                raise FrameworkApprovalRecoveryRequired(
-                    "Native per-call decision has no settled tool result; reconcile before projection")
-            # Official per-call tools fan out from the current model response.
-            # Searching older AI messages would alias reused provider call IDs.
-            messages = state.values.get("messages", []) if isinstance(state.values, dict) else []
-            source, call = _source_call(messages, action.get("tool_call_id"), action.get("name"), action.get("args"))
-            identities.append(NativeToolInterrupt(
-                checkpoint_namespace=location.get("checkpoint_ns", ""), checkpoint_id=checkpoint_id,
-                graph_task_id=task.id, task_path=pending["task_path"], interrupt_id=interrupt.id,
-                resume_index=len(resumes), source_message_id=source.id, tool_call_id=call["id"],
-                tool_name=call["name"], arguments=call["args"]))
-
     try:
-        await visit(snapshot)
-        expected = {item.id for item in snapshot.interrupts} - settled
-        found = [item.interrupt_id for item in identities]
-        if len(found) != len(set(found)) or set(found) != expected:
-            raise FrameworkApprovalRecoveryRequired("Pending native interrupts cannot be mapped uniquely")
+        observed = [(task, _pending_tool_identity(state, task, await saver.aget_interrupt_task(state.config, task.id)))
+            for state, task in _pending_tool_tasks(snapshot)]
+        identities = _complete_pending_batch(snapshot, observed)
     except FrameworkApprovalRecoveryRequired:
         logger.warning("framework_interrupt_identity_rejected", extra={
             "binding_id": saver.runtime_owner.binding.binding_id})

@@ -161,7 +161,22 @@ class FrameworkApprovalSubmission:
             if approval is None:
                 raise KeyError(approval_id)
             metadata = approval.get("metadata") or {}
+            # Retained formal approvals may predate their source marker. The
+            # durable case execution, not a mutable JSON label, owns routing.
+            # This is only a rejection at the generic endpoint, not a grant to
+            # the dedicated endpoint or a new continuation/recovery mechanism.
+            formal = None
+            if binding.runtime_kind == "langgraph":
+                cur.execute(f"SELECT id FROM {tasks._tasks} WHERE session_id=%s AND turn_id=%s "
+                    "AND operation='case_execute' AND runtime_binding->>'binding_id'=%s LIMIT 1",
+                    (binding.session_id, binding.turn_id, binding.binding_id))
+                formal = cur.fetchone()
+            if formal is not None:
+                logger.warning("framework_formal_approval_submission_rejected", extra={
+                    "binding_id": binding.binding_id, "approval_id": approval_id,
+                    "recovery_reason": "dedicated_case_approval_required", "automatic_replay": False})
             if (metadata.get("approval_type") == "ui_recording"
+                or formal is not None
                 or metadata.get("source") in {"test_run_case_execution", "test_run_agent_execution"}
                 or metadata.get("proxy_child_session_id") or metadata.get("proxy_child_approval_id")):
                 raise AgentSubmissionConflict("This approval type must use its dedicated approval endpoint")

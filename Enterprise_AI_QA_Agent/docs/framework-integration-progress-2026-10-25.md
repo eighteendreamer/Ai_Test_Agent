@@ -10106,3 +10106,67 @@ e206-static.log的python -m compileall -q src tests与python -m pip check均实�
 精确暂存6文件，两个被既有ignore覆盖的新测试仅按单文件force-add，不改ignore；暂存检查及git diff --cached --check通过，高置信度私钥／常见API凭据新增行扫描0命中（非完整安全审计）。不提交用户v3、日志、环境、缓存、制品或依赖锁。本地fix提交“【fix】统一原生审批批次事务与双租约校验”，实际commit id见Git／交付，不推送、不建PR。
 
 本步已验证的是共享审批批次事务与正式双归属适用性，不是完整正式业务停车／继续。下一出口为沿现有Session／RunItem／Attempt／AgentTask／根预算组合原子等待与持久回执，再接专用决定准入／恢复；不得把审批投影或native wait当ACK资格，不能绕过原治理和原正式Attempt。完整v4与H01–H12、逐模式／供应商／领域Runner、完整A3与E3／E4、备份恢复／性能基线等范围保留，生产writer关闭、整体goal active；整体剩余仍粗估4–8周有效开发／验收，外部等待另计。
+
+## 207. v4 §7／§8.1／§12.1：正式审批投影核验完整原生批次与专用业务范围（2026-11-03）
+
+续接基线为 c1efc9011796654de12a9e8c4dc9070ca0ac0d80（§206）。重新核实Git，tracked dirty只有用户v3，原SHA256仍为8a43e94160767a0de20740f2cb30782f06322cbc3467076dfcb120d4efdf1ad4；不修改／暂存它。沿用已迁移的固定Conda＋pip环境，不重装依赖、不删除历史uv.lock，不启停服务、不开放生产路由、不发供应商／业务目标请求。本轮不把批次读取当成正式停车、预算暂停或ACK证明。
+
+### 依据 → 首因 → 对齐方式
+
+- v4 §7要求稳定逐项身份和TestRun专用project/run/lease规则，§12.1保持原正式Attempt。§206能整批提交候选，却只核每一候选的link，不能证明候选包括最新全部pending。原生两项A／B下仅提交A实际成功，属于完整批次事实边界缺失，不是再补一个数量判断。
+- 原native_interrupts解析中的最后AI来源／task_path／resume／settled sibling规则，native_terminal.read_native_terminal_original的同连接官方只读模式，以及BoundPostgresReader的物理namespace映射 → 提取唯一身份解析内核，同步事务读和原异步采集共用；不复制一套状态重建或伪造活跃owner。
+- 原tool_executor为正式审批附加job_metadata与test_run_agent_execution source，SessionService.resolve_approval／FrameworkApprovalSubmission和FrameworkApprovalReadModel已有专用source分流 → 正式投影从锁定admission／RunItem／执行Attempt产生同组范围；普通决定入口额外查询同binding的持久case_execute原任务，不把可变标记当唯一事实。
+- 本地课程Agent轨迹与协议鲁棒性.html的轨迹、schema漂移、权限隔离和幂等／补偿，以及原formal_case／execution／business_bridge夹具 → 使用正式冻结链路、固定官方图、隔离PG与本机Chat SDK双工具回复验证；不以条数或模型文字替代持久身份／无效果断言。
+
+### 实现与契约范围
+
+native_interrupts的递归任务遍历、单项原件解释与完整性判定各只有一份；原collect_pending_tool_interrupts继续用fenced saver读取，新增collect_pending_tool_interrupts_from_snapshot接受显式同步read_task回调。保留完成sibling必须有原生ToolMessage、只有resume不能当完成、复用provider call ID必须绑定当前AI来源等契约；新红测还证明旧内核接受带__error__的未结任务，现统一拒绝该确定性矛盾，要求先对账。
+
+新require_pending_tool_interrupts_original仅支持原冻结controlled graph input，在调用方连接的SQLAlchemy savepoint内使用BoundPostgresReader和同一惰性native_graph_schema；官方get_tuple与get_state(subgraphs=True)读取最新根，核原冻结输入引用、loop来源与相同checkpoint，再经显式FrameworkApprovalJournal回调读取原pending writes。逐字段比较完整身份集合，允许候选顺序不同但拒绝空／重复／遗漏、参数、source message、namespace、checkpoint、task/path、resume位置漂移。核原件日志仅包含身份／checkpoint／数量／阶段，不记录参数、Prompt或租约；scope固定native_pending_identities_only，不是恢复或提交证明。
+
+该端口不新开连接、不setup／invoke／put、不消费决定、不改原件或提交外层事务，成功和失败均保留调用方search_path。没有放开BoundPostgresReader.get_interrupt_task，也没有给source安装runtime_owner。source-only读取可在原租约过期后成功，但正式投影仍必须通过原双owner断言；读取不能替代业务输入准入、owner锁和最后数据库时钟校验。
+
+FrameworkApprovalProjection对正式非空批次实际调用该新核，不是仅交付闲置API：原Session→RunItem／Attempt→RuntimeOwner锁之后，锁Task并读取其唯一冻结input，对账operation/status/Agent Attempt/worker、完整binding、原submission/input hash、计划与正式执行Attempt，且尚未进入结果checkpoint谱系，再核最新完整pending。之后复用§206的唯一审批／Job／link／event事务核，最后重验双租约。空批仍为fenced noop，不作为“无其他待审批”的证明；普通非正式审批不增加此正式读取。
+
+审批source、project_id、run_id、run_item_id、attempt_id来自原正式admission；attempt_id是正式执行Attempt，不是AgentTask Attempt。候选Job、候选已有范围及读回的原Job范围都须匹配，已有审批同组范围也须一致。不改变原人工决定、Job终态或link；旧审批未标记或范围漂移时显式拒绝重投，保留原件，**不自动迁移／补写历史材料**。
+
+FrameworkApprovalSubmission在原Session／owner事务中检查同binding持久case_execute；即使审批缺少旧source标记，普通v2入口也不允许写决定／receipt／普通续跑／outbox。新增拒绝日志framework_formal_approval_submission_rejected含dedicated_case_approval_required；原普通Deep Agents与非正式direct graph语义不因runtime kind而一概封禁。核对原Session决定入口／普通进度读模型的source消费方，以及旧RunItem／Session专用决定对legacy checkpoint／snapshot的前置要求；新增标记不提供新框架继续权限，未删除／修复／重投既有错误续跑。
+
+**本步仍未接通正式业务停车。** ControlledCaseRuntime／Dispatcher的native wait继续沿§205保持running／pending和framework_case_approval_projection_unavailable；没有Session／RunItem／AgentTask原子waiting、预算等待活动边界、持久停车回执、正式决定准入／双归属后继、恢复或ACK。不修改公共DTO／数据库schema、Worker默认能力和生产writer。下一步应以本核组合完整停车事务，不得将project_many或native身份读的返回值视为停车已提交。
+
+### TDD与真实中间结果（不覆盖失败）
+
+1. e207-pending-scope-red.log实际4 failed、12 deselected、35.57秒、exit1：一个因缺新原件读端口失败；一个核出正式审批source/project/run/item/attempt均缺失；两项在真实正式图／PG下普通入口未拒绝，实际受理了决定和普通续跑（分别保留／移除旧标记）。这些隔离fixture在原清理链退出，不污染生产。
+2. 初次实现后e207-pending-scope-first-green.log实际15 passed、1 failed、77.56秒、exit1。唯一失败为新测试把execution夹具当成含tasks的根harness；原件／连接／无效果断言已过。修为p.s.h.tasks，不修改生产或移除断言。
+3. e207-projection-subset-red.log实际2 failed、16 deselected、16.71秒、exit1：自持和caller-owned正式投影都接受只含A的批次。随后将新原件核接进正式投影事务。e207-pending-integrated.log实际40 passed、183.48秒、exit0（当时30项新测试＋§206正式10项），无skip／deselect；不代表随后增加用例的最终字节。
+4. e207-original-state-red.log实际5 failed、30 deselected、27.47秒、exit1：新事务内未提交__error__仍被当待审；原ToolJob的project/run/item/attempt四种范围漂移也均被重投接受。修共享解析首因和原Job范围对账，不自动修复脏原件、不伪造终态。
+5. e207-core-green.log实际80 passed、1 failed、279.47秒、exit1：核心新测试＋原异步native／决定入口回归仅一处新测试未提供ExecutionEvent强制timestamp。补原事务clock_timestamp作为事件时间，保留外层回滚／独立读不可见断言；不是放松生产事件契约。原80通过不包装成全绿。
+
+新36项涵盖官方完整双中断、候选顺序、全部身份漂移、两种正式投影的遗漏拒绝、同PG backend PID且零额外连接／部署／执行、全部checkpoint表原字节语义不变、外层事件不提前commit、五种未提交native原件变更及未结error的回滚、过期source无写权、候选／持久Job范围、未标记旧审批与原拒绝决定保留，以及真实native局部reject后只剩原A、最终终态后不得回用历史A。局部resume是显式原生内核测试，不是正式业务决定或Worker续跑验收；无真实工具目标效果，本机HTTP由1至2次且原模型预算调用数匹配。
+
+### 最终受影响验证（等待原句柄终态）
+
+在固定Python E:\MiniConda3\envs\Agent\python.exe、PG／Redis=1、Docker／MySQL／PLAN_RUN_CREATION=0、QA_FRAMEWORK_WORKER_DIAGNOSTICS=1启动单次16文件串行回归e207-affected-final.log。最终原句柄计数／退出码与额外静态／opt-out检查在真实取得终态后追加，不能沿用中间40或80通过作为最终结论。
+
+~~~powershell
+& ../scripts/clear_uv_environment.ps1 -ProcessOnly | Out-Null
+& E:\MiniConda3\envs\Agent\python.exe -u -m pytest tests/test_controlled_case_pending_approvals.py tests/test_controlled_case_approval_projection.py tests/test_framework_native_interrupts.py tests/test_framework_checkpoint_fencing.py tests/test_controlled_case_native_reader.py tests/test_controlled_case_graph_input.py tests/test_controlled_case_graph.py tests/test_framework_approval_projection.py tests/test_framework_approval_batch_projection.py tests/test_framework_approval_submission.py tests/test_framework_approval_http.py tests/test_framework_approval_progress.py tests/test_framework_approval_runtime.py tests/test_controlled_case_runtime.py tests/test_controlled_case_dispatch.py tests/test_deep_agent_runtime_adapter.py -q -rs --tb=short
+~~~
+
+该组开始时src为871个py、聚合SHA256 f1d740ea46cf8cb071e6552fc443c913794bcdd438f417fb5e82bc22838cf30b；tests为684个py、6a5609e9d0caf690577ce05aea2131ddfcd2fda8d067fc98bbc8880a751382e0。算法同§206：目录内相对POSIX路径排序，路径UTF-8＋NUL＋原字节＋NUL。开始后只写文档，不再更改源码／测试；结束后再次核对。ruff／mypy实际仍未安装，不擅自安装；全量后端、前端、真实供应商／领域Runner、MySQL／Docker／RustFS、独立正式停车Worker强杀和完整E3／E4均不在本步已验收范围。
+
+对应关系：v4 §7／§8.1／§12.1 → §207 → 唯一同步／异步身份核＋正式完整批次投影原件校验＋专用范围／普通入口隔离 → TDD／最终受影响实测 → 完整停车／决定／继续及完整v4其余出口。只精确提交本轮4个生产源码、1个新测试、路由说明和本记录；用户v3、日志／制品／环境／依赖锁不暂存。实际本地fix commit id见Git与交付，不推送／建PR。整体goal active，剩余仍粗估4–8周有效开发／验收，外部环境／授权／人工等待另计，不承诺完成日期。
+
+### 静态与opt-out的真实结果
+
+e207-static-final.log实际运行python -m compileall -q src tests与python -m pip check，均exit0，后者No broken requirements found。没有将编译检查当作独立lint／typecheck；ruff／mypy缺包，不安装、不声称完成该项。
+
+将PG／Redis／Docker／MySQL／PLAN_RUN_CREATION全部设0，原新测试＋§206正式投影10项的e207-optout-final.log实际46 skipped、9.38秒、exit0，原因requires real PostgreSQL and Redis；未授权时不连接服务，这些skip不计业务通过。命令为同一固定Python的pytest tests/test_controlled_case_pending_approvals.py tests/test_controlled_case_approval_projection.py -q -rs --tb=short。该opt-out独立进程与16文件最终组采用相同源码／测试字节，不修改正在验证的文件或替换最终组句柄；最终完整回归结果仍须单独取得。
+
+### 最终实测与本地提交边界
+
+原16文件串行句柄已实际返回终态，e207-affected-final.log为**490 passed、1216.47秒、exit0，无skip／deselect**。包括本步最终36项、§206正式双租约10项、原native身份／source-only fence／controlled native schema／冻结输入／受控图、共享投影批次、普通决定／HTTP／进度／Runtime、正式执行／Dispatcher和无绑定adapter消费方。是官方固定框架、真实隔离PG／Redis、本机HTTP和受控配置／检索／工具替身、内存／静态测试的混合证据；不能据490条称为490项真实业务目标或完整E2／E3／E4。历史40通过、80通过及各轮失败不累加进最终计数，原失败日志保留。
+
+最终期间及结束后没有再修改源码／测试，重新聚合确认src仍f1d740ea46cf8cb071e6552fc443c913794bcdd438f417fb5e82bc22838cf30b（871个py），tests仍6a5609e9d0caf690577ce05aea2131ddfcd2fda8d067fc98bbc8880a751382e0（684个py）。全部本轮pytest句柄均已回收；系统进程核对无pytest／multiprocessing测试Worker残留。用户v3保持原hash且不暂存。
+
+交付只覆盖本步完整pending原件边界和正式范围隔离；没有把§205旧扩大组失败或既有独立Worker偶发超时当作已消除。未跑全量后端、前端、真实供应商／领域Runner、MySQL／Docker／RustFS、正式停车跨进程强杀、完整部署演练与性能基线；独立lint／typecheck未做。精确核对7个相关文件并本地fix提交，不含用户v3、敏感日志／环境或锁文件；实际commit id见Git／交付，不推送、不建PR。下一出口仍为将原投影、Session／RunItem／AgentTask等待、活动预算边界和独立版本化持久回执组合成单事务，再接专用决定／双归属后继；不将当前子步当整体完成，goal继续active，整体剩余粗估4–8周有效开发／验收，外部等待另计。
