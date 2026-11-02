@@ -994,19 +994,7 @@ class TestRunService:
         item_id: str,
         payload: RunItemCompleteRequest,
     ) -> TestCaseResultRecord:
-        content = payload.model_dump(mode="json", exclude={"lease_token"})
-        payload_hash = hashlib.sha256(
-            json.dumps(
-                content,
-                ensure_ascii=False,
-                sort_keys=True,
-                separators=(",", ":"),
-            ).encode("utf-8")
-        ).hexdigest()
-        completion = RunItemCompletion(
-            **content,
-            payload_hash=payload_hash,
-        )
+        completion = self.prepare_completion(payload)
         result = await self._store.complete_item(
             item_id,
             payload.lease_token,
@@ -1035,6 +1023,23 @@ class TestRunService:
             },
         )
         return result
+
+    @staticmethod
+    def prepare_completion(payload: RunItemCompleteRequest) -> RunItemCompletion:
+        """Original content normalization/hash; contains no lease or write authority."""
+        content = payload.model_dump(mode="json", exclude={"lease_token"})
+        payload_hash = hashlib.sha256(
+            json.dumps(
+                content,
+                ensure_ascii=False,
+                sort_keys=True,
+                separators=(",", ":"),
+            ).encode("utf-8")
+        ).hexdigest()
+        return RunItemCompletion(
+            **content,
+            payload_hash=payload_hash,
+        )
 
     async def finalize_denied_approval(
         self,

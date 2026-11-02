@@ -13,6 +13,7 @@ from src.runtime.postgres_runtime_owner import assert_runtime_owner, configure_r
 from src.schemas.controlled_case_admission import (
     ControlledCaseProjectionCheckpoint, ControlledCaseProjectionReceipts, read_result_checkpoint,
     ControlledCaseApplicationCheckpoint, ControlledCaseApplicationReceipts,
+    ControlledCaseAssessmentCheckpoint,
 )
 from src.schemas.framework_approval import approval_value_hash
 
@@ -96,8 +97,10 @@ def save_projection_manifest(cur, settings, source, manifest, *, message_version
             "Formal projection cannot replace its retained result")
         completed = "application_projection_commit" in values
         parts = (ControlledCaseApplicationReceipts if completed else ControlledCaseProjectionReceipts).model_validate(values)
-        version = 4 if completed else 3
-        checkpoint = (ControlledCaseApplicationCheckpoint if completed else ControlledCaseProjectionCheckpoint).model_validate({
+        reader = (ControlledCaseAssessmentCheckpoint if isinstance(source.checkpoint, ControlledCaseAssessmentCheckpoint)
+            else ControlledCaseApplicationCheckpoint if completed else ControlledCaseProjectionCheckpoint)
+        version = 5 if reader is ControlledCaseAssessmentCheckpoint else 4 if completed else 3
+        checkpoint = reader.model_validate({
             **source.checkpoint.model_dump(mode="json"), "schema_version": version,
             "projection_receipts": parts.model_dump(mode="json")})
         # A fresh DB clock AFTER the builder/SDK reads; keep the dual locks to commit.

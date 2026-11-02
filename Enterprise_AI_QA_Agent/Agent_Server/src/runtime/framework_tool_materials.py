@@ -15,7 +15,7 @@ def _require(condition, message):
         raise FrameworkMessageStageRecoveryRequired(message)
 
 
-def read_unapproved_tool_materials(original, binding, messages, jobs, *, event_log=None):
+def read_unapproved_tool_materials(original, binding, messages, jobs, *, event_log=None, projected_outputs=None):
     # Application ordinals are completion order, not native task-path order.
     by_job, materials = {job.id: job for job in jobs}, {}
     frozen_history = deserialize_messages(original.framework_messages)
@@ -53,7 +53,9 @@ def read_unapproved_tool_materials(original, binding, messages, jobs, *, event_l
             _require(job is not None, "Message result has missing or unsupported original tool material")
             _require(job.metadata.get("framework_binding_id") == binding.binding_id and job.call_id == record.call_id
                 and job.tool_key == record.tool_key and job.tool_name == record.tool_name and job.status.value == record.status
-                and job.input_payload == record.input and job.output_payload == record.output and job.summary == record.summary
+                and job.input_payload == record.input
+                and (projected_outputs[job.id] if projected_outputs is not None else job.output_payload) == record.output
+                and job.summary == record.summary
                 and job.trace_id == record.trace_id and job.started_at == record.started_at and job.completed_at == record.completed_at
                 and record.approval_id is None, "Message result original tool material differs from its settled ToolJob")
         _require(record.call_id not in materials or materials[record.call_id] == material,

@@ -281,6 +281,16 @@ async def test_full_legacy_request_and_resolved_receipt_match_committed_baseline
             assert request.trace_context["trace_id"] == kwargs["turn_id"]
             current_payload = request.model_dump(mode="json")
             current_payload["trace_context"].pop("trace_id")
+            # daab92f0c added this explicit request option after the committed
+            # baseline. Verify the entire addition; preserve the exact legacy
+            # request and resolved-receipt comparisons below, not a key filter.
+            from src.schemas.scene_receipt import case_receipt_type
+            assert old_request.output_format is None
+            assert current_payload.pop("output_format") == {
+                "kind": "json_schema", "schema_name": "agent_case_receipt",
+                "schema_definition": case_receipt_type(env[0].scene_receipt_protocol).model_json_schema(),
+                "strict": None, "required": False,
+            }
             assert current_payload == old_request.model_dump(mode="json")
             outcomes = [await service.assess(**kwargs, receipt=receipt(), model_key='controlled', lease_token=env[6].items[0].lease_token)
                 for service in [current, previous]]
@@ -295,6 +305,10 @@ async def test_full_legacy_request_and_resolved_receipt_match_committed_baseline
                         return [normalize(v) for v in value]
                     return mapping.get(value, value) if isinstance(value, str) else value
                 normalized.append(normalize(outcome.completion.model_dump(mode='json')))
+            # This legacy fixture has no operation-verification protocol. The
+            # later additive evidence field must therefore be exactly empty.
+            assert "case_operation_verifications" not in normalized[1]["actual"]
+            assert normalized[0]["actual"].pop("case_operation_verifications") == []
             assert normalized[0] == normalized[1]
             assert [r.model_dump(mode='json') for r in outcomes[0].tool_records] == [r.model_dump(mode='json') for r in outcomes[1].tool_records]
     finally:

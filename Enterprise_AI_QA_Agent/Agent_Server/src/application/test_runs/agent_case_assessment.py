@@ -308,46 +308,72 @@ class AgentCaseAssessmentService:
     async def _load_evidence(self, context, records, session_id, turn_id, attempt_id, *, allow_pending=False) -> dict[str, ToolJobDetail]:
         if not session_id or not turn_id or not attempt_id:
             raise ValueError("执行证据缺少会话、turn 或 attempt 身份")
-        identities = {"project_id": context.project_id, "run_id": context.run_id,
-                      "run_item_id": context.run_item_id, "attempt_id": attempt_id}
         jobs = {}
         for record in records:
             if not record.job_id:
                 continue  # Denied/skipped calls can legitimately have no executed job.
             job = await self._jobs.get_job_detail(record.job_id)
-            if (job is None or job.session_id != session_id or job.turn_id != turn_id
-                or job.call_id != record.call_id or job.tool_key != record.tool_key
-                or any(job.metadata.get(key) != value for key, value in identities.items())):
-                raise ValueError("工具证据与本次项目、运行、条目或执行身份不一致")
-            if not allow_pending and job.status not in SETTLED_EVIDENCE_STATUSES:
-                raise ValueError("工具证据尚未结束，不能形成终态回执")
-            if context.action_binding_protocol is not None:
-                binding = bind_case_action(bundle={**context.runtime_context(),
-                    "case_execution_managed": True, "attempt_id": attempt_id},
-                    arguments=job.input_payload, session_id=session_id, turn_id=turn_id)
-                if job.metadata.get("case_action_binding") != binding.model_dump(mode="json"):
-                    raise ValueError("工具证据的执行项归属与完整固定上下文不一致")
-                if context.action_admission_protocol is not None:
-                    validate_action_admission_receipt(job, binding, required=True)
-                if context.operation_protocol is not None:
-                    await self._jobs.validate_case_operation(job)
-            if record.call_id in jobs and jobs[record.call_id].id != job.id:
-                raise ValueError("本次执行的 call 身份对应多个工具证据")
-            jobs[record.call_id] = job
+            self.add_evidence_job(context, record, job, jobs, session_id=session_id, turn_id=turn_id,
+                attempt_id=attempt_id, allow_pending=allow_pending)
+            if context.action_binding_protocol is not None and context.operation_protocol is not None:
+                await self._jobs.validate_case_operation(job)
         return jobs
 
-    async def assess(self, *, context: AgentCaseExecutionContext, receipt: dict | AgentCaseExecutionReceipt,
-        tool_records: list[ToolExecutionRecord], session_id: str, turn_id: str,
-        attempt_id: str, model_key: str, lease_token: str) -> AgentCaseAssessmentOutcome:
+    @staticmethod
+    def add_evidence_job(context, record, job, jobs, *, session_id, turn_id, attempt_id, allow_pending=False):
+        """Same identity/admission rules for async readers and the original PG transaction."""
+        if not session_id or not turn_id or not attempt_id:
+            raise ValueError("执行证据缺少会话、turn 或 attempt 身份")
+        identities = {"project_id": context.project_id, "run_id": context.run_id,
+            "run_item_id": context.run_item_id, "attempt_id": attempt_id}
+        if (job is None or job.session_id != session_id or job.turn_id != turn_id
+            or job.call_id != record.call_id or job.tool_key != record.tool_key
+            or any(job.metadata.get(key) != value for key, value in identities.items())):
+            raise ValueError("工具证据与本次项目、运行、条目或执行身份不一致")
+        if not allow_pending and job.status not in SETTLED_EVIDENCE_STATUSES:
+            raise ValueError("工具证据尚未结束，不能形成终态回执")
+        if context.action_binding_protocol is not None:
+            binding = bind_case_action(bundle={**context.runtime_context(),
+                "case_execution_managed": True, "attempt_id": attempt_id},
+                arguments=job.input_payload, session_id=session_id, turn_id=turn_id)
+            if job.metadata.get("case_action_binding") != binding.model_dump(mode="json"):
+                raise ValueError("工具证据的执行项归属与完整固定上下文不一致")
+            if context.action_admission_protocol is not None:
+                validate_action_admission_receipt(job, binding, required=True)
+        if record.call_id in jobs and jobs[record.call_id].id != job.id:
+            raise ValueError("本次执行的 call 身份对应多个工具证据")
+        jobs[record.call_id] = job
+
+    @staticmethod
+    def _complete_receipt(context, receipt):
         receipt = case_receipt_type(context.scene_receipt_protocol).model_validate(receipt)
         steps = {step.item.key: step for step in context.steps}
         if (len(steps) != len(context.steps) or len(receipt.steps) != len(steps)
             or {entry.item_key for entry in receipt.steps} != set(steps)
             or context.target_key not in steps):
             raise ValueError("执行回执必须逐项对应固定用例及其准备和清理，不得遗漏或重复")
+        return receipt, steps
+
+    async def assess(self, *, context: AgentCaseExecutionContext, receipt: dict | AgentCaseExecutionReceipt,
+        tool_records: list[ToolExecutionRecord], session_id: str, turn_id: str,
+        attempt_id: str, model_key: str, lease_token: str) -> AgentCaseAssessmentOutcome:
+        receipt, steps = self._complete_receipt(context, receipt)
         assessed = await self._assess_steps(context=context, receipt=receipt, tool_records=tool_records,
             session_id=session_id, turn_id=turn_id, attempt_id=attempt_id, model_key=model_key,
             requested_item_keys=list(steps), allow_pending=False)
+        return self._assessment_outcome(context, receipt, assessed, attempt_id=attempt_id, lease_token=lease_token)
+
+    def assess_from_evidence(self, *, context, receipt, jobs, inventory, session_id, turn_id,
+        attempt_id, model_key, lease_token):
+        """Original complete-case algorithm, after same-transaction evidence admission."""
+        receipt, steps = self._complete_receipt(context, receipt)
+        assessed = self._assess_evidence(context=context, receipt=receipt, jobs=jobs, steps=steps,
+            inventory=inventory, coverage=cleanup_coverage(context, inventory) if context.effect_coverage_protocol else None,
+            session_id=session_id, turn_id=turn_id, attempt_id=attempt_id, model_key=model_key,
+            requested_item_keys=list(steps))
+        return self._assessment_outcome(context, receipt, assessed, attempt_id=attempt_id, lease_token=lease_token)
+
+    def _assessment_outcome(self, context, receipt, assessed, *, attempt_id, lease_token):
         results, verifications = assessed.results, assessed.verification_results
         used = {job.id: job for job in assessed.used_jobs}
         inventory, coverage = assessed.effect_inventory, assessed.effect_coverage
@@ -425,6 +451,12 @@ class AgentCaseAssessmentService:
                 run_id=context.run_id, plan_id=context.plan_id)
             coverage = cleanup_coverage(context, inventory)
 
+        return self._assess_evidence(context=context, receipt=receipt, jobs=jobs, steps=steps,
+            session_id=session_id, turn_id=turn_id, attempt_id=attempt_id, model_key=model_key,
+            requested_item_keys=keys, inventory=inventory, coverage=coverage)
+
+    def _assess_evidence(self, *, context, receipt, jobs, steps, session_id, turn_id,
+        attempt_id, model_key, requested_item_keys, inventory, coverage):
         receipt, normalized_paths = self._normalize_persisted_output_paths(receipt, jobs)
         if normalized_paths:
             logger.info("case_receipt_manifest_output_prefix_normalized", extra={
@@ -433,7 +465,7 @@ class AgentCaseAssessmentService:
             })
         return self._assess_loaded_steps(context=context, receipt=receipt, jobs=jobs, steps=steps,
             session_id=session_id, turn_id=turn_id, attempt_id=attempt_id, model_key=model_key,
-            requested_item_keys=keys, inventory=inventory, coverage=coverage)
+            requested_item_keys=requested_item_keys, inventory=inventory, coverage=coverage)
 
     def _assess_loaded_steps(self, *, context, receipt, jobs, steps, session_id, turn_id,
         attempt_id, model_key, requested_item_keys, inventory, coverage):

@@ -9245,3 +9245,85 @@ v4 E／§9.4、§12.1 → 本节 → 10个生产文件＋新专项＋2份文档�
 下一依赖是复用原 AgentCaseAssessmentService／原证据与 TestRunService／RunStore 的正式结果事务，将原应用证明与固定 RunItem attempt 绑定后进行 fenced 原子完成；不能把 Session completion 或 failed Verification 转成 case passed。随后仍需原业务审批继续、失租后的正式恢复（含派生 Memory 只读对账）／独立 case Worker 强杀、兼容制品／main 与逐模式验收。当前 AgentTask 仍 running、RunItem 无 result_id，finish(completed) 仍明确拒绝，不重置旧任务／失败结果，回归创建新运行，不自动重跑原图／模型／工具。
 
 完整 v4 剩余 A2/A3/B/C/D/E/F、H01–H12、逐模式完整有效输入／质量、空结构化结果／流式／取消未收口项与历史异常继续保留，整体 goal 仍 active，不标 complete。未运行 Docker、启动／重启服务、新增付费调用或外部目标测试，未改实际 .env／生产路由；仅 fixture 清理本轮自有随机隔离资源。整体剩余仍粗估 **4–8 周有效开发／验收**，外部授权、环境及人工发布等待另计，非承诺；不因本子步通过缩短尚缺 E3／E4 证据的工期。
+
+## 194. E／§12.1：正式 case 原 Assessment 与证据快照同事务留存（2026-11-02）
+
+### 范围与依据
+
+续接 §193（294465862），本轮完成原 Assessment 的显式接入与原件准备，不把 Session completion 当测试通过，也不提前实现第二套 RunItem／AgentTask 结算。依据原 AgentCaseAssessmentService.assess／_load_evidence／_assess_loaded_steps → 抽出相同归属校验、纯评估及完整结果格式化供 async 路径和既有 PG 事务共同使用；依据 postgres_case_consumption._candidate 的同连接原评估 → 本轮沿相同做法读取并冻结原 Jobs／inventory，不另写判定算法；依据 TestRunService.complete_item → 抽出原 prepare_completion，沿原规范化与 payload hash，留存无 lease 的 completion 内容，不调用写入端口。
+
+查阅项目课程 Agent轨迹与协议鲁棒性.html 的协议漂移／业务语义边界：能调通不等于语义等价，不用兼容填充吞掉未知格式；本轮内部资产严格读取并沿原 Worker 格式 defer，不改变旧公共 DTO 的兼容性。原 action binding／admission／operation、实际值比较、输出、cleanup coverage 和消费关闭规则不另造，不把 inventory 快照当全计划并发操作排空或 consumption completion 证明。
+
+生产改动13文件：application/runtime/controlled_case_runtime、tool_job_service、tool_runtime_service，application/test_runs/agent_case_assessment、run_service，runtime/controlled_case_assessment（新）、controlled_case_result_reader、framework_projection_source、framework_tool_materials、framework_worker_capabilities、postgres_case_effect_evidence，schemas/controlled_case_admission、controlled_case_assessment（新）；新增 test_controlled_case_assessment，修正 test_case_step_assessment 的两项已提交增量基线核验，更新 runtime-route-controls 与本记录，共17文件。main／CLI／生产 Dispatcher、DDL、依赖、前端源码、实际 .env、默认 controlled_case_available=false 未改。此前 UV→Conda／pip 迁移 435d9cf7c 不重复执行；uv.lock 仍是历史制品身份依据，不擅自删除。
+
+### 原评估、事务与读者契约
+
+ControlledCaseRuntime 仅在明确装配 session_service 与 assessment_service 后，在原 executor 的 framework_owner_scope／SessionEventSink callback 中依次留存原结果、走原唯一 Session finalizer、freeze 原 Assessment。未装配评估时保持旧行为；无 SessionService 的评估装配拒绝；旧输入／审批等待不静默升级。outcome 新增可选 assessment_asset，仅为内部准备返回值，未接 main／生产 Worker。
+
+ControlledCaseAssessments.freeze／load 要求当前捕获的原 live 双 owner，深拷贝 owner 与精确 native。原同连接 lock_result_source 完整核固定输入、admission、双 attempt、epoch、原生终态、模型账本、事件、ToolJob 和结果资产，再 require_application_commit 核原应用证明与实际 Session／snapshot／消息／Verification／completion 行。证据读取复用原 add_evidence_job、原 operation 校验、原 effect inventory 查询与映射；原 Job DTO 与完整 artifact SQL 行同时进入摘要，时间沿已有 framework_model_evidence 的 TypeAdapter(Any).dump_python(mode=json) 规范化，不丢 aware DB 时刻。
+
+首次仅解析原保存的 model_response_text／summary，原 assess_from_evidence 逐项评估完整固定用例、准备与清理；实际值从原 Job 输出读，不采信模型自报 passed，空 checks 形成 blocked／not_run。不调用模型、工具或 receipt correction。原 execution_identity 与 TestRunService.prepare_completion 的规范化内容/hash 留存；Verification 的原 ID／时间／证据完整保存，不把原 Session Verification 替换为新评估。评估后再次完整核原来源、应用 proof 与证据摘要，写前再次以 DB clock 核双租约。
+
+checkpoint5 在同一原 RunItem attempt 保留 admission／retained_at／结果／分项／应用 proof／Memory 意图计划执行回执，新增 ControlledCaseAssessmentAsset，scope=controlled_case_assessment_preparation_only。原 checkpoint key／checkpoint_at 不变，原应用 proof 的范围/hash 不因评估改变。资产核 binding、双 attempt／epoch、run／item、input／结果／应用 proof 摘要、Verification 身份／列表与完整资产 hash。内部 completion、Verification／Evidence、tool record 使用 extra=forbid 的严格子类型，旧公共 DTO 不全局变更。Worker checkpoint 上限4→5，input仍4；旧 reader4、未来字段／version6 defer，不重写原件，不把读者测试冒充双制品部署验收。
+
+稳定审计 ID 由 binding fingerprint 派生，事件 test_run.case_assessment_prepared 与 checkpoint5 同事务写入，保留原 prepared_at／结果与应用 proof 摘要，并明确 run_item_completed=false。重复 freeze／load 重读原件及审计，仅返回原资产，不再调用评估 builder；load 不创建缺失原件。已保存评估、证据／原件／审计缺失或漂移均拒绝，不自动修复，不重跑原图／模型／工具。取消、SQL失败或提交后 ACK 丢失传播原异常，记录 assessment_write_receipt_unknown／automatic_replay=false；只读失败记 assessment_read_unsettled。等待者取消不是 SQL 线程停止证明。schema5 下原分项／Memory manifest 保存仍保留根部 assessment，原 Session 已提交证明的 ACK 仍只读。
+
+### 真实失败、根因与 TDD
+
+最初红测实际 **1 failed，15.11秒**：缺 src.runtime.controlled_case_assessment。实现原评估留存后的两次中间失败分别为 **1 failed，14.66秒**（fixture错误使用 provider-native tool ID，原评估正确拒绝“回执引用了本次执行不存在的工具调用”）和 **1 failed，14.58秒**（writer将DB datetime直接交JSON hash，TypeError）。前者查证 runtime_service 的 framework_tool_call_id 映射，仅修fixture使用handler的原 context.call_id；后者复用现有 TypeAdapter JSON规范化保留aware时间，不用会转UTC-naive的展示清洗。随后 **1 passed，14.48秒**，只是最初单项绿，不作为扩展最终证据。
+
+扩展callback／未知字段红测实际 **5 errors、1 deselected，27.06秒**：四协议缺 assessment_service 参数；另一fixture新增真实artifact后，在更早原结果reader处触发“original tool material differs from its settled ToolJob”，未走到该未知字段断言。根因是原 _record_output 增加下载字段并可压缩领域输出，而reader却直接用原 Job payload 比较模型侧投影。复用原算法抽为纯 project_record_output，首发／record_from_job／正式reader共同使用；仍逐字段比较完整原消息与输出，未删除 artifacts 或弱化messages。原八个压缩／列表／文本helper仅改为可无实例调用的classmethod；对比HEAD，归一化 self／cls 与装饰器后完整AST相同。reader同连接读原artifact，核count和session／turn／tool归属，再运行相同投影。修复后当时专项 **6 passed，53.76秒**。
+
+继续反例实际 **1 failed、39 deselected，15.08秒**：改artifact物理metadata中的__content_text，会被DTO转换器以原content_text覆盖，DTO摘要未发现漂移。根因是展示DTO不是完整SQL原件；改为同时摘要完整artifact row，未改公共artifact显示合同。嵌套格式反例实际 **2 failed、1 passed、39 deselected，30.88秒**：Verification／tool record的旧extra-ignore静默丢字段；新增严格内部子类型，沿原Worker extra_forbidden→defer，不把未来格式写回旧格式。
+
+扩展整组第一次实际 **1 failed、27 passed，218.39秒**：并发测试将严格内部Verification子类型直接与旧VerificationResult做Pydantic类相等比较。两者保留内容相同但类型不同；只改测试为完整mode=json逐字段比较，保留全部ID、时间、证据、状态断言，并仍要求评估builder只调用一次；未弱化生产校验。
+
+最终新专项实际 **42 passed，324.48秒，exit0，无skip／deselect**，原handle已取得完整终态，日志 .codex-logs/e194-assessment-final.log 不提交。覆盖四协议显式原owner callback、模型自报通过但实际失败、空checks、非JSON／截断／漏项／重复／foreign call／错误路径、缺原应用proof、只读load、原native／当前scope／第二owner／两类失租、评估后失租、真实PG checkpoint＋审计回滚、提交后ACK丢失、取消等待者但SQL线程提交、并发仅生成一套原Verification、Job／artifact完整行／proof／原结果／评估／审计漂移拒绝、旧／未来格式、schema5分项manifest保留及原Session ACK只读。没有把这组当正式RunItem结算、独立case Worker强杀或真实业务目标验收。
+
+### 共享回归暴露的旧基线漂移（不改生产语义）
+
+上述专项后，正式来源10文件整组实际 **371 passed，1431.35秒，exit0，无skip／deselect**；随后共享14文件实际 **673 passed，1034.33秒，exit0，无skip／deselect**。原串行handle继续进入领域22文件组，实际 **1 failed、85 passed、24 skipped，94.41秒，exit1**，失败在 test_case_step_assessment 的完整旧基线比较：当前请求比2026-10-03保存的基线多 output_format。没有把已通过部分当整组成功，也没有继续忽略失败。
+
+只在新Python进程内从 git show HEAD 加载未修改的原 AgentCaseAssessmentService（未切换／覆盖工作区源码），用未修改的失败测试重现 **1 failed，5.33秒**，证明这是HEAD已存在的旧基线漂移，不是本轮抽取算法新增。查证提交 daab92f0c 已为正式评估请求增加可选 json_schema输出约束；仅补严格断言其完整kind／name／schema_definition／strict=None／required=False，旧基线必须没有该约束，其余请求仍完整比较，不改历史基线文件。
+
+第一次定向复核实际 **1 failed，7.72秒**，请求比较已过，继续暴露旧完成内容的另一既有增量。改用仅输出差异路径、绝不输出payload／lease值的诊断插件，在HEAD原评估实现上重现 **1 failed，3.92秒**，唯一路径为 $.actual.case_operation_verifications。查证该字段来自既有 587a5a1ce；本legacy夹具未配置operation verification，新增严格断言当前字段恰为[]、旧基线无此字段，然后仍完整比较其余completion、Verification和tool records。两个HEAD诊断分别有1条因预加载模块导致的PytestAssertRewriteWarning，不是生产警告或普通pytest最终组结果。两项已提交增量核对后，定向实际 **1 passed，6.82秒**，未改生产源码，不采用无差别删key、跳过用例或更新历史结果来换绿。
+
+### 最终源码验证：命令与证据范围
+
+正式／共享／领域最终三组backend回归前执行 scripts/clear_uv_environment.ps1 -ProcessOnly，固定 E:\MiniConda3\envs\Agent\python.exe，PYTHONIOENCODING=utf-8、RUN_LIVE_POSTGRES_TESTS=1、RUN_LIVE_REDIS_TESTS=1、RUN_LIVE_DOCKER_TESTS=0、RUN_LIVE_MYSQL_TESTS=0、RUN_LIVE_PLAN_RUN_CREATION=0、QA_FRAMEWORK_WORKER_DIAGNOSTICS=1。只用已运行且获授权PG／Redis，不启动／重启服务，不用UV，不调用付费模型。统一pytest后缀为 -q -x -rs --tb=short --show-capture=no --log-level=INFO，以下工作目录为 Agent_Server。
+
+~~~powershell
+& E:\MiniConda3\envs\Agent\python.exe -u -m pytest tests/test_controlled_case_assessment.py tests/test_controlled_case_finalization.py tests/test_controlled_case_projection_parts.py tests/test_controlled_case_result_asset.py tests/test_controlled_case_result.py tests/test_controlled_case_runtime.py tests/test_controlled_case_executor.py tests/test_controlled_case_task_input.py tests/test_controlled_case_admission.py tests/test_controlled_case_execution_lease.py -q -x -rs --tb=short --show-capture=no --log-level=INFO
+~~~
+
+实际371通过，包含新专项全部42项与旧正式来源329项，分别不重复累加。日志 .codex-logs/e194-formal-final.log 不提交。
+
+~~~powershell
+& E:\MiniConda3\envs\Agent\python.exe -u -m pytest tests/test_framework_snapshot_projection.py tests/test_framework_event_projection.py tests/test_framework_observation_projection.py tests/test_framework_runtime_result_asset.py tests/test_framework_application_projection.py tests/test_framework_finalization_projection.py tests/test_framework_partial_projection_recovery.py tests/test_framework_turn_memory_projection.py tests/test_framework_turn_memory_reconciliation.py tests/test_case_execution_verification.py tests/test_agent_v2_worker_contract.py tests/test_framework_route_rollback.py tests/test_agent_task_dispatch.py tests/test_runtime_binding_persistence.py -q -x -rs --tb=short --show-capture=no --log-level=INFO
+~~~
+
+实际673通过，普通message／approval的原结果／分项／唯一应用提交／部分恢复／派生Memory与Worker／调度／绑定／路由保持；不把普通message恢复当正式case恢复。日志 .codex-logs/e194-shared-final.log 不提交。371和673均从同一原串行进程handle取得完整摘要和明确exit0；其后domain失败使原命令实际exit1，不谎称原整条命令全绿。
+
+~~~powershell
+& E:\MiniConda3\envs\Agent\python.exe -u -m pytest tests/test_agent_case_assessment.py tests/test_agent_case_execution.py tests/test_case_output_structure.py tests/test_case_step_assessment.py tests/test_case_effect_evidence.py tests/test_case_effect_relations.py tests/test_case_effect_expected_sources.py tests/test_case_consumption_phase.py tests/test_case_consumption_external.py tests/test_case_action_binding.py tests/test_case_action_admission.py tests/test_case_operations.py tests/test_case_operation_verification.py tests/test_case_cleanup_coverage.py tests/test_test_run_lifecycle.py tests/test_test_run_postgres_claim.py tests/test_test_run_regression.py tests/test_run_item_dependencies.py tests/test_tool_operation_observation.py tests/test_framework_tool_messages.py tests/test_tool_runtime_heartbeat.py tests/test_artifact_storage_service.py -q -x -rs --tb=short --show-capture=no --log-level=INFO
+~~~
+
+修正上述两项旧基线的明确增量后完整重跑，实际 **235 passed、143 skipped，115.74秒，exit0，无deselect**。skip来自既有 RUN_LIVE_PLAN_RUN_CREATION 等显式opt-in和实际MySQL模型配置／PG／RustFS／独立原图条件，未打开这些开关，不把143项skip当通过；其中完整 effect inventory／consumption／原领域流程的live变体仍未验收。此组通过的是实际执行到的原规则／固定样本、内存或本地HTTP链路、现有PG原领取等测试，不能据此宣称全部场景的新正式PG评估端口已覆盖。日志 .codex-logs/e194-domain-final-2.log 不提交，原handle取得完整终态并明确DOMAIN_PYTEST_EXIT_CODE=0。
+
+新专项把四个 RUN_LIVE 开关全置0、RUN_LIVE_PLAN_RUN_CREATION=0，以同一pytest参数单跑 test_controlled_case_assessment，实际 **42 skipped，7.91秒，exit0**；仅证明opt-in边界，不计通过，原handle终态已确认。固定Python的 compileall -q Agent_Server/src Agent_Server/tests 与 pip check 重新执行，均exit0，pip报 No broken requirements found。实际检查ruff／mypy均未安装，未新增工具依赖，未跑独立backend lint／typecheck。
+
+工作目录 agent_web，npm.cmd run typecheck 实际exit0；npm.cmd run test -- src/components/chat/ExecutionTrace.eventCompletion.test.ts src/stores/sessionEventRefresh.test.ts src/features/flow/useFlowSession.lifecycle.test.ts 实际 **18 passed，2.53秒，exit0**。没有前端源码改动；该组为既有完成事件／刷新消费回归，不把未接入UI的新准备事件说成新展示功能，不冒称前端build／浏览器或全量前端通过。
+
+最终生产src聚合SHA256为 d064802cf9c10680ab2445dcc66ec195331904907db564a68060c199a3edf4ea（865个Python文件）。算法为工作区相对POSIX路径排序，逐文件UTF-8路径＋NUL＋原字节＋NUL。42专项、371正式和673共享运行前后多次采样一致，没有在运行中修改Python源码／测试；其后仅对已失败的 test_case_step_assessment 做上述测试体内14行精确契约校验，未改任何生产文件或371／673组中测试／fixture。新增专项和正式／共享组当时tests聚合为 57931257040fe8133bfd317e482d3eaf6560cd09bb708568f720f3f843139082；旧基线测试修正后，最终tests聚合为 1a4fd364c414812d254841641815aea80e8dd416b3fa09c5489819ba3b031aa2（665文件），235领域整组使用修正后的测试。两者不谎称字节相同；未重跑未受测试体变动影响的371／673组，不用测试的全局摘要变化反推生产变化。
+
+新正式用例来源仍由真实原服务执行草稿→评审→启用、Suite／计划Run、RunItem claim／start、原受理和双租约claim／begin；使用固定官方SDK／LangGraph／PostgresSaver、真实隔离PG／Redis、模型账本／ToolJob／artifact／事件、原Session finalizer和原Assessment。模型HTTP对端／inspect_source handler／部分上下文端口是明确的本地合成或替身，未调用真实供应商或业务目标。artifact是原ToolJob服务生成的真实隔离PG行，不把合成内容叫实际领域执行证据。未知ACK／取消测试是实际线程＋SQL事务，不是独立正式case Worker强杀。所有pytest handle均已取得终态，最终对应pytest进程数为0；日志／制品不提交，未因等待或无新输出重启测试。
+
+### 对应、交付与剩余出口
+
+v4 E／§12.1 → 本节 → 13个生产文件＋新专项＋旧基线契约测试＋2文档，共17文件 → 红绿与实际42／371／673／235测试、143项明确skip、18项前端、typecheck／compileall／pip check → 独立提交“【feat】留存正式用例原评估与证据快照”，实际ID见Git与交付。提交前核完整status／暂存diff与新文件、跨层引用、git diff --cached --check、范围及新增行敏感模式；模式扫描不是完整安全审计。新测试仅精确单文件force-add，不扩大ignore或force范围；不纳入用户v3、日志、认证或制品，不推送／建PR。
+
+完整暂存diff（包括新文件）检查实际exit0，精确暂存清单核为本轮17文件；新增行高置信度敏感模式扫描无匹配，§194围栏平衡，用户v3 SHA256仍为8A43E94160767A0DE20740F2CB30782F06322CBC3467076DFCB120D4EFDF1AD4，未纳入暂存。原件／checkpoint／capabilities与内部outcome全部引用已搜索核对，无生产装配入口新增。
+
+当前Assessment只是原准备资产：AgentTask仍running、RunItem仍无result_id，原finish(completed)仍拒绝，未覆盖原结果或重置旧任务／attempt。下一依赖是复用原RunStore完成事务，将原评估内容、原应用proof、双租约与RunItem／attempt／run totals／AgentTask终态作fenced原子结算，而不是调用两个独立提交或复制完成算法；后续还需原业务审批继续、正式失租恢复／Memory只读对账、独立case Worker强杀、main与逐模式有效输入／质量及E3／E4制品、备份恢复验收。
+
+完整v4范围A2/A3/B/C/D/E/F、H01–H12、历史异常／空结构化结果／流式／取消出口未缩小，goal保持active，不标complete。未执行Docker、启动／重启服务、付费供应商／embedding、实际MySQL／RustFS／领域Runner、全资源main、双制品部署、一致备份恢复、性能基线、独立backend lint／typecheck、全量前后端或浏览器验收；这不代表这些出口已通过。整体剩余仍粗估 **4–8周有效开发／验收**，外部授权、环境和人工发布等待另计，非承诺；本子步通过不替代完整系统验收。

@@ -27,6 +27,7 @@ from src.schemas.framework_graph_input import FrameworkProjectionIdentity, Frame
 from src.schemas.framework_transcript import CONTROLLED_CASE_CONTEXT_VERSION_KEY
 from src.schemas.session import ExecutionEvent, ConversationResponse
 from src.schemas.framework_runtime_result import ControlledCaseRuntimeResultAsset
+from src.schemas.controlled_case_assessment import ControlledCaseAssessmentAsset
 
 
 logger = logging.getLogger(__name__)
@@ -34,13 +35,14 @@ logger = logging.getLogger(__name__)
 
 @dataclass(frozen=True)
 class ControlledCaseRuntimeOutcome:
-    """Optional Session application result; never Assessment or a test verdict."""
+    """Optional original assessment preparation; never a completed RunItem."""
     graph_outcome: FrameworkGraphOutcome
     state: dict[str, Any]
     tool_records: list[dict[str, Any]]
     runtime_result: RuntimeTurnResult | None = None
     result_asset: ControlledCaseRuntimeResultAsset | None = None
     conversation_response: ConversationResponse | None = None
+    assessment_asset: ControlledCaseAssessmentAsset | None = None
 
 
 class ControlledCaseRuntime:
@@ -52,9 +54,12 @@ class ControlledCaseRuntime:
     Neither port is installed in main/Worker or grants recovery authority.
     """
 
-    def __init__(self, *, runtime_service, session_service=None):
+    def __init__(self, *, runtime_service, session_service=None, assessment_service=None):
+        if assessment_service is not None and session_service is None:
+            raise ValueError("Controlled assessment requires explicit Session finalization assembly")
         self._runtime = runtime_service
         self._sessions = session_service
+        self._assessments = assessment_service
 
     async def prepare_input(self, session, request, *, detail, item, version, attempt_id, projection_identity):
         # Capture all mutable inputs before retrieval/configuration awaits.
@@ -161,6 +166,7 @@ class ControlledCaseRuntime:
         runtime_result = None
         result_asset = None
         conversation_response = None
+        assessment_asset = None
 
         async def build(prepared):
             nonlocal state
@@ -181,7 +187,7 @@ class ControlledCaseRuntime:
             return tools
 
         async def project(prepared, outcome):
-            nonlocal state, runtime_result, result_asset, conversation_response
+            nonlocal state, runtime_result, result_asset, conversation_response, assessment_asset
             if not isinstance(prepared, ControlledCaseResultTaskInputAsset) or outcome.native_interrupts:
                 # Historical preparation is not silently upgraded. Native wait
                 # still needs the original business approval/admission contract.
@@ -201,10 +207,13 @@ class ControlledCaseRuntime:
                 if self._sessions is not None:
                     conversation_response = await self._sessions.finalize_controlled_case_result(
                         owner, native=outcome.native_terminal)
+                    if self._assessments is not None:
+                        assessment_asset = await self._assessments.freeze(owner, native=outcome.native_terminal)
             runtime_result = projected
             state = deepcopy(projected.state)
 
         outcome = await executor.execute(task, build_business_tools=build,
             resource_id=resource_id, fencing_token=fencing_token, project_outcome=project)
         return ControlledCaseRuntimeOutcome(graph_outcome=outcome, state=state, tool_records=records,
-            runtime_result=runtime_result, result_asset=result_asset, conversation_response=conversation_response)
+            runtime_result=runtime_result, result_asset=result_asset, conversation_response=conversation_response,
+            assessment_asset=assessment_asset)

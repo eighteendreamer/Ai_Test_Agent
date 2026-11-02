@@ -36,34 +36,38 @@ class PostgresCaseEffectEvidence:
 
     async def list_run_evidence(self, project_id, run_id, plan_id):
         def read():
-            from src.runtime.postgres_tool_job_store import _job_from_row
             with postgres_connect(self._settings) as conn, conn.cursor() as cur:
-                cur.execute(f"""SELECT j.*, o.record AS operation_record, e.record AS returned_evidence
-                    FROM {self._operations.table} o
-                    JOIN {self._settings.database.postgres_tool_job_table} j ON j.id=o.origin_job_id
-                    LEFT JOIN {self.table} e ON e.origin_job_id=j.id
-                    WHERE o.record->'scope'->>'project_id'=%s AND o.record->'scope'->>'run_id'=%s
-                      AND o.record->'scope'->>'plan_id'=%s ORDER BY j.created_at,j.id""", (project_id,run_id,plan_id))
-                records = []
-                for row in cur.fetchall():
-                    job = _job_from_row(row)
-                    self._operations.validate_origin(row["operation_record"], job)
-                    binding = CaseActionBinding.model_validate(job.metadata["case_action_binding"])
-                    validate_action_admission_receipt(job, binding, required=True)
-                    evidence = row["returned_evidence"]
-                    if evidence is not None:
-                        intent = job.metadata[INTENT_KEY]
-                        if (evidence.get("sha256") != _digest({k:v for k,v in evidence.items() if k != "sha256"})
-                            or intent.get("sha256") != _digest({k:v for k,v in intent.items() if k != "sha256"})
-                            or evidence.get("origin_job_id") != job.id or evidence.get("binding") != binding.model_dump(mode="json")
-                            or evidence.get("intent_sha256") != intent["sha256"]
-                            or evidence.get("operation_id") != row["operation_record"]["operation_id"]
-                            or evidence.get("observation") != job.metadata.get("tool_output_observation")):
-                            raise ValueError("固定对象证据、原返回观察、意图或逻辑操作不同")
-                    records.append({"operation": row["operation_record"], "origin_job": job.model_dump(mode="json"),
-                        "returned_evidence": evidence,
-                        "evidence_state": ("not_declared" if INTENT_KEY not in job.metadata else
-                            "awaiting_reliable_return" if evidence is None else "captured"),
-                        "returned_evidence_available": evidence is not None})
-                return records
+                return self.read_in_transaction(cur, project_id, run_id, plan_id)
         return await asyncio.to_thread(read)
+
+    def read_in_transaction(self, cur, project_id, run_id, plan_id):
+        """Same original evidence query/validation on the caller's existing transaction."""
+        from src.runtime.postgres_tool_job_store import _job_from_row
+        cur.execute(f"""SELECT j.*, o.record AS operation_record, e.record AS returned_evidence
+            FROM {self._operations.table} o
+            JOIN {self._settings.database.postgres_tool_job_table} j ON j.id=o.origin_job_id
+            LEFT JOIN {self.table} e ON e.origin_job_id=j.id
+            WHERE o.record->'scope'->>'project_id'=%s AND o.record->'scope'->>'run_id'=%s
+              AND o.record->'scope'->>'plan_id'=%s ORDER BY j.created_at,j.id""", (project_id,run_id,plan_id))
+        records = []
+        for row in cur.fetchall():
+            job = _job_from_row(row)
+            self._operations.validate_origin(row["operation_record"], job)
+            binding = CaseActionBinding.model_validate(job.metadata["case_action_binding"])
+            validate_action_admission_receipt(job, binding, required=True)
+            evidence = row["returned_evidence"]
+            if evidence is not None:
+                intent = job.metadata[INTENT_KEY]
+                if (evidence.get("sha256") != _digest({k:v for k,v in evidence.items() if k != "sha256"})
+                    or intent.get("sha256") != _digest({k:v for k,v in intent.items() if k != "sha256"})
+                    or evidence.get("origin_job_id") != job.id or evidence.get("binding") != binding.model_dump(mode="json")
+                    or evidence.get("intent_sha256") != intent["sha256"]
+                    or evidence.get("operation_id") != row["operation_record"]["operation_id"]
+                    or evidence.get("observation") != job.metadata.get("tool_output_observation")):
+                    raise ValueError("固定对象证据、原返回观察、意图或逻辑操作不同")
+            records.append({"operation": row["operation_record"], "origin_job": job.model_dump(mode="json"),
+                "returned_evidence": evidence,
+                "evidence_state": ("not_declared" if INTENT_KEY not in job.metadata else
+                    "awaiting_reliable_return" if evidence is None else "captured"),
+                "returned_evidence_available": evidence is not None})
+        return records

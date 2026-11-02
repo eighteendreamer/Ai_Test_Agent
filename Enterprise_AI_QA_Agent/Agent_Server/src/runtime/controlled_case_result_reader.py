@@ -14,7 +14,7 @@ from src.runtime.framework_message_stages import FrameworkMessageStageRecoveryRe
 from src.runtime.framework_tool_materials import read_unapproved_tool_materials
 from src.runtime.postgres_framework_model_calls import PostgresFrameworkModelCalls
 from src.runtime.postgres_runtime_owner import assert_runtime_owner, configure_runtime_owner_transaction
-from src.runtime.postgres_tool_job_store import _job_from_row
+from src.runtime.postgres_tool_job_store import _job_from_row, _artifact_from_row
 from src.schemas.controlled_case_task_input import ControlledCaseResultTaskInputAsset, parse_controlled_case_task_input
 from src.schemas.runtime_binding import RuntimeCheckpointSource
 
@@ -121,8 +121,20 @@ class ControlledCaseResultReader:
             jobs = [_job_from_row(row) for row in cur.fetchall()]
         _require(all(job.status.value in {"completed", "partial", "failed", "denied"} for job in jobs),
             "Controlled result has unsettled business ToolJobs")
+        from src.application.runtime.tool_runtime_service import ToolRuntimeService
+
+        outputs = {}
+        for job in jobs:
+            cur.execute(f"SELECT * FROM {settings.database.postgres_tool_artifact_table} WHERE tool_job_id=%s "
+                "ORDER BY created_at ASC FOR SHARE", (job.id,))
+            artifacts = [_artifact_from_row(row) for row in cur.fetchall()]
+            _require(len(artifacts) == job.artifact_count and all((a.session_id, a.turn_id, a.tool_key)
+                == (job.session_id, job.turn_id, job.tool_key) for a in artifacts),
+                "Controlled result original artifacts differ from their ToolJob")
+            outputs[job.id] = ToolRuntimeService.project_record_output(tool_key=job.tool_key,
+                result=job.output_payload, session_id=job.session_id, artifacts=artifacts, metadata=job.metadata)
         materials = read_unapproved_tool_materials(original.graph_input, binding,
-            native.values.get("messages", []), jobs, event_log=event_log)
+            native.values.get("messages", []), jobs, event_log=event_log, projected_outputs=outputs)
         result = project_controlled_case_result(original, native, root_model_budget, event_log, materials)
         _require(not sealed or result.state["event_log"] == read.event_log,
             "Controlled result completion differs from its frozen deterministic projection")

@@ -818,13 +818,8 @@ class ToolRuntimeService:
                 session_id=context.session_id,
                 job_id=job.id if job is not None else None,
                 include_artifacts=resolved_status in {"completed", "partial", "failed"},
+                metadata=job.metadata if job is not None else None,
             )
-            if job is not None and "case_operation" in job.metadata:
-                record_output["case_operation"] = deepcopy(job.metadata["case_operation"])
-            if job is not None and "case_operation_verification" in job.metadata:
-                record_output["case_operation_verification"] = deepcopy(
-                    job.metadata["case_operation_verification"]
-                )
             return ToolExecutionRecord(
                 call_id=call.id,
                 tool_key=tool.key,
@@ -948,14 +943,10 @@ class ToolRuntimeService:
                 ToolJobStatus.partial,
                 ToolJobStatus.failed,
             },
+            metadata=job.metadata,
         )
         if "case_operation" in job.metadata:
             await self._tool_job_service.validate_case_operation(job)
-            record_output["case_operation"] = deepcopy(job.metadata["case_operation"])
-        if "case_operation_verification" in job.metadata:
-            record_output["case_operation_verification"] = deepcopy(
-                job.metadata["case_operation_verification"]
-            )
         return ToolExecutionRecord(
             call_id=job.call_id,
             tool_key=job.tool_key,
@@ -978,11 +969,17 @@ class ToolRuntimeService:
         session_id: str,
         job_id: str | None,
         include_artifacts: bool,
+        metadata: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
-        record_output = self._compact_tool_output_for_model(tool_key, result)
-        if not job_id or self._tool_job_service is None or not include_artifacts:
-            return record_output
-        saved_artifacts = await self._tool_job_service.list_artifacts(tool_job_id=job_id)
+        saved_artifacts = (await self._tool_job_service.list_artifacts(tool_job_id=job_id)
+            if job_id and self._tool_job_service is not None and include_artifacts else [])
+        return self.project_record_output(tool_key=tool_key, result=result, session_id=session_id,
+            artifacts=saved_artifacts, metadata=metadata)
+
+    @classmethod
+    def project_record_output(cls, *, tool_key, result, session_id, artifacts, metadata=None):
+        """Same pure output projection for first delivery, replay and original reads."""
+        record_output = cls._compact_tool_output_for_model(tool_key, deepcopy(result))
         downloads = [
             {
                 "artifact_id": artifact.id,
@@ -990,13 +987,16 @@ class ToolRuntimeService:
                 "artifact_type": artifact.artifact_type,
                 "url": f"/api/v1/sessions/{session_id}/artifacts/{artifact.id}/content",
             }
-            for artifact in saved_artifacts
+            for artifact in artifacts
         ]
         if downloads:
             record_output["download_urls"] = downloads
             record_output["download_markdown"] = "\n".join(
                 f"[点击下载 {item['label']}]({item['url']})" for item in downloads
             )
+        for key in ("case_operation", "case_operation_verification"):
+            if key in (metadata or {}):
+                record_output[key] = deepcopy(metadata[key])
         return record_output
 
     async def _keep_tool_job_alive(
@@ -5451,11 +5451,12 @@ class ToolRuntimeService:
         normalized.setdefault("trace_id", context.trace_id)
         return normalized
 
-    def _compact_tool_output_for_model(self, tool_key: str, result: dict[str, Any]) -> dict[str, Any]:
+    @classmethod
+    def _compact_tool_output_for_model(cls, tool_key: str, result: dict[str, Any]) -> dict[str, Any]:
         if not isinstance(result, dict):
             return result
         if tool_key == "code-governance-runner":
-            return self._compact_governance_output(result)
+            return cls._compact_governance_output(result)
         if tool_key == "code-review-orchestrator":
             compact = {
                 key: result.get(key)
@@ -5475,13 +5476,13 @@ class ToolRuntimeService:
             }
             governance = result.get("governance")
             if isinstance(governance, dict):
-                compact["governance"] = self._compact_governance_output(governance)
+                compact["governance"] = cls._compact_governance_output(governance)
             bootstrap = result.get("bootstrap")
             if isinstance(bootstrap, dict):
-                compact["bootstrap"] = self._compact_code_review_bootstrap_output(bootstrap)
+                compact["bootstrap"] = cls._compact_code_review_bootstrap_output(bootstrap)
             campaign = result.get("campaign")
             if isinstance(campaign, dict):
-                compact["campaign"] = self._compact_code_review_campaign_output(campaign)
+                compact["campaign"] = cls._compact_code_review_campaign_output(campaign)
             dispatch = result.get("dispatch")
             if isinstance(dispatch, dict):
                 compact["dispatch"] = {
@@ -5492,7 +5493,8 @@ class ToolRuntimeService:
             return compact
         return result
 
-    def _compact_governance_output(self, result: dict[str, Any]) -> dict[str, Any]:
+    @classmethod
+    def _compact_governance_output(cls, result: dict[str, Any]) -> dict[str, Any]:
         metrics = result.get("metrics") if isinstance(result.get("metrics"), dict) else {}
         code_graph = result.get("code_graph") if isinstance(result.get("code_graph"), dict) else {}
         graph_metrics = code_graph.get("metrics") if isinstance(code_graph.get("metrics"), dict) else {}
@@ -5507,14 +5509,14 @@ class ToolRuntimeService:
             "decision": result.get("decision"),
             "risk_score": result.get("risk_score"),
             "metrics": metrics,
-            "changed_files": self._limit_dict_list(result.get("changed_files"), limit=80),
-            "findings": self._limit_dict_list(result.get("findings"), limit=20),
-            "scanner_runs": self._limit_dict_list(result.get("scanner_runs"), limit=20),
+            "changed_files": cls._limit_dict_list(result.get("changed_files"), limit=80),
+            "findings": cls._limit_dict_list(result.get("findings"), limit=20),
+            "scanner_runs": cls._limit_dict_list(result.get("scanner_runs"), limit=20),
             "code_graph": {
                 "status": code_graph.get("status"),
                 "summary": code_graph.get("summary"),
                 "metrics": graph_metrics,
-                "impacted_node_ids": self._limit_list(code_graph.get("impacted_node_ids"), limit=40),
+                "impacted_node_ids": cls._limit_list(code_graph.get("impacted_node_ids"), limit=40),
             },
             "report_json": {
                 "project": report_project,
@@ -5523,17 +5525,18 @@ class ToolRuntimeService:
                 "metrics": metrics,
                 "diff": {
                     "mode": report_diff.get("mode"),
-                    "stat": self._truncate_text(report_diff.get("stat"), max_chars=3000),
+                    "stat": cls._truncate_text(report_diff.get("stat"), max_chars=3000),
                     "truncated": report_diff.get("truncated"),
                 },
             },
-            "report_markdown": self._truncate_text(result.get("report_markdown"), max_chars=5000),
-            "artifacts": self._strip_artifact_content(result.get("artifacts")),
+            "report_markdown": cls._truncate_text(result.get("report_markdown"), max_chars=5000),
+            "artifacts": cls._strip_artifact_content(result.get("artifacts")),
             "model_output_compacted": True,
             "full_output_available_in_tool_job": True,
         }
 
-    def _compact_code_review_bootstrap_output(self, bootstrap: dict[str, Any]) -> dict[str, Any]:
+    @classmethod
+    def _compact_code_review_bootstrap_output(cls, bootstrap: dict[str, Any]) -> dict[str, Any]:
         source_info = bootstrap.get("source_info") if isinstance(bootstrap.get("source_info"), dict) else {}
         diff_summary = bootstrap.get("diff_summary") if isinstance(bootstrap.get("diff_summary"), dict) else {}
         tree_summary = bootstrap.get("tree_summary") if isinstance(bootstrap.get("tree_summary"), dict) else {}
@@ -5546,14 +5549,14 @@ class ToolRuntimeService:
                 "git_root": source_info.get("git_root"),
                 "branch": source_info.get("branch"),
                 "is_git_repo": source_info.get("is_git_repo"),
-                "top_entries": self._limit_dict_list(source_info.get("top_entries"), limit=20),
+                "top_entries": cls._limit_dict_list(source_info.get("top_entries"), limit=20),
             },
             "diff_summary": {
                 "ok": diff_summary.get("ok"),
                 "diff_mode": diff_summary.get("diff_mode"),
-                "diff_stat": self._truncate_text(diff_summary.get("diff_stat"), max_chars=3000),
+                "diff_stat": cls._truncate_text(diff_summary.get("diff_stat"), max_chars=3000),
                 "changed_file_count": len(diff_summary.get("changed_files", [])) if isinstance(diff_summary.get("changed_files"), list) else 0,
-                "changed_files": self._limit_dict_list(diff_summary.get("changed_files"), limit=80),
+                "changed_files": cls._limit_dict_list(diff_summary.get("changed_files"), limit=80),
                 "truncated": diff_summary.get("truncated"),
                 "error": diff_summary.get("error"),
             },
@@ -5567,14 +5570,15 @@ class ToolRuntimeService:
             },
         }
 
-    def _compact_code_review_campaign_output(self, campaign: dict[str, Any]) -> dict[str, Any]:
+    @classmethod
+    def _compact_code_review_campaign_output(cls, campaign: dict[str, Any]) -> dict[str, Any]:
         summary_agent = campaign.get("summary_agent") if isinstance(campaign.get("summary_agent"), dict) else {}
         dispatch_payload = campaign.get("dispatch_payload") if isinstance(campaign.get("dispatch_payload"), dict) else {}
         return {
             "summary": campaign.get("summary"),
             "project_source": campaign.get("project_source"),
-            "review_points": self._limit_dict_list(campaign.get("review_points"), limit=20),
-            "review_team": self._limit_dict_list(campaign.get("review_team"), limit=10),
+            "review_points": cls._limit_dict_list(campaign.get("review_points"), limit=20),
+            "review_team": cls._limit_dict_list(campaign.get("review_team"), limit=10),
             "metrics": campaign.get("metrics"),
             "debate_plan": campaign.get("debate_plan"),
             "launch_workers": campaign.get("launch_workers"),
@@ -5589,7 +5593,8 @@ class ToolRuntimeService:
             },
         }
 
-    def _strip_artifact_content(self, artifacts: Any) -> list[dict[str, Any]]:
+    @classmethod
+    def _strip_artifact_content(cls, artifacts: Any) -> list[dict[str, Any]]:
         result: list[dict[str, Any]] = []
         if not isinstance(artifacts, list):
             return result
@@ -5603,17 +5608,20 @@ class ToolRuntimeService:
             result.append(compact)
         return result
 
-    def _limit_dict_list(self, value: Any, *, limit: int) -> list[dict[str, Any]]:
+    @classmethod
+    def _limit_dict_list(cls, value: Any, *, limit: int) -> list[dict[str, Any]]:
         if not isinstance(value, list):
             return []
         return [item for item in value[:limit] if isinstance(item, dict)]
 
-    def _limit_list(self, value: Any, *, limit: int) -> list[Any]:
+    @classmethod
+    def _limit_list(cls, value: Any, *, limit: int) -> list[Any]:
         if not isinstance(value, list):
             return []
         return value[:limit]
 
-    def _truncate_text(self, value: Any, *, max_chars: int) -> str:
+    @classmethod
+    def _truncate_text(cls, value: Any, *, max_chars: int) -> str:
         text = str(value or "")
         if len(text) <= max_chars:
             return text

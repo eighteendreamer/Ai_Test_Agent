@@ -56,6 +56,11 @@ class ToolJobService:
         if store is None:
             raise RuntimeError("固定对象证据查询未配置；不能用空集合代替未知范围")
         records = await store.list_run_evidence(project_id, run_id, plan_id)
+        return self.case_effect_evidence(records)
+
+    @staticmethod
+    def case_effect_evidence(records):
+        """Original inventory mapping for both async and transaction-local readers."""
         output, seen_closures = [], set()
         for row in records:
             job = row["origin_job"]

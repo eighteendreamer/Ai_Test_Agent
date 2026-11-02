@@ -408,6 +408,39 @@ AgentTask／RunItem 仍 running／无正式 result_id，原 finish(completed) �
 正式 Assessment／证据与 RunItem fenced 原子完成、业务审批继续、失租后的正式恢复／只读 Memory
 对账与独立 case Worker 强杀、main／逐模式／真实领域／E3/E4 出口尚未完成，不能据此开启生产。
 
+### 正式 case 原 Assessment 留存（v4 E／§12.1；准备，不是结算）
+
+`ControlledCaseRuntime` 仅在显式装配 `session_service` 和 `assessment_service` 时，
+于原 executor 的双 owner／事件 sink callback 内，依次完成原结果留存、唯一 Session finalizer、
+`ControlledCaseAssessments.freeze(owner, native=...)`。默认不装配评估；无 Session finalizer 的评估装配拒绝。
+历史输入、审批等待不自动升级，main／CLI／生产 Dispatcher 未接线，默认 controlled_case_available=false。
+
+原固定用例、模型已保存的完整回执、ToolJob／artifact／操作和 effect inventory，使用原
+`AgentCaseAssessmentService` 的同一解析、归属与评估算法；不调用新模型／工具或自动纠正回执。
+实际值由原 Job 输出读取，空 checks 不得通过，模型自报 passed 不是正式判定。
+读原应用证明与证据、评估前后复核及最终 DB-clock 双租约检查均在同连接事务；
+这里冻结证据快照，不证明全计划所有并发操作已经排空，也不授予 consumption completion 权限。
+
+checkpoint 5 继承原 admission／结果／分项／Session proof／Memory 回执，增加严格版本化的
+`ControlledCaseAssessmentAsset`，scope=`controlled_case_assessment_preparation_only`。
+保留原 Verification 身份、时间、证据及无 lease 的标准 RunItemCompletion 内容/hash；
+原 key／checkpoint_at／retained_at 不变。原应用 proof 的 scope/hash 不纳入新增评估。
+原件摘要同时保留完整 artifact SQL 行，不能因 DTO 隐藏字段而忽略物理证据漂移。
+同一事务写 checkpoint 与稳定 `test_run.case_assessment_prepared` 审计，事件明确 run_item_completed=false。
+重入／load 复核原输入、native、账本、结果、应用行、证据、评估及原审计，不再生成 Verification。
+缺失／冲突不覆盖，load 不创建；取消／提交后 ACK 丢失记 assessment_write_receipt_unknown，
+automatic_replay=false，等待者取消不是 SQL 线程停止证明。
+
+原件校验复用工具首发／回放的纯输出投影（原压缩、下载字段、操作元数据），
+不再把投影后输出直接等同原 Job payload；仍逐字段精确比较，不忽略 artifacts／messages。
+checkpoint 读者上限为5、input仍4；reader4、未知字段及version6 defer，不重写原件。
+schema5下原分项／派生 Memory 回执写入保留评估，完整应用证明的 Session ACK 仍只读。
+
+该端口尚不插入正式 TestCaseResult、不更新 RunItem／attempt／run totals、不完成 AgentTask；
+原 finish(completed) 仍拒绝。后续需复用原 RunStore 的 fenced 原子结算，不能把本资产当完成许可。
+业务审批继续、失租后的正式恢复、独立 case Worker 强杀、main／逐模式／真实领域与 E3/E4
+仍保留为独立验收出口。测试证据与剩余范围见实施记录 §194。
+
 ### 原路由与恢复验证
 
 关闭新选路时记录 `deep_agent_new_turn_route_disabled`，带 `session_id`、`turn_id` 和 `recovery_reason=new_turn_admission_disabled`；这是路由决定，不是取消/停止回执。
