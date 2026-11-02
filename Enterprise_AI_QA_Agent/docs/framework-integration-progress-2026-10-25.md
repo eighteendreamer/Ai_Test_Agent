@@ -10032,3 +10032,77 @@ opt-out 明确PG／Redis等live开关全部0，`e205-optout-final.log` 实际1 p
 最终src聚合SHA256仍为 `7ce66c601b1624c78a2dd50d1887399c2a73cf4d545d7e619bcfa98dc8973c88`（870个py），tests为 `4a0f9382b76aa9fa3c3221efaf5a5744a64b2349d0e814f3e843ca7edd12eb2a`（681个py）。算法为各src／tests目录内相对POSIX路径排序，路径UTF-8＋NUL＋原字节＋NUL；以HEAD原字节还原旧8个修改文件、排除新增文件时，实际重新得到§204两个原hash，确认算法对齐。最终70项期间及结束后不再修改生产／测试，只追加文档、复编译／pip check；所有pytest句柄均取回终态，系统进程核对无pytest／multiprocessing测试Worker残留。
 
 本子步14文件：6个生产源码、4个测试／helper、4份文档，仅精确暂存本轮文件；用户v3仍原hash且不暂存，日志／制品／配置／依赖锁不提交。git diff --cached --check实际通过，高置信度私钥／常见API凭据新增行扫描0命中（非完整安全审计）。中文本地feat提交，实际commit id见Git／交付；不推送、不建PR。v4 A2-3／E／§12.1 → §205 → 显式正式Worker组合及交付边界 → 定向和最终70通过、扩大组保留失败／MySQL跳过 → 后续正式业务审批、真实模式／供应商／Runner与完整E3／E4等剩余出口，整体goal仍active、生产writer仍关闭。项目整体剩余仍粗估4–8周有效开发／验收，外部等待另计，不承诺完成日期。
+
+## 206. v4 A2／§7／§12.1：同批原生审批共享事务投影，为正式停车提供组合端口（2026-11-03）
+
+基线 2837b1c9a（§205）。先恢复原红测句柄并真实取得终态，不重启／重复该测试。用户v3保持原SHA256，不修改或暂存；Conda＋pip迁移已经提交，不重装依赖或删除历史uv.lock。本轮不改生产路由、DTO、数据库schema或服务状态，不发供应商／目标请求。
+
+### 依据 → 根因 → 采用方式
+
+- v4 §7的稳定逐项身份／治理及§12.1正式图审批 → 当前Runtime在同批native interrupts中逐项调用project，各自开连接提交；第二项失败不能回滚第一项 → 这是批次事务组合边界缺失，不是缺一个异常捕获。先准备全部治理候选，再让整批共享原投影事务。
+- 原FrameworkApprovalProjection的job／approval／link／event核、FrameworkApprovalJournal.link_interrupt_in_transaction的官方pending writes校验，以及Session／ToolJob已有caller-owned事务约定 → 提取唯一_project_in_transaction，单条、批次、自持和调用方事务共用，不复制native身份判定／另造审批治理器。
+- 原ControlledCaseResults的deepcopy与assert_runtime_owner的Session→正式RunItem／Attempt→RuntimeOwner顺序 → 在线程前捕获候选和worker-only第二租约，不以JSON往返丢失正式权限；批次开始、所有可能等待的写入后都重验原owner与数据库实时时钟，失权整批回滚。
+- 本地课程Agent轨迹与协议鲁棒性.html（轨迹／权限／幂等／补偿），原projection／formal_case／business_bridge夹具 → 同时核对真实官方双工具中断、PG原件、范围metadata、次数、状态和无执行效果；不把审批条数当成正式运行成功。
+
+### 实现、兼容与明确未接通的边界
+
+FrameworkApprovalProjection.project_many一次事务保存所有原ToolJob／approval／native link／approval.created；保留已有人工决定、活动日志和终态Job。原project(owner, proposal)签名不变，委托同一批次核。空批次经过owner校验后无写入，重复稳定业务身份明确拒绝，任一项校验／写入异常不发布半批。日志framework_approval_projected保留原身份与reused，仅在自持事务实际提交后产生。
+
+新同步project_many_in_transaction(cur, owner, proposals)只使用调用方cursor，不开连接或提交；调用方负责事务配置、异常回滚和后续业务状态／回执。它记录framework_approval_projection_staged／transaction_committed=false，返回值不是提交证明。project_many异步等待者被取消时记录framework_approval_projection_cancelled／approval_batch_write_receipt_unknown／automatic_replay=false并传播取消，后台SQL仍可能提交，不伪称回滚或停止。
+
+绑定Runtime只将原逐项投影改为“全部prepare → 批次project → 原记录重建”，无绑定legacy HITL分支不改。全局核对生产组合／全部projection构造与原private方法引用：main仍使用同一真实类，未发现外部private消费方；不新增队列、恢复许可、Task状态或自动决定交付。
+
+**正式case_execute尚未自动提交业务审批等待。** 新正式测试显式调用Runtime批次端口／caller-owned端口，证明完整schema-4准备、官方图双中断与原RunItem双租约可共用该核；它不等于把停车事务接进Worker。§205自动执行仍保持running／pending及framework_case_approval_projection_unavailable，不ACK、不暂停预算、不恢复图、不提交Result／Assessment。正式Session／RunItem／Task／预算等待原子状态、持久停车回执、专用决定准入／双归属后继和恢复矩阵仍待后续实现。生产writer与controlled_case_available默认不变。
+
+### TDD与真实中间结果（失败保留）
+
+1. e206-batch-red.log：**2 failed、21.66秒、exit1**。在真正官方双A／B中断和PG下，第二个approval.created原writer写入后受控抛异常，实际残留jobs=1、approvals=1、links=1、events从3增至4；另一个测试因缺少project_many明确失败。不是只用mock推断缺陷。
+2. e206-batch-first-green.log：**1 passed、1 failed、18.32秒、exit1**。实际半批残留用例已绿；新测试错误要求落库结果等于未持久候选。e206-batch-difference.log定向**1 failed、10.36秒、exit1**与原PostgresToolJobStore._record_activity证实writer会增加服务端framework_tool_activity，故测试比较完整候选加经原reader验证的活动日志，并核对真实读回Job；未移除身份／内容字段。
+3. e206-batch-expanded.log：**11 passed、4 failed、50.29秒、exit1**。四项均为原ToolApprovalRequest在首次候选使用naive UTC、读回PG TIMESTAMPTZ使用aware UTC的对象比较差异，旧单条接口已有该行为。采用项目既有make_json_safe完整UTC编码比较所有字段，不丢弃时间戳、不忽略metadata、不修改生产时间语义。
+4. e206-batch-formal.log：**25 passed、96.77秒、exit0，无skip／deselect**。15项共享批次＋10项正式原件／双租约测试；该中间集合不包含随后增加的“最后SQL写入后取消等待者”用例，不冒称覆盖最终全部字节。
+
+共享批次测试覆盖第二项真实写入后故障整批回滚、caller-owned事务与其他事件同commit／rollback且无额外连接、原人工拒绝／终态保留、第二项native／scope／重复身份拒绝、空批、最后事件后Session或Agent租约失效整批回滚、第二项治理prepare失败零发布、并发反序重投、线程前输入冻结及取消后的未知性。最终新增用例在真实PG最后事件已写但未commit时取消Runtime等待者：显式释放故障门并join原数据库线程，允许原事务在live owner下提交，Runtime未发布半批state；显式调用方重投只取原身份，无工具效果。这是受控Python故障门，不称为真实数据库网络故障或独立进程强杀。
+
+正式10项使用原正式草稿→评审→启用／冻结／RunItem／Attempt、完整准备与官方图、本机OpenAI Chat SDK双工具回复；原配置／检索及工具handler仍是明确替身，无外部业务目标。Runtime批次及caller-owned两端口分别验证live、Agent过期、RunItem过期、剥除第二租约、最后事件后RunItem过期。live仅生成两条waiting_approval Job与原生link，project/run/item/attempt及native metadata精确相等，重复不增加；拒绝全部零发布，原正式Attempt／Result不改，无工具效果、HTTP1、模型保留调用1。不是全供应商、正式停车／继续或Redis ACK验收。
+
+### 最终受影响回归（等待原句柄终态）
+
+已在固定Python E:\MiniConda3\envs\Agent\python.exe、PG／Redis=1、Docker／MySQL／PLAN_RUN_CREATION=0、QA_FRAMEWORK_WORKER_DIAGNOSTICS=1下启动12文件单次串行回归e206-affected-final.log。完整命令及实际计数／跳过／失败／退出码在取得原句柄后追加，不以中间25通过或§205结果代表本轮最终通过。
+
+e206-static.log的python -m compileall -q src tests与python -m pip check均实际exit0，后者No broken requirements found；ruff／mypy仍未安装，未做独立lint／typecheck，不擅自安装。前端未修改未运行；全量后端、MySQL／Docker／RustFS、真实供应商／领域Runner、正式业务停车及E3／E4未验收。
+
+本轮生产聚合SHA256为d72b4cb056ebccdea3dd7b43c45090fefa7690d2032ad6a9b4020d6d5ed919bb（src870个py），测试为0d191ca93c2c05ab881b204f857fa17ba91c49dcf537ac96d2a212b8c76314b9（tests683个py）。算法同§205：各src／tests目录相对POSIX路径排序，路径UTF-8＋NUL＋原字节＋NUL。最终回归开始后仅写文档、不再改变生产／测试字节。用户v3仍8a43e94160767a0de20740f2cb30782f06322cbc3467076dfcb120d4efdf1ad4。
+
+对应关系：v4 A2／§7／§12.1 → §206 → 共享批次事务核＋Runtime成批投影＋正式双归属验证 → 红绿／最终受影响回归 → 完整正式停车／决定交付／恢复及其余完整v4出口。提交前精确核对6文件（2生产、2新测试、路由说明、实施记录），不包含用户v3、日志／环境／锁文件；实际commit id见Git与交付，不推送、不建PR。整体goal保持active，不能把共享投影子步当作全系统完成；整体剩余仍粗估4–8周有效开发／验收，外部环境／授权／人工发布等待另计，非完成日期承诺。
+
+
+### 扩大回归的真实失败及故障观测修正
+
+原12文件句柄已经取回终态，e206-affected-final.log实际**377 passed、1 failed、1202.00秒、exit1，无skip／deselect**。唯一失败为新增test_cancellation_after_last_pg_write_can_commit_without_publishing_runtime_state最后的测试观测比较：重投时原幂等event writer再次被调用，written观测列表由2项变成4项；断言却把两条返回approval ID与这个正在增长的列表比较。真实PG提交／未提交可见性、Runtime取消后的空state、原事务线程join、重投前counts、无工具效果和取消未知日志均已经通过，失败不是额外生成了两条数据库记录。
+
+仅修正这个新测试的观测边界：重投前冻结2个唯一原ID，重投后严格等于原ID，并新增written恰好为原ID两轮的断言；保留所有PG条数、线程终态、取消、state和无执行断言。两个生产文件和其他测试字节未改，不吞错、不删除失败记录。已用最终测试字节重新启动相同12文件完整串行复验e206-affected-verified.log，仍必须等待这个原句柄的真实终态，不以377通过包装成已全绿。
+
+### 最终实测与本地交付
+
+相同12文件、最终源码的原句柄已真实返回：e206-affected-verified.log为**378 passed、1117.17秒、exit0，无skip／deselect**，包含16项新批次测试＋10项正式双租约测试及既有审批投影／工具／继续／结果／HTTP、正式Runtime／Dispatcher和无绑定adapter回归。它是混合证据集：包含真实官方框架／隔离PG／Redis与本机HTTP，也包含内存saver、静态／纯逻辑和受控替身；不宣称378项全是外部业务验收。前一组377通过／1失败完整保留，不累加为755项通过。
+
+关闭全部live开关后的e206-optout-final.log实际**26 skipped、9.36秒、exit0**，为26项新增测试正确要求显式PG／Redis授权的跳过检查，不计业务通过。e206-static-final.log的compileall -q src tests与pip check再次真实exit0；ruff／mypy未安装、独立lint／typecheck未做。未改前端，未运行前端测试／build；未跑全量后端、真实供应商／领域Runner、MySQL／Docker／RustFS或完整E3／E4。没有将§205历史17文件失败或既有独立Worker偶发超时当作已被本轮消除。
+
+实际命令如下（工作目录Agent_Server；每轮先clear_uv_environment.ps1 -ProcessOnly，PYTHONIOENCODING=utf-8；服务组PG／Redis=1、Docker／MySQL／PLAN_RUN_CREATION=0、QA_FRAMEWORK_WORKER_DIAGNOSTICS=1）：
+
+~~~powershell
+& ../scripts/clear_uv_environment.ps1 -ProcessOnly | Out-Null
+# 第一轮同一组：377通过／1测试观测失败，保留e206-affected-final.log。
+# 修正新测试观测边界后的完整复验：378通过，e206-affected-verified.log。
+& E:\MiniConda3\envs\Agent\python.exe -u -m pytest tests/test_framework_approval_batch_projection.py tests/test_controlled_case_approval_projection.py tests/test_framework_approval_projection.py tests/test_framework_tool_bridge.py tests/test_framework_tool_projection.py tests/test_framework_approval_continuation.py tests/test_framework_approval_runtime.py tests/test_framework_approval_results.py tests/test_framework_approval_http.py tests/test_controlled_case_runtime.py tests/test_controlled_case_dispatch.py tests/test_deep_agent_runtime_adapter.py -q -rs --tb=short
+# 全部live开关0：26跳过，不是业务验收。
+& E:\MiniConda3\envs\Agent\python.exe -u -m pytest tests/test_framework_approval_batch_projection.py tests/test_controlled_case_approval_projection.py -q -rs --tb=short
+& E:\MiniConda3\envs\Agent\python.exe -m compileall -q src tests
+& E:\MiniConda3\envs\Agent\python.exe -m pip check
+~~~
+
+最终生产hash仍为d72b4cb056ebccdea3dd7b43c45090fefa7690d2032ad6a9b4020d6d5ed919bb（src870个py）；测试hash为d8f4c923afe0efe1d49d11d6e8d33f006d56f2715ea0db0f7b8215c5c120fe60（tests683个py），算法同前。实际在最终回归／opt-out／静态完成后重算，与复验开始时一致。只有新增取消测试的3行观测修正使上一组tests hash改变，生产从首轮扩大组起未改；最终期间不再改代码／测试。全部本轮原pytest句柄已取回终态，系统进程核对无pytest／multiprocessing测试Worker残留。用户v3仍为原hash，不暂存。
+
+精确暂存6文件，两个被既有ignore覆盖的新测试仅按单文件force-add，不改ignore；暂存检查及git diff --cached --check通过，高置信度私钥／常见API凭据新增行扫描0命中（非完整安全审计）。不提交用户v3、日志、环境、缓存、制品或依赖锁。本地fix提交“【fix】统一原生审批批次事务与双租约校验”，实际commit id见Git／交付，不推送、不建PR。
+
+本步已验证的是共享审批批次事务与正式双归属适用性，不是完整正式业务停车／继续。下一出口为沿现有Session／RunItem／Attempt／AgentTask／根预算组合原子等待与持久回执，再接专用决定准入／恢复；不得把审批投影或native wait当ACK资格，不能绕过原治理和原正式Attempt。完整v4与H01–H12、逐模式／供应商／领域Runner、完整A3与E3／E4、备份恢复／性能基线等范围保留，生产writer关闭、整体goal active；整体剩余仍粗估4–8周有效开发／验收，外部等待另计。

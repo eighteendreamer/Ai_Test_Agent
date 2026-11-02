@@ -1875,11 +1875,11 @@ class RuntimeService:
         reported = [item["id"] for item in result.interrupts]
         if len(reported) != len(set(reported)) or sorted(item.interrupt_id for item in identities) != sorted(reported):
             raise FrameworkApprovalRecoveryRequired("Native interrupt projection is missing unique identities")
+        proposals = [self._tool_governance_service.prepare_framework_approval(
+            binding, identity, self._deep_agent_governance_context(state)) for identity in identities]
+        projected_batch = await self._framework_approval_projection.project_many(owner, proposals)
         approvals, records = [], []
-        for identity in identities:
-            proposal = self._tool_governance_service.prepare_framework_approval(
-                binding, identity, self._deep_agent_governance_context(state))
-            projected = await self._framework_approval_projection.project(owner, proposal)
+        for projected in projected_batch:
             approval, job = projected.approval, projected.job
             approvals.append(approval.model_dump(mode="python"))
             if job.status.value in {"completed", "partial", "failed", "denied", "cancelled"}:

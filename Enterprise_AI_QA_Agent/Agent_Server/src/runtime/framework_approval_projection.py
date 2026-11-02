@@ -8,6 +8,7 @@ resets an existing ToolJob.
 from __future__ import annotations
 
 import asyncio
+from copy import deepcopy
 import logging
 from datetime import datetime
 
@@ -33,7 +34,37 @@ class FrameworkApprovalProjection:
         self._journal = FrameworkApprovalJournal(settings)
 
     async def project(self, owner, proposal):
-        return await asyncio.to_thread(self._project, owner, proposal)
+        return (await self.project_many(owner, [proposal]))[0]
+
+    async def project_many(self, owner, proposals):
+        """Commit native siblings together; cancellation does not stop the DB thread."""
+        # Keep the worker-only second lease, which is excluded from JSON, and
+        # freeze mutable proposal data before handing it to the database thread.
+        owner, proposals = deepcopy((owner, proposals))
+        try:
+            return await asyncio.to_thread(self._project_many, owner, proposals)
+        except asyncio.CancelledError:
+            logger.warning("framework_approval_projection_cancelled", extra={
+                "binding_id": owner.binding.binding_id,
+                "recovery_reason": "approval_batch_write_receipt_unknown", "automatic_replay": False})
+            raise
+
+    def project_many_in_transaction(self, cur, owner, proposals):
+        """Stage a batch in the caller's shared PG transaction, without commit.
+
+        The caller owns transaction setup, rollback on error and any business
+        wait/receipt transition. These approvals alone grant no resume or ACK.
+        """
+        owner, proposals = deepcopy((owner, proposals))
+        try:
+            results = self._project_batch_in_transaction(cur, owner, proposals)
+        except Exception as exc:
+            self._log_projection_rejected(owner, exc)
+            raise
+        logger.info("framework_approval_projection_staged", extra={
+            "binding_id": owner.binding.binding_id, "approval_count": len(results),
+            "transaction_committed": False})
+        return [item for item, _ in results]
 
     async def load(self, owner, approval_id):
         try:
@@ -132,16 +163,38 @@ class FrameworkApprovalProjection:
             job.updated_at = job.completed_at = datetime.utcnow()
             return self._jobs.save_job_in_transaction(cur, job, framework_owner=owner), False
 
-    def _project(self, owner, proposal):
-        try:
-            return self._project_transaction(owner, proposal)
-        except Exception as exc:
-            logger.warning("framework_approval_projection_rejected", extra={
-                "binding_id": owner.binding.binding_id, "error_type": type(exc).__name__})
-            raise
+    @staticmethod
+    def _log_projection_rejected(owner, exc):
+        logger.warning("framework_approval_projection_rejected", extra={
+            "binding_id": owner.binding.binding_id, "error_type": type(exc).__name__})
 
-    def _project_transaction(self, owner, proposal):
-        proposal = PreparedFrameworkApproval.model_validate(proposal.model_dump(mode="json"))
+    def _project_many(self, owner, proposals):
+        try:
+            with postgres_connect(self._settings) as connection, connection.cursor() as cur:
+                configure_runtime_owner_transaction(cur, self._settings)
+                results = self._project_batch_in_transaction(cur, owner, proposals)
+        except Exception as exc:
+            self._log_projection_rejected(owner, exc)
+            raise
+        # Only this port owns commit. Caller-owned staging is not a receipt.
+        for projected, reused in results:
+            logger.info("framework_approval_projected", extra={"binding_id": owner.binding.binding_id,
+                "approval_id": projected.approval.id, "tool_job_id": projected.job.id, "reused": reused})
+        return [item for item, _ in results]
+
+    def _project_batch_in_transaction(self, cur, owner, proposals):
+        proposals = [PreparedFrameworkApproval.model_validate(item.model_dump(mode="json")) for item in proposals]
+        identities = [item.approval.id for item in proposals]
+        if len(identities) != len(set(identities)):
+            raise FrameworkApprovalRecoveryRequired("Native approval batch contains duplicate business identities")
+        assert_runtime_owner(cur, self._settings, owner)
+        results = [self._project_in_transaction(cur, owner, item) for item in proposals]
+        # Job/event locks can wait past either lease, including the final item.
+        # Recheck on a fresh DB clock after every potentially blocking write.
+        assert_runtime_owner(cur, self._settings, owner)
+        return results
+
+    def _project_in_transaction(self, cur, owner, proposal):
         binding, link, approval, job = owner.binding, proposal.link, proposal.approval, proposal.job
         native = NativeToolInterrupt.model_validate(link.model_dump(include=set(NativeToolInterrupt.model_fields)))
         call_id = framework_tool_call_id(binding, native)
@@ -160,38 +213,33 @@ class FrameworkApprovalProjection:
             or job.metadata.get("framework_binding_id") != binding.binding_id
             or job.metadata.get("framework_native_identity") != native.model_dump(mode="json")):
             raise FrameworkApprovalRecoveryRequired("Native business projection has inconsistent identities")
-        with postgres_connect(self._settings) as connection, connection.cursor() as cur:
-            configure_runtime_owner_transaction(cur, self._settings)
-            assert_runtime_owner(cur, self._settings, owner)
-            cur.execute(f"SELECT * FROM {self._settings.database.postgres_approval_table} WHERE id=%s FOR UPDATE",
-                (approval.id,))
-            existing = cur.fetchone()
-            if existing is not None:
-                saved = ToolApprovalRequest.model_validate(existing)
-                if (saved.session_id != approval.session_id or saved.tool_key != approval.tool_key
-                    or any(saved.metadata.get(key) != approval.metadata.get(key) for key in (
-                        "turn_id", "call_id", "tool_job_id", "approval_scope_hash", "framework_binding_id",
-                        "framework_call_id", "framework_native_identity"))):
-                    raise FrameworkApprovalRecoveryRequired("Existing approval has a different native projection")
-                approval = saved
-            stored_job = self._jobs.create_job_if_absent_in_transaction(cur, job, framework_owner=owner)
-            if (stored_job.session_id != job.session_id or stored_job.turn_id != job.turn_id
-                or stored_job.call_id != job.call_id or stored_job.tool_key != job.tool_key
-                or approval_value_hash(stored_job.input_payload) != approval_value_hash(job.input_payload)
-                or stored_job.metadata.get("framework_native_identity") != job.metadata["framework_native_identity"]
-                or stored_job.metadata.get("framework_binding_id") != binding.binding_id
-                or (existing is None and stored_job.status.value != "waiting_approval")):
-                raise FrameworkApprovalRecoveryRequired("Existing ToolJob requires native approval reconciliation")
-            if existing is None:
-                self._sessions.save_approval_in_transaction(cur, binding.session_id, approval)
-            self._journal.link_interrupt_in_transaction(cur, owner, link)
-            event = ExecutionEvent(id=f"framework-approval:{approval.id}:created", session_id=binding.session_id,
-                type="approval.created", timestamp=approval.created_at,
-                payload={"turn_id": binding.turn_id, "approval_id": approval.id, "tool_key": approval.tool_key,
-                    "tool_name": approval.tool_name, "reason": approval.reason,
-                    "message": "A tool execution approval request has been created."})
-            self._sessions.append_event_in_transaction(cur, binding.session_id, event,
-                turn_lease_token=owner.owner_token)
-        logger.info("framework_approval_projected", extra={"binding_id": binding.binding_id,
-            "approval_id": approval.id, "tool_job_id": stored_job.id, "reused": existing is not None})
-        return PreparedFrameworkApproval(approval=approval, job=stored_job, link=link)
+        cur.execute(f"SELECT * FROM {self._settings.database.postgres_approval_table} WHERE id=%s FOR UPDATE",
+            (approval.id,))
+        existing = cur.fetchone()
+        if existing is not None:
+            saved = ToolApprovalRequest.model_validate(existing)
+            if (saved.session_id != approval.session_id or saved.tool_key != approval.tool_key
+                or any(saved.metadata.get(key) != approval.metadata.get(key) for key in (
+                    "turn_id", "call_id", "tool_job_id", "approval_scope_hash", "framework_binding_id",
+                    "framework_call_id", "framework_native_identity"))):
+                raise FrameworkApprovalRecoveryRequired("Existing approval has a different native projection")
+            approval = saved
+        stored_job = self._jobs.create_job_if_absent_in_transaction(cur, job, framework_owner=owner)
+        if (stored_job.session_id != job.session_id or stored_job.turn_id != job.turn_id
+            or stored_job.call_id != job.call_id or stored_job.tool_key != job.tool_key
+            or approval_value_hash(stored_job.input_payload) != approval_value_hash(job.input_payload)
+            or stored_job.metadata.get("framework_native_identity") != job.metadata["framework_native_identity"]
+            or stored_job.metadata.get("framework_binding_id") != binding.binding_id
+            or (existing is None and stored_job.status.value != "waiting_approval")):
+            raise FrameworkApprovalRecoveryRequired("Existing ToolJob requires native approval reconciliation")
+        if existing is None:
+            self._sessions.save_approval_in_transaction(cur, binding.session_id, approval)
+        self._journal.link_interrupt_in_transaction(cur, owner, link)
+        event = ExecutionEvent(id=f"framework-approval:{approval.id}:created", session_id=binding.session_id,
+            type="approval.created", timestamp=approval.created_at,
+            payload={"turn_id": binding.turn_id, "approval_id": approval.id, "tool_key": approval.tool_key,
+                "tool_name": approval.tool_name, "reason": approval.reason,
+                "message": "A tool execution approval request has been created."})
+        self._sessions.append_event_in_transaction(cur, binding.session_id, event,
+            turn_lease_token=owner.owner_token)
+        return PreparedFrameworkApproval(approval=approval, job=stored_job, link=link), existing is not None

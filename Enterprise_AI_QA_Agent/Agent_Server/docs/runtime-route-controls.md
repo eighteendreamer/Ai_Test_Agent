@@ -755,6 +755,27 @@ AgentTask Attempt，不重置或新建原正式执行 Attempt。失租、取消�
 main 的组合校验是静态 AST 审计，不能替代真实完整启动、供应商／领域 Runner、独立正式执行
 Worker 强杀或 E3／E4 部署验收。最终回归、失败与边界见实施记录 §205。
 
+### 同批原生审批的共享事务投影（§206，非正式停车回执）
+
+绑定 Runtime 先按原治理准备全部候选，再调用 `FrameworkApprovalProjection.project_many`，
+在同一个 PostgreSQL 事务保存该批 ToolJob／approval／native link／approval.created；
+任一项失败全部回滚。原单条 `project` 委托同一内核，重投保留已有决定和 ToolJob，
+不重置终态。空批次是经过 owner 校验的无写入操作，重复业务身份明确拒绝。
+
+`project_many_in_transaction(cur, owner, proposals)` 供调用方组合原事务；不打开连接或提交，
+调用方负责事务配置、错误回滚及业务等待／回执。两端口共用原身份与 native checkpoint
+校验，在批次开始和全部潜在等待写入之后重验捕获的 owner；正式执行必须保留原 RunItem
+第二租约，不能用 JSON 序列化后缺租约的 owner 绕过。线程前冻结候选，取消只表示
+`approval_batch_write_receipt_unknown`，SQL 仍可能提交；不自动重跑、交付决定或继续图。
+`framework_approval_projected` 只由自持事务端口提交后记录，caller-owned 端口仅记录
+`framework_approval_projection_staged`／transaction_committed=false，不是持久完成证明。
+
+本步尚未将正式 `case_execute` 的 native wait 接为业务停车：§205 的自动执行分支仍保持
+running／pending 和 `framework_case_approval_projection_unavailable`。专门测试显式调用
+共享投影端口，证明正式原件／双租约适用，不代表 Worker 已提交 waiting_approval、暂停预算、
+获得 ACK 或后继恢复资格。完整停车事务、决定准入／交付、继续和故障矩阵仍待后续实现。
+公共 HTTP／DTO、数据库 schema、依赖、生产开关不变。
+
 ### 原路由与恢复验证
 
 关闭新选路时记录 `deep_agent_new_turn_route_disabled`，带 `session_id`、`turn_id` 和 `recovery_reason=new_turn_admission_disabled`；这是路由决定，不是取消/停止回执。
