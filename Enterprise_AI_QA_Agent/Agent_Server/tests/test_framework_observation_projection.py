@@ -482,7 +482,7 @@ async def test_empty_observation_asset_is_reused_without_a_persisted_event(froze
 
 @pytest.mark.asyncio
 async def test_ack_only_recovery_does_not_require_current_derived_memory_rows(observation_result):
-    """A1 proves the application commit, not current Memory or vector replicas."""
+    """A1 excludes derived rows, not required observations in the same store."""
     from src.infrastructure.redis_task_queue import QueuedTask
     from src.runtime.framework_worker_capabilities import FrameworkWorkerCapabilities
     from tests.test_framework_message_recovery import outbox
@@ -490,11 +490,14 @@ async def test_ack_only_recovery_does_not_require_current_derived_memory_rows(ob
     h = observation_result
     with framework_owner_scope(h.task.runtime_owner):
         await h.sessions._finalize_runtime_result(**h.result_values)
-    committed = (await stage(h, h.task)).source_manifest["application_projection_commit"]
+    manifest = (await stage(h, h.task)).source_manifest
+    committed = manifest["application_projection_commit"]
+    derived_ids = [r["request_id"] for r in manifest["post_commit_memory_plan"]["requests"]]
     original = memory_rows(h)
-    assert len(original) == 2
+    assert len(original) == 2 and derived_ids and not set(derived_ids).intersection(r["id"] for r in original)
     with postgres_connect(h.settings) as conn, conn.cursor() as cur:
-        cur.execute(f"DELETE FROM {h.settings.database.postgres_memory_table} WHERE session_id=%s", (h.session_id,))
+        cur.execute(f"DELETE FROM {h.settings.database.postgres_memory_table} WHERE id=ANY(%s)", (derived_ids,))
+        assert cur.rowcount == len(derived_ids)
     assert await h.store.renew_turn_execution(h.session_id, h.task.lease_token, 0)
     expired = await h.tasks.claim(h.task.id, worker_id="expiry", expected_binding=h.binding)
     assert expired.status == "recovery_required"
@@ -508,10 +511,41 @@ async def test_ack_only_recovery_does_not_require_current_derived_memory_rows(ob
     assert await h.tasks.get(h.task.id) == terminal
     saved = await stage(h, h.task)
     assert saved.phase == "projected" and saved.source_manifest["application_projection_commit"] == committed
-    assert memory_rows(h) == [] and h.native_runs == 1 and len(h.runtime.calls) == 1
+    assert memory_rows(h) == original and h.native_runs == 1 and len(h.runtime.calls) == 1
+    with postgres_connect(h.settings) as conn, conn.cursor() as cur:
+        cur.execute(f"SELECT id FROM {h.settings.database.postgres_memory_table} WHERE id=ANY(%s)", (derived_ids,))
+        assert cur.fetchall() == []
     events = await h.store.list_events(h.session_id)
     assert len([e for e in events if e.type == "observations.persisted"]) == 1
     assert len([e for e in events if e.type == "turn.completed"]) == 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("changed", ["missing", "content"])
+async def test_ack_recovery_rejects_required_observation_drift_without_repair(observation_result, changed):
+    from src.runtime.framework_application_projection import load_committed_projection
+
+    h = observation_result
+    with framework_owner_scope(h.task.runtime_owner):
+        await h.sessions._finalize_runtime_result(**h.result_values)
+    original = memory_rows(h)
+    assert len(original) == 2
+    with postgres_connect(h.settings) as conn, conn.cursor() as cur:
+        if changed == "missing":
+            cur.execute(f"DELETE FROM {h.settings.database.postgres_memory_table} WHERE id=%s", (original[0]["id"],))
+        else:
+            cur.execute(f"UPDATE {h.settings.database.postgres_memory_table} SET content='changed required observation' WHERE id=%s", (original[0]["id"],))
+        assert cur.rowcount == 1
+    actual = memory_rows(h)
+    with pytest.raises(FrameworkMessageStageRecoveryRequired, match="[Oo]bservation"):
+        await load_committed_projection(h.tasks, h.task.runtime_owner)
+    assert await h.store.renew_turn_execution(h.session_id, h.task.lease_token, 0)
+    assert (await h.tasks.claim(h.task.id, worker_id="expiry", expected_binding=h.binding)).status == "recovery_required"
+    terminal, saved, events = await h.tasks.get(h.task.id), await stage(h, h.task), await h.store.list_events(h.session_id)
+    assert await h.tasks.ensure_framework_message_recovery(h.task.id) is None
+    assert await h.tasks.get(h.task.id) == terminal and await stage(h, h.task) == saved
+    assert await h.store.list_events(h.session_id) == events and memory_rows(h) == actual
+    assert h.native_runs == 1 and len(h.runtime.calls) == 1
 
 
 @pytest.mark.asyncio

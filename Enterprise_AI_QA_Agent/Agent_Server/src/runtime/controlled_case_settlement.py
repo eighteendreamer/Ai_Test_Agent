@@ -101,29 +101,63 @@ class ControlledCaseSettlements:
         return asset
 
     def _expired_assessment_original(self, command, capabilities):
+        settings = self._tasks._settings
+        with postgres_connect(settings) as conn, conn.cursor() as cur:
+            configure_runtime_owner_transaction(cur, settings)
+            _, asset = self._expired_assessment_source(cur, command, capabilities)
+            return asset
+
+    async def read_expired_memory(self, delivery, *, capabilities):
+        """Reconcile derived Memory only; never grant compensation or settlement."""
+        scope = {"operation": "expired_memory_read"}
+        try:
+            command = deepcopy(capabilities.require_command_format(delivery))
+            scope["task_id"] = command.task_id
+            capabilities.require_runtime_artifact(command.runtime_binding)
+            result = await asyncio.to_thread(self._expired_memory_original, command, capabilities)
+        except (Exception, asyncio.CancelledError) as exc:
+            logger.warning("controlled_case_expired_memory_unsettled", extra={**scope,
+                "error_type": type(exc).__name__, "recovery_reason": "expired_memory_originals_unsettled",
+                "automatic_replay": False})
+            raise
+        logger.info("controlled_case_expired_memory_read", extra={**scope,
+            "effect_id": result.effect_id, "status": result.status, "reason_code": result.reason_code,
+            "automatic_replay": False})
+        return result
+
+    def _expired_memory_original(self, command, capabilities):
+        from src.runtime.framework_turn_memory_projection import read_source_memory_reconciliation
+
+        settings = self._tasks._settings
+        with postgres_connect(settings) as conn, conn.cursor() as cur:
+            configure_runtime_owner_transaction(cur, settings)
+            source, _ = self._expired_assessment_source(cur, command, capabilities)
+            return read_source_memory_reconciliation(cur, settings, source, source.owner)
+
+    def _expired_assessment_source(self, cur, command, capabilities):
+        """Verify the lost producer and all required facts in the caller's transaction."""
         from src.runtime.framework_event_completion import original_checkpoint_source
         from src.runtime.postgres_framework_model_calls import PostgresFrameworkModelCalls
 
         tasks, settings = self._tasks, self._tasks._settings
-        with postgres_connect(settings) as conn, conn.cursor() as cur:
-            configure_runtime_owner_transaction(cur, settings)
-            session = tasks._lock_session(cur, command.session_id)
-            case, row = lock_case_delivery(cur, tasks, command, capabilities)
-            checkpoint = read_result_checkpoint(case.attempt)
-            _require(isinstance(checkpoint, ControlledCaseAssessmentCheckpoint)
-                and not isinstance(checkpoint, ControlledCaseSettlementCheckpoint),
-                "Controlled expired original assessment is missing or already settled")
-            source = original_checkpoint_source(cur, settings, command.runtime_binding, row, checkpoint.assessment.owner_epoch)
-            task, attempt, saved_owner = self._lock_identity_rows(cur, source)
-            self._require_case_identity(case)
-            _require(task["status"] == attempt["status"] == saved_owner["execution_state"] == "recovery_required"
-                and task["error_code"] == attempt["error_code"] == "execution_owner_expired"
-                and attempt["finished_at"] is not None and not task["interrupt_requested"],
-                "Controlled assessment producer is not an expired execution original")
-            case.store._lock_run(cur, case.item.run_id)
-            PostgresFrameworkModelCalls(settings).require_worker_compatibility(cur, command.runtime_binding,
-                capabilities, require_budget=False)
-            return self._application_assessment_original(cur, source, None, case, session, task, checkpoint)
+        session = tasks._lock_session(cur, command.session_id)
+        case, row = lock_case_delivery(cur, tasks, command, capabilities)
+        checkpoint = read_result_checkpoint(case.attempt)
+        _require(isinstance(checkpoint, ControlledCaseAssessmentCheckpoint)
+            and not isinstance(checkpoint, ControlledCaseSettlementCheckpoint),
+            "Controlled expired original assessment is missing or already settled")
+        source = original_checkpoint_source(cur, settings, command.runtime_binding, row, checkpoint.assessment.owner_epoch)
+        task, attempt, saved_owner = self._lock_identity_rows(cur, source)
+        self._require_case_identity(case)
+        _require(task["status"] == attempt["status"] == saved_owner["execution_state"] == "recovery_required"
+            and task["error_code"] == attempt["error_code"] == "execution_owner_expired"
+            and attempt["finished_at"] is not None and not task["interrupt_requested"],
+            "Controlled assessment producer is not an expired execution original")
+        case.store._lock_run(cur, case.item.run_id)
+        PostgresFrameworkModelCalls(settings).require_worker_compatibility(cur, command.runtime_binding,
+            capabilities, require_budget=False)
+        asset = self._application_assessment_original(cur, source, None, case, session, task, checkpoint)
+        return ControlledCaseProjectionSource(case, source, checkpoint), asset
 
     def _delivery_original(self, command, capabilities):
         from src.runtime.framework_event_completion import original_checkpoint_source

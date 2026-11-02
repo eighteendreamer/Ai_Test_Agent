@@ -9614,3 +9614,66 @@ v4 E／§12.1原件读取 → §199 → 1生产＋2测试＋2文档 → 真实�
 本步没有正式恢复后继／claim／仅结算权限，也未将原task改completed或冻结新结果；Memory当前行／执行回执的只读对账尚待接入正式source，不能宣称完成A3。下一步复用现有framework_turn_memory_projection的纯对账与物理行读者适配原正式source，再沿原task／outbox设计且实测仅结算谱系准入、兼容读者和受限claim；不伪造message-stage、不重跑图／finalizer、不重置原终态。业务审批继续、其他关键窗口、main／逐模式实际入口与质量、真实供应商／领域Runner、E3／E4制品、一致备份恢复和性能基线仍未完成。
 
 完整v4与H01–H12范围不缩小，goal保持active。未执行生产切换、Docker／实际MySQL／RustFS、付费模型／embedding、全资源main、全量前后端、双制品部署或独立backend lint／typecheck；整体剩余仍粗估 **4–8周有效开发／验收**，外部授权、环境及人工发布等待另计，非承诺，不把本子步当整体完成。
+
+
+## 200. E／§12.1＋A3：正式失租 Memory 原件只读对账与必需观察 scope 修复（2026-11-02）
+
+### 续接、依据与范围
+
+续接 §199／b4462d797，保留已验证的正式 Assessment 只读入口与原强杀证据，不重复环境迁移、服务启动或原件保留实现。初始 Git 只有用户 v3 文档修改；本轮红测草稿是新增的 test_controlled_case_memory_reconciliation.py。用户 v3 原 SHA256 仍为 8a43e94160767a0de20740f2cb30782f06322cbc3467076dfcb120d4efdf1ad4，保留、不提交。
+
+v4 §10.1 A3／§10.2 与 §12.1 → 明确区分应用 scope 内必需观察和 scope 外派生 Memory；原 framework_turn_memory_projection 的物理行／回执／失败事件与纯分类 → 抽取同 cursor 读者供 message-stage 和正式 RunItem 复用；原 §199 交付／失租／原件校验 → 抽取同事务 _expired_assessment_source，原 Assessment 读取和新 Memory 读取共用。不是复制 finalizer、再造 message-stage 或授予 skip-owner。课程 Agent轨迹与协议鲁棒性.html 的重复执行／幂等和评测工程化与CICD.html 的版本化／可追溯要求 → 重复／并发／取消、新进程原件读取，保留原结论与物理原件摘要。
+
+范围为3生产文件（controlled_case_settlement.py、framework_turn_memory_projection.py、framework_application_projection.py）、2测试文件（新增正式 Memory 对账、扩展原 message 观察测试）与2文档。本轮不改持久 schema／DDL、依赖、公开 REST／前端 DTO、main／Dispatcher／CLI／Worker 装配、原默认 controlled_case_available=false 或任何生产路由。
+
+### 同事务读取与证明权限
+
+read_expired_memory(delivery, capabilities=...) 在本次事务内重新核严格 reference-only 交付、冻结输入／制品兼容、原双执行身份和 schema5 Assessment；仍要求原 task／attempt／owner 为 recovery_required、task／attempt 的 error_code=execution_owner_expired，attempt 已结束且未显式 interrupt。仍执行、未准备、手工待对账、已 schema6 结算或未知格式不自动进入此 scope。只构造无 token 的 RuntimeCheckpointSource，不重建 RuntimeExecutionOwner；不把前次 Assessment 读取结果当本次准入。
+
+共享原 native 完整终态／messages、模型账本、ToolJob／artifact、事件完成、结果留存／审计、application proof 与 Assessment／证据／审计检查；通过后，仍在同一连接／事务与原锁内，从同一 source 的冻结 plan／execution 读请求身份、Memory 全物理字段摘要和该 effect 的 post_commit_effect_failed／turn_memory／unknown 事件。复用纯 reconcile_turn_memory_execution 原算法；没有另设状态规则。AST 实际比较输出 EXPIRED_SOURCE_ORIGINAL_CHECKS_AST_EQUIVALENT、SHARED_MEMORY_PHYSICAL_READ_AST_EQUIVALENT、MEMORY_CLASSIFICATION_ALGORITHM_UNCHANGED，说明原失租检查及物理读取算法（只规范局部参数名）抽出前后相同、纯分类未改。
+
+返回原 FrameworkTurnMemoryReconciliation，scope=derived_turn_memory_reconciliation_only；completed 仅代表全部当前行与回执核验，partial 仅代表已证明的部分，unknown 不宣称未发生，drifted 不冒充缺失未开始。回执无行／行有变化、裸行、memory_id或摘要不符、全部行但 execution 非 completed，沿原算法对账；未来字段／版本或 plan／ordinal 身份不匹配严格拒绝，不重写原件。请求行、失败事件和执行回执不被修改，不补 embedding／派生行、不重跑 finalizer／图／模型／工具、不重评、不写 result／task／RunItem 终态、不创建后继或补偿资格。
+
+成功日志 controlled_case_expired_memory_read 携原task、effect、status／reason和automatic_replay=false；拒绝／取消记录 controlled_case_expired_memory_unsettled、recovery_reason=expired_memory_originals_unsettled及错误类型。共享读者对 unknown／drifted 保留warning。取消等待者不代表后台只读线程已经停止；测试显式等待其真正退出。
+
+### 实际发现的根因与TDD过程
+
+缺入口红测实际 **1 failed，22.26秒，exit1**，e200-memory-red.log；真实正式服务来源、模型／工具、Session提交、Assessment、原RunItem／Session失租和分类均成功，到 read_expired_memory 缺失处才失败（AttributeError）。最小实现后同条实际 **1 passed，27.67秒，exit0**，e200-memory-first.log。
+
+边界红测实际 **1 failed、30 deselected，23.95秒，exit1**，e200-observation-red.log；删除已列入 application scope 的真实观察后，原件读者仍成功，pytest 报 DID NOT RAISE RuntimeError。根因不是 Memory分类器，而是 require_application_commit 只签入观察分项／原 source 摘要，读取 ACK 时漏核必需观察的实际物理行。将原 require_observation_projections 接回共享 application proof 检查，而非在新入口加专用 if。正常提交／重入、原Assessment读取、正式结算／终态ACK及message A1恢复均复用这一根因修复；派生行仍明确排除在该 scope 外，缺失不影响原应用／结算ACK。
+
+新正式组第一次扩展实际 **1 failed、22 passed，348.50秒，exit1**，e200-memory-expanded.log。失败为测试把已正式结算的旧owner送回仅支持live owner的Session finalizer；真实错误 ContinuationLeaseLostError，原权限边界正确。只修夹具／断言：已结算路径明确要求旧finalizer拒绝，再通过原持久交付ACK核必需观察；未结算live路径继续核原Session ACK，不放宽生产owner检查。
+
+原 message 测试单项实际 **1 failed、29 deselected，11.29秒，exit1**，e200-observation-existing-red.log：名为“不要求当前派生Memory”的旧测试实际 DELETE 了该Session全部Memory，连必需观察也删除；修复后恢复准入返回None，不能再叫派生副本豁免。查原plan与观察回执后，将样本精确为仅删除派生request IDs，并断言与观察IDs不交叉、派生行确实删除且不补写、必需观察原行完整保持；另增missing／content观察漂移负例，验证ACK与后继准入拒绝、原stage／终态／事件／观察不变。不是删除负例或放宽断言获取绿色。
+
+### 最终验证
+
+backend工作目录Agent_Server，固定 E:\MiniConda3\envs\Agent\python.exe；真实组各先清本进程UV变量，设置PYTHONIOENCODING=utf-8、RUN_LIVE_POSTGRES_TESTS=1、RUN_LIVE_REDIS_TESTS=1、RUN_LIVE_DOCKER_TESTS=0、RUN_LIVE_MYSQL_TESTS=0、RUN_LIVE_PLAN_RUN_CREATION=0、QA_FRAMEWORK_WORKER_DIAGNOSTICS=1。复用已运行PG／Redis，不启停服务；完整stdout＋stderr保存不提交的.codex-logs。三组使用同一最终Python源码／测试字节、隔离表／schema，运行期间仅更新文档；未因PowerShell重定向暂未刷新而重启测试。
+
+~~~powershell
+& E:\MiniConda3\envs\Agent\python.exe -u -m pytest tests/test_controlled_case_memory_reconciliation.py tests/test_framework_observation_projection.py -q -x -rs --tb=short --show-capture=no --log-level=INFO
+& E:\MiniConda3\envs\Agent\python.exe -u -m pytest tests/test_controlled_case_assessment_reconciliation.py tests/test_controlled_case_settlement_ack.py tests/test_controlled_case_settlement.py tests/test_controlled_case_finalization.py tests/test_controlled_case_settlement_process.py -q -x -rs --tb=short --show-capture=no --log-level=INFO
+& E:\MiniConda3\envs\Agent\python.exe -u -m pytest tests/test_framework_application_projection.py tests/test_framework_turn_memory_reconciliation.py tests/test_framework_turn_memory_projection.py -q -x -rs --tb=short --show-capture=no --log-level=INFO
+~~~
+
+新正式Memory对账＋原message观察组实际 **70 passed，748.52秒，exit0，无skip／deselect**，e200-memory-final.log；取得MEMORY_FINAL_EXIT_CODE=0。38正式对账：完整真实行／回执、禁止执行owner构造／task／RunStore／事件写者／Memory执行与finalizer、5种真实物理行缺失或漂移、6种持久execution／物理行组合、2种真实写事务失败、5种回执格式／身份拒绝、2种必需观察漂移、4种应用／结算ACK scope区分、6种交付／制品／原件漂移、读取不授权结算、3种非失租状态拒绝、并发／取消以及2个新spawn读者。真实写失败复用原§196样本：在真实row／receipt写入后第1或第2项抛错，其所在SQL事务确实回滚；Session已提交、原failure事件为unknown，已提交前缀保持、未知项不补写。新进程只接settings＋交付，不接owner／native对象、模型配置或Memory服务；各读两次，核completed或缺行drifted与父进程一致，确认子进程exit0。该2项是新进程读取，不称本轮新增producer强杀。原32观察测试完整重跑，含精确派生副本豁免、2项观察漂移拒绝与既有独立Worker强杀／恢复窗口。
+
+正式原件／结算／Session finalization／独立进程组实际 **145 passed，1627.19秒，exit0，无skip／deselect**，e200-formal-regression.log；取得FORMAL_REGRESSION_EXIT_CODE=0，原handle已终态。原30 Assessment读取、22持久交付ACK、59正式结算、31 Session finalization和3独立进程强杀窗口全部以当前源码重跑。含原双owner与权限边界、原件漂移／完整messages、原RunStore结果／task／totals原子性、回滚／真实锁等待、派生Memory失败不回滚Session及不补写ACK，三个producer强杀窗口继续验证未提交不补结算、失租原Assessment新进程只读、已提交只确认schema6原回执。不是生产Dispatcher／RedisTaskWorker／resource-heartbeat或实际领域Runner接入验收。
+
+三组最终共 **275 passed**，不是275项全为真实服务用例（包括8项纯对账、2项无DB显式装配检查）；不重复累加中间红绿或opt-out的10项。全部原句柄均已取回终态，不留后台pytest。
+
+共享application／message Memory组实际 **60 passed，306.14秒，exit0，无skip／deselect**，e200-shared-regression.log；取得SHARED_REGRESSION_EXIT_CODE=0。保留原应用事务／回滚、ACK／恢复／幂等／兼容、Memory intent／plan／receipt、原独立进程提交窗口和纯分类／服务消费方，不把纯替身单元测试称为真实DB。最初8项纯对账也实际通过（7.10秒，e200-memory-unit.log），最终60已包含，不累加为独立覆盖数。
+
+四个RUN_LIVE及RUN_LIVE_PLAN_RUN_CREATION全0，上述10文件opt-out实际 **10 passed、265 skipped，23.62秒，exit0**，e200-optout-final.log；取得OPTOUT_FINAL_EXIT_CODE=0。10项无DB测试通过，265真实服务未执行，不计通过、不借skip宣称真服务验证。
+
+固定Python实际compileall -q Agent_Server/src Agent_Server/tests与pip check均exit0，后者No broken requirements found；实际检查ruff／mypy未安装，不增依赖，独立backend lint／typecheck未执行。未改前端，本轮未跑前端typecheck／测试／build／浏览器。最终src聚合SHA256为 ad53f15ba4da76540c962d5ae7cd11b34b2b466485e9f6f4d5f7a00632a4f8cd（867个py），tests为 b8cc476da31c82b013b6532ded1726071ac2873ce1a34ef7401239cc542bc9b1（672个py）；算法同§199（相对POSIX路径排序、UTF-8路径＋NUL＋原字节＋NUL），提交前复核未变。
+
+正式样本沿真实草稿→评审→启用、冻结Suite／Run、claim／start／受理、原双owner、固定官方框架与本地合成模型HTTP／inspect_source工具、隔离PG／Redis／ToolJob／artifact。没有付费供应商／embedding、真实业务目标、领域Runner或生产Worker实际接入验收，不把这些合成样本叫全系统上线。
+
+### 对应、提交与剩余出口
+
+v4 E／§12.1＋A3原件对账 → §200 → 上述代码／测试／文档 → 真实红绿、275项当前源码回归、opt-out／compileall／pip check → 独立提交“【feat】接通正式失租记忆只读对账”，实际ID见Git与交付。仅精确暂存本轮文件；新增被ignore测试只单文件force-add，不扩大ignore。用户v3、日志、认证、环境、运行制品均不提交，不推送、不建PR。
+
+仅只读对账不是完整A3补偿，更不是正式失租恢复完成。下一出口必须进入原task／outbox机制上的正式仅结算谱系准入、兼容能力读者及受限claim／唯一事务结算；保留原task／attempt终态和RunItem原事实，不借message_recover伪造用户消息、不重跑图／模型／工具或Session finalizer。业务审批继续、其他关键故障窗口、main／逐模式实际入口与质量、真实供应商／领域Runner、E3／E4制品、一致备份恢复及性能基线仍未完成。
+
+完整v4及H01–H12范围不缩小，goal保持active；未执行生产切换、付费模型／embedding、实际业务目标测试、Docker／实际MySQL／RustFS或全量前后端。整体剩余仍粗估 **4–8周有效开发／验收**，外部授权、环境及人工发布等待另计，非承诺，不把本子步当整体完成。

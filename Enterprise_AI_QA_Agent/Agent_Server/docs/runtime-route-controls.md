@@ -576,6 +576,37 @@ reference-only 交付，在原 Session→plan／RunItem／attempt→owner／task
 取消等待者不证明后台只读线程已结束，不产生可重跑许可。
 未增加持久格式、DDL、公开 REST 或生产装配；真实验证与剩余出口见实施记录 §199。
 
+### 正式 case 失租派生 Memory 只读对账（v4 E／§12.1＋A3；内部端口）
+
+`ControlledCaseSettlements.read_expired_memory(delivery, capabilities=...)` 与失租
+Assessment 读者共用同一事务内的原交付、schema5、制品兼容、双执行身份、真正失租分类
+及 native／result／application／Assessment 原件校验。只构造无 token 的
+`RuntimeCheckpointSource`，不复用前一次读取结果作为本次准入，不伪造 message-stage。
+未准备、仍执行、手工待对账、已 schema6 结算及不兼容原件不属于此端口范围。
+
+原 message-stage 和正式 RunItem source 复用
+`read_source_memory_reconciliation`：从原冻结 plan／execution 读取稳定 request ID、
+真实 Memory 完整物理行摘要及该 effect 的原 `session.post_commit_effect_failed` 事件，
+沿原算法返回 `completed`／`partial`／`unknown`／`drifted`。回执存在不等于行存在；
+裸行、缺行、行变化或执行状态矛盾不冒充已完成；格式／身份不兼容则拒绝，不降级重写。
+返回 DTO 的 scope 仍是 `derived_turn_memory_reconciliation_only`，不是持久恢复 proof。
+
+必需观察与派生副本按业务职责区分，不能按是否存于 Memory 服务区分。
+共享 `require_application_commit` 现在同时复用原 `require_observation_projections`，
+核对列入应用 scope 的必需观察原行及分项回执；缺失／漂移拒绝应用 ACK、Assessment
+只读及正式结算／终态 ACK。独立派生 Memory 当前行缺失仍不阻断原应用／结算 ACK，
+本端口只把其状态如实报告为 drifted／unknown，不补写、不回滚正式结果。
+
+不构造执行 owner、不 claim／重评／运行图／模型／工具／finalizer／补 embedding，
+不补偿、不写结果或终态、不创建恢复后继。兼容只读制品可关闭全部新执行开关。
+成功日志 `controlled_case_expired_memory_read` 携 effect、status／reason；
+拒绝／取消记录 `controlled_case_expired_memory_unsettled` 和
+`recovery_reason=expired_memory_originals_unsettled`，均有 `automatic_replay=false`。
+公共物理读者对 unknown／drifted 继续记录 warning。取消等待者不证明后台只读线程停止。
+
+未增加持久格式、DDL、公开 REST／前端契约、main／Worker 装配或生产路由。
+实际验证与未完成出口见实施记录 §200；只读对账不等于 A3 补偿或正式仅结算恢复已完成。
+
 ### 原路由与恢复验证
 
 关闭新选路时记录 `deep_agent_new_turn_route_disabled`，带 `session_id`、`turn_id` 和 `recovery_reason=new_turn_admission_disabled`；这是路由决定，不是取消/停止回执。

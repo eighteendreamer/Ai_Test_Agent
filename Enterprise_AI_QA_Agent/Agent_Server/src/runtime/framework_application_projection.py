@@ -491,6 +491,10 @@ def require_application_commit(cur, settings, session, binding, stage):
         "Committed application events changed")
     if EVENT_COMMITS_KEY in manifest:
         require_event_projections(cur, settings, stage, binding, manifest["runtime_result_asset"]["asset_sha256"])
+    if "observation_projection_asset" in manifest:
+        from src.runtime.framework_observation_projection import require_observation_projections
+
+        require_observation_projections(cur, settings, stage, binding, manifest["runtime_result_asset"]["asset_sha256"])
     _require(_model_hash(cur, settings, binding) == proof.model_calls_sha256
         and _tool_hash(cur, settings, binding) == proof.tool_jobs_sha256,
         "Committed application execution results changed")

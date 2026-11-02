@@ -288,29 +288,39 @@ def read_turn_memory_reconciliation(owner, settings) -> FrameworkTurnMemoryRecon
         stage = validate_message_stage(saved["record"])
         _require(stage.phase in {"runtime_submitted", "projected"},
                  "Memory reconciliation has no post-commit stage")
-        plan = _plan_from_stage(stage, owner)
-        execution = _execution(stage, plan)
-        request_ids = [item.request_id for item in plan.requests]
-        if request_ids:
-            cur.execute(
-                f"SELECT {MEMORY_COLUMNS} FROM {settings.database.postgres_memory_table} "
-                "WHERE id=ANY(%s)",
-                (request_ids,),
-            )
-            rows = {str(row["id"]): _row_hash(dict(row)) for row in cur.fetchall()}
-        else:
-            rows = {}
+        return read_source_memory_reconciliation(cur, settings, stage, owner)
+
+
+def read_source_memory_reconciliation(cur, settings, source, identity) -> FrameworkTurnMemoryReconciliation:
+    """Read derived evidence after the caller validates its original source.
+
+    Message stages and formal RunItem checkpoints share the same physical-row
+    algorithm. The caller retains its source transaction/locks; this function
+    neither acquires execution authority nor saves or repairs any evidence.
+    """
+    plan = _plan_from_stage(source, identity)
+    execution = _execution(source, plan)
+    request_ids = [item.request_id for item in plan.requests]
+    if request_ids:
         cur.execute(
-            f"SELECT 1 FROM {settings.database.postgres_event_table} "
-            "WHERE session_id=%s AND type='session.post_commit_effect_failed' "
-            "AND payload->>'effect_id'=%s AND payload->>'effect_kind'='turn_memory' "
-            "AND payload->>'status'='unknown' LIMIT 1",
-            (plan.session_id, plan.effect_id),
+            f"SELECT {MEMORY_COLUMNS} FROM {settings.database.postgres_memory_table} "
+            "WHERE id=ANY(%s)",
+            (request_ids,),
         )
-        failure_observed = cur.fetchone() is not None
-        result = reconcile_turn_memory_execution(
-            plan, execution, rows, effect_failure_observed=failure_observed,
-        )
+        rows = {str(row["id"]): _row_hash(dict(row)) for row in cur.fetchall()}
+    else:
+        rows = {}
+    cur.execute(
+        f"SELECT 1 FROM {settings.database.postgres_event_table} "
+        "WHERE session_id=%s AND type='session.post_commit_effect_failed' "
+        "AND payload->>'effect_id'=%s AND payload->>'effect_kind'='turn_memory' "
+        "AND payload->>'status'='unknown' LIMIT 1",
+        (plan.session_id, plan.effect_id),
+    )
+    failure_observed = cur.fetchone() is not None
+    result = reconcile_turn_memory_execution(
+        plan, execution, rows, effect_failure_observed=failure_observed,
+    )
     LOGGER.log(
         logging.WARNING if result.status in {"unknown", "drifted"} else logging.INFO,
         "framework_turn_memory_reconciliation_read",
