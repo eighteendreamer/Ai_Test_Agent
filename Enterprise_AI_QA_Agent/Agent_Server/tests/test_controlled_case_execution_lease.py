@@ -96,7 +96,15 @@ async def test_new_run_item_attempt_cannot_inherit_old_task_execution_authority(
     await submit(s)
     task = await claim(s)
     future = s.now + timedelta(minutes=3)
-    await s.d.runs.recover_expired(s.detail.run.id, future)
+    # Persist the old generic reaper's identity-changing failure sample. The
+    # current reaper must no longer produce it, but historical successor data
+    # still must not inherit the old AgentTask's execution authority.
+    with postgres_connect(s.h.settings) as conn, conn.cursor() as cur:
+        item = s.d.runs._lock_item(cur, s.item.id)
+        original = s.d.runs._lock_attempt(cur, s.item.id, s.item.lease_token)
+        s.d.runs._write_attempt(cur, original.model_copy(update={"status": "expired", "completed_at": future}))
+        s.d.runs._write_item(cur, item.model_copy(update={"status": "queued", "lease_owner": None,
+            "lease_token": None, "lease_expires_at": None, "heartbeat_at": None, "started_at": None}))
     claims = await s.d.runs.claim_items(run_id=s.detail.run.id, worker_id="replacement-run-worker",
         limit=20, lease_seconds=120, now=future)
     item, attempt = next((item, attempt) for item, attempt in claims if item.id == s.item.id)

@@ -526,6 +526,29 @@ schema5 Assessment、单独 result 或原生终态推断结算已成功。
 接入、正式失租后的恢复资格、实际领域 Runner 或真实供应商验收。
 main／CLI／生产开关不变；详细红绿与剩余出口见实施记录 §197。
 
+### 正式 case 失租原件与通用回收边界（v4 E／§12.1；恢复前置）
+
+内存／PostgreSQL RunStore 的 `recover_expired`、`recover_all_expired` 只对普通条目
+执行原 expire-attempt／重新排队算法。原 attempt 的精确 checkpoint key 为
+`controlled_case_admission` 时，保留原 item／attempt 的身份、状态、租约、计时与完整
+checkpoint，不解析、升级或丢弃其 payload；旧版本和未知未来格式同样保留。
+这不是恢复成功、续租、停止回执或新执行许可，不从过期事实推断模型／工具未发生。
+
+被保留条目不计入 `recovered_count`，同 run 的普通兄弟条目仍可正常回收、领取，
+回收失败沿原 SQL 事务回滚。公开恢复响应结构不变；0 仅表示本次没有条目被通用重排，
+不能据此宣称正式 case 已恢复。日志 `controlled_case_expiry_requires_reconciliation`
+携原 run／item／attempt 身份、`recovery_reason=controlled_case_original_attempt_preserved`、
+`automatic_replay=false`，不记录 token 或输入。
+
+保留原件不放宽现有双租约 fence：过期旧 owner 不能写、续租或结算；Session lease
+失活后，原 task 的既有失租分类仍返回 `recovery_required`，不创建新执行 attempt。
+已由历史通用回收产生的身份漂移不会自动修复，其后继不能继承原 task 执行权。
+合法 schema5 Assessment 不因保留而得到结算许可；schema6 仍只按原完整证明 ACK。
+
+本步不增加 task／checkpoint 格式、DDL、恢复后继、Memory 补偿或 main／Worker 装配，
+不改变生产开关。正式失租后原件对账与仅结算资格仍是后续出口，不借普通
+`message_recover` 的准入伪造 case 的用户消息／阶段。实际验证与剩余项见实施记录 §198。
+
 ### 原路由与恢复验证
 
 关闭新选路时记录 `deep_agent_new_turn_route_disabled`，带 `session_id`、`turn_id` 和 `recovery_reason=new_turn_admission_disabled`；这是路由决定，不是取消/停止回执。

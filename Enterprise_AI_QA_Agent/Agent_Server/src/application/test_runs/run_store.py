@@ -85,6 +85,18 @@ def require_generic_result_write(attempt: TestRunAttemptRecord) -> None:
         raise ValueError("Controlled case result requires its atomic settlement")
 
 
+def can_requeue_expired_attempt(attempt: TestRunAttemptRecord) -> bool:
+    # The reservation also owns the original execution identity. Expiry is not
+    # permission to move its checkpoint to a fresh generic execution attempt.
+    # Match only the reserved key; unknown payload versions remain untouched.
+    if attempt.checkpoint_key == CONTROLLED_CASE_ADMISSION_KEY:
+        logger.warning("controlled_case_expiry_requires_reconciliation", extra={"run_id": attempt.run_id,
+            "run_item_id": attempt.run_item_id, "attempt_id": attempt.id,
+            "recovery_reason": "controlled_case_original_attempt_preserved", "automatic_replay": False})
+        return False
+    return True
+
+
 class TestRunStore(Protocol):
     async def initialize(self) -> None: ...
     async def initialize_plan_revision_storage(self) -> None: ...
@@ -1325,9 +1337,11 @@ class InMemoryTestRunStore:
                 and item.lease_expires_at is not None
                 and item.lease_expires_at <= now
             ):
+                attempt = self._active_attempt(item_id, item.lease_token) if item.lease_token else None
+                if attempt is not None and not can_requeue_expired_attempt(attempt):
+                    continue
                 interval_end = min(now, item.lease_expires_at)
-                if item.lease_token:
-                    attempt = self._active_attempt(item_id, item.lease_token)
+                if attempt is not None:
                     self._attempts[attempt.id] = attempt.model_copy(
                         deep=True,
                         update={
@@ -3507,9 +3521,11 @@ class PostgresTestRunStore:
                 attempts: list[TestRunAttemptRecord] = []
                 queued: list[TestRunItemRecord] = []
                 for item in expired:
+                    attempt = self._lock_attempt(cur, item.id, item.lease_token) if item.lease_token else None
+                    if attempt is not None and not can_requeue_expired_attempt(attempt):
+                        continue
                     interval_end = min(now, item.lease_expires_at)
-                    if item.lease_token:
-                        attempt = self._lock_attempt(cur, item.id, item.lease_token)
+                    if attempt is not None:
                         attempts.append(
                             attempt.model_copy(
                                 update={
@@ -3560,9 +3576,9 @@ class PostgresTestRunStore:
                     self._write_item(cur, item)
                 for attempt in attempts:
                     self._write_attempt(cur, attempt)
-                if expired:
+                if queued:
                     self._refresh_run_in_cursor(cur, run_id, now)
-        return len(expired)
+        return len(queued)
 
     def _recover_all_expired_sync(self, now: datetime) -> int:
         with postgres_connect(self._settings) as conn:
