@@ -29,6 +29,7 @@ from src.schemas.session import ExecutionEvent, ConversationResponse
 from src.schemas.framework_runtime_result import ControlledCaseRuntimeResultAsset
 from src.schemas.controlled_case_assessment import ControlledCaseAssessmentAsset
 from src.schemas.controlled_case_settlement import ControlledCaseSettlementReceipt
+from src.schemas.controlled_case_approval_wait import ControlledCaseApprovalWaitReceipt
 
 
 logger = logging.getLogger(__name__)
@@ -45,6 +46,7 @@ class ControlledCaseRuntimeOutcome:
     conversation_response: ConversationResponse | None = None
     assessment_asset: ControlledCaseAssessmentAsset | None = None
     settlement_receipt: ControlledCaseSettlementReceipt | None = None
+    approval_wait_receipt: ControlledCaseApprovalWaitReceipt | None = None
 
 
 class ControlledCaseRuntime:
@@ -57,7 +59,7 @@ class ControlledCaseRuntime:
     """
 
     def __init__(self, *, runtime_service, session_service=None, assessment_service=None, settlement_service=None,
-                 executor=None):
+                 executor=None, approval_wait_service=None):
         if assessment_service is not None and session_service is None:
             raise ValueError("Controlled assessment requires explicit Session finalization assembly")
         if settlement_service is not None and assessment_service is None:
@@ -67,9 +69,14 @@ class ControlledCaseRuntime:
         self._assessments = assessment_service
         self._settlements = settlement_service
         self._executor = executor
+        self._approval_waits = approval_wait_service
 
     def require_dispatch_ready(self, task, *, capabilities):
         """Check full first-execution composition before taking either owner."""
+        if self._approval_waits is not None:
+            # Explicit in-process parking is independently verifiable. Do not
+            # install it in Redis dispatch until its dedicated ACK is admitted.
+            raise ValueError("Controlled approval wait dispatch requires its dedicated delivery ACK reader")
         if any(port is None for port in (self._sessions, self._assessments, self._settlements, self._executor)):
             raise ValueError("Controlled dispatch requires executor, finalizer, assessment and settlement")
         self._executor.require_execution_available()
@@ -223,7 +230,7 @@ class ControlledCaseRuntime:
             nonlocal state, runtime_result, result_asset, conversation_response, assessment_asset
             if not isinstance(prepared, ControlledCaseResultTaskInputAsset) or outcome.native_interrupts:
                 # Historical preparation is not silently upgraded. Native wait
-                # still needs the original business approval/admission contract.
+                # is parked only by the explicit post-drain composition below.
                 return
             from src.runtime.controlled_case_result_reader import ControlledCaseResultReader
 
@@ -248,6 +255,21 @@ class ControlledCaseRuntime:
         outcome = await executor.execute(task, build_business_tools=build,
             resource_id=resource_id, fencing_token=fencing_token, project_outcome=project)
         settlement_receipt = None
+        approval_wait_receipt = None
+        if self._approval_waits is not None and outcome.native_interrupts:
+            if outcome.native_terminal is not None or outcome.subagent_events:
+                raise ValueError("Controlled wait requires its original direct pending outcome")
+            # Same post-drain boundary as settlement: no live sink can race
+            # clearing the Session lease. Candidate preparation is pure; the
+            # atomic port reloads the complete native and business originals.
+            with framework_owner_scope(settlement_owner):
+                governance = self._runtime._tool_governance_service
+                if governance is None:
+                    raise ValueError("Controlled wait requires original business tool governance")
+                context = self._runtime._deep_agent_governance_context(state)
+                proposals = [governance.prepare_framework_approval(settlement_owner.binding, item, context)
+                    for item in outcome.native_interrupts]
+                approval_wait_receipt = await self._approval_waits.park(settlement_owner, proposals=proposals)
         if self._settlements is not None and assessment_asset is not None:
             # The executor has drained/closed its original event sink. Do not
             # clear the Session lease inside project(), while that sink can
@@ -257,4 +279,5 @@ class ControlledCaseRuntime:
                 settlement_receipt = await self._settlements.complete(settlement_owner, native=outcome.native_terminal)
         return ControlledCaseRuntimeOutcome(graph_outcome=outcome, state=state, tool_records=records,
             runtime_result=runtime_result, result_asset=result_asset, conversation_response=conversation_response,
-            assessment_asset=assessment_asset, settlement_receipt=settlement_receipt)
+            assessment_asset=assessment_asset, settlement_receipt=settlement_receipt,
+            approval_wait_receipt=approval_wait_receipt)

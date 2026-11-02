@@ -29,7 +29,7 @@ from tests.test_runtime_binding_persistence import make_command
 
 
 @pytest_asyncio.fixture
-async def pending_formal(formal_case, tmp_path):
+async def pending_formal(formal_case, tmp_path, request):
     s = formal_case
     reply = _tool_reply("openai_chat_completions")
     calls = reply["choices"][0]["message"]["tool_calls"]
@@ -47,7 +47,12 @@ async def pending_formal(formal_case, tmp_path):
         async with execution(s, _config("openai_chat_completions", url), prepare_input=prepare_input) as h:
             effects = []
             async with business_bridge(h, effects, approval_required=True) as bridge:
-                outcome = await ControlledCaseRuntime(runtime_service=bridge.runtime).execute(
+                ports = {}
+                if getattr(request, "param", {}).get("runtime_wait"):
+                    from src.runtime.controlled_case_approval_wait import ControlledCaseApprovalWaits
+
+                    ports["approval_wait_service"] = ControlledCaseApprovalWaits(s.h.tasks, projection=bridge.projection)
+                outcome = await ControlledCaseRuntime(runtime_service=bridge.runtime, **ports).execute(
                     h.task, executor=executor(s, h), resource_id="isolated-pending-originals", fencing_token=1)
                 assert outcome.graph_outcome.native_terminal is None
                 assert len(outcome.graph_outcome.native_interrupts) == 2 and len(requests) == 1 and effects == []

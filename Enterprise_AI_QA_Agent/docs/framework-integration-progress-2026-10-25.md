@@ -10170,3 +10170,56 @@ e207-static-final.log实际运行python -m compileall -q src tests与python -m p
 最终期间及结束后没有再修改源码／测试，重新聚合确认src仍f1d740ea46cf8cb071e6552fc443c913794bcdd438f417fb5e82bc22838cf30b（871个py），tests仍6a5609e9d0caf690577ce05aea2131ddfcd2fda8d067fc98bbc8880a751382e0（684个py）。全部本轮pytest句柄均已回收；系统进程核对无pytest／multiprocessing测试Worker残留。用户v3保持原hash且不暂存。
 
 交付只覆盖本步完整pending原件边界和正式范围隔离；没有把§205旧扩大组失败或既有独立Worker偶发超时当作已消除。未跑全量后端、前端、真实供应商／领域Runner、MySQL／Docker／RustFS、正式停车跨进程强杀、完整部署演练与性能基线；独立lint／typecheck未做。精确核对7个相关文件并本地fix提交，不含用户v3、敏感日志／环境或锁文件；实际commit id见Git／交付，不推送、不建PR。下一出口仍为将原投影、Session／RunItem／AgentTask等待、活动预算边界和独立版本化持久回执组合成单事务，再接专用决定／双归属后继；不将当前子步当整体完成，goal继续active，整体剩余粗估4–8周有效开发／验收，外部等待另计。
+
+## 208. v4 §6.3／§7／§12.1：正式完整审批批次原子停车与独立持久回执（2026-11-03）
+
+续接基线 bb3eaf7c05a6b256d785eef62197fe9fae7bf39d（§207）。已核实 active goal、v4、§52和最新记录及实际调用链；tracked dirty原先只有用户v3，其SHA256仍8a43e94160767a0de20740f2cb30782f06322cbc3467076dfcb120d4efdf1ad4，不修改／暂存。沿固定Conda＋pip环境，不改依赖／锁、不启停PG／Redis／Docker、不开放生产writer、不调用付费供应商或业务目标。
+
+### 依据 → 根因 → 做法
+
+- §207完整批次原件核＋caller-owned投影、RunStore._mark_waiting_approval_in_transaction、Task._update_status／_clear_lease和正式settlement的post-drain组合 → 复用这些唯一内核组合真实业务停车，不再只加批次前置API，不新增调度层或复制正式完成路径。
+- v4 §6.3、原framework_worker_activity／framework_tool_activity和本地Agent轨迹与协议鲁棒性.html中的重复执行、权限、幂等／补偿要求 → 用真实隔离PG／Redis、固定官方图、本机HTTP双工具回复及原服务写入验证状态和轨迹，不把模型返回或控制面终态当外部停止证明。
+- 新红测实际发现根活动读取的两个operation查询均漏了case_execute，运行中的正式Worker在未来60秒观察窗口内新增活动竟为0。将该生产者纳入原Worker事件／原租约代次读取，仍排除仅应用收尾／结算任务；不新增计时器或从租约过期猜停止。
+
+### 实现与契约范围
+
+新增runtime/controlled_case_approval_wait.py与schemas/controlled_case_approval_wait.py。公开异步park要求原捕获双owner、同ContextVar、无活跃事件sink和非空候选；线程前深拷贝。原Session／RunItem／正式Attempt／owner／Task／AgentAttempt锁后，核当前running、无原result_payload／interrupt／其他pending控制冲突和真实唯一Worker claim，再调用§207共享投影，同事务核最新全部pending、冻结input／admission／正式范围并保存approval／Job／link／创建事件。模型账本通过原claim谱系验证，原input与冻结预算hash一致且模型调用均已结；全部Turn Job（不只是本批候选）须无未知活动尾巴。已有人工决定／delivery回执不能改写或重置。
+
+随后在全部可能等待锁后重验双租约，复用原RunStore核将原Item／正式Attempt置waiting_approval，结算active段、开始waiting段、保持原Attempt和admission checkpoint1、不写用例结果。原Task／AgentAttempt变completed，result_status=waiting_approval，execution_returned=true的真实事件关闭Worker活动尾巴；这只表示本次执行阶段已返回，不是用例完成或外部进程已停止。
+
+Task.result_payload以controlled_case_approval_wait保存独立显式整数schema1、scope=controlled_case_atomic_approval_wait_only回执。保留全部approval／Job／interrupt身份、native／link摘要、输入／admission／模型账本摘要及原Worker claim／return摘要和停车时间；不放原参数、租约token、Prompt或结果正文。Item单组approval_id／tool_job_id仅保持原展示，不冒充全批。Session waiting_approval及pending_turn保存全部审批ID、原binding和回执摘要，清原四个turn lease字段；原子审计test_run.case_approval_waiting与这些状态一起提交。
+
+全部写入后以新的数据库clock_timestamp核同一组锁下捕获的原Session／RuntimeOwner／RunItem到期时间，跨过原到期时间则整笔回滚；不在已清除状态后伪造running owner来重验。取消等待者仅记录approval_wait_write_receipt_unknown／automatic_replay=false，SQL仍可能提交；不自动park重试，没有把SQL调用者取消说成SQL停止。回执丢失和取消后提交均可从持久原Task观察，但本步尚无授予Redis ACK的只读原件复核端口。
+
+ControlledCaseRuntime新增显式可选approval_wait_service和独立approval_wait_receipt，在executor完成sink drain后按原治理准备候选并组合停车。返回state仍是原准备材料，不伪造RuntimeTurnResult／Session快照／结果资产／Assessment。main与Dispatcher不安装该服务；带服务的require_dispatch_ready明确拒绝尚未实现的专用停车ACK组合。原默认native wait unavailable、默认能力、生产writer均不变。普通决定入口仍按正式范围拒绝；旧settlement reader不能把此停车回执当用例终态ACK。没有数据库DDL或公共HTTP／依赖变更；路由说明已同步。
+
+### TDD、真实失败与已取回的结果
+
+统一固定Python为E:\MiniConda3\envs\Agent\python.exe。服务组PG／Redis=1，Docker／MySQL／PLAN_RUN_CREATION=0，QA_FRAMEWORK_WORKER_DIAGNOSTICS=1，PYTHONIOENCODING=utf-8；每次先clear_uv_environment.ps1 -ProcessOnly。日志保留在.codex-logs，不提交其中原始输出。
+
+1. e208-first-red.log：3 failed、27.31秒、exit1。真实漏计正式Worker活动（0而非60秒），另两项因缺停车端口失败。实现后e208-first-green.log仍1 failed、2 passed、21.32秒：新回执写入时间使用isoformat的+00:00，而Pydantic JSON规范化为Z，hash不一致，事务未提交。对齐既有settlement的TypeAdapter JSON规范化，e208-parking-green.log为3 passed、20.95秒。
+2. e208-wait-contracts-red.log：25 passed、1 error、121.53秒；唯一错误为Runtime尚无approval_wait_service组合参数。接post-drain组合后e208-runtime-activity-green.log为79 passed、258.64秒（当时26项新测试＋原Worker／Tool活动组），无skip／deselect。此中间结果不代表随后新增用例的最终字节。
+3. e208-tool-return-red.log：1 failed、2 passed、27 deselected、22.76秒。新代码误把原生返回hash与应用层最终output_payload相等作为停车要求；真实ToolJobService.recover_observed_output合法追加output_delivery，导致误拒。沿原output_observed活动事实与返回观察格式区分原始返回和最终投影，不删除断言、不改原Job／观察hash。unknown failed／cancelled仍拒绝；这不是重试真实工具。
+4. e208-complete-wait-green.log：31 passed、131.15秒；随后补并发单赢家、既有人工作出决定保留和已停车普通决定隔离，e208-all-wait-green.log为最终新增34项passed、145.53秒，无skip／deselect。覆盖完整事务、各中间写入故障、回执丢失、取消等待者后SQL提交、缺owner／sink／双租约、控制冲突、未知模型／工具、最后审计写入跨原期限回滚、原预算和native全表不变、等待不继续累计Worker活动、回执版本／范围／完整性及终态ACK拒绝。
+
+这些是固定官方框架、真实隔离PG／Redis、本机HTTP、原持久服务与受控配置／检索／工具／返回观察的混合证据，不是付费供应商或真实Runner结果，也不是正式停车跨进程强杀验收。原失败日志和deselect计数保留，不累加历史passed冒充最终总数。
+
+### 最终受影响组与静态检查
+
+源码／测试冻结后启动单次14文件串行回归e208-affected-final.log：新增wait、pending原件、正式approval projection、runtime、executor、dispatch、settlement、settlement ACK、completion boundary、Worker活动、Tool活动、模型账本、预算投影及settlement dispatch。实际命令为固定Python的python -u -m pytest，逐一列出这些test_*.py，后接-q -rs --tb=short；最终计数／退出码在原句柄取得终态后追加，不用早期绿色结果代替。
+
+实际运行python -m compileall -q Agent_Server/src Agent_Server/tests和python -m pip check均exit0，后者No broken requirements found。ruff／mypy未安装，未做独立lint／typecheck，不为此安装／升级依赖。冻结聚合按Agent_Server下相对POSIX路径排序，路径UTF8＋NUL＋原字节＋NUL：src 873个py为9d7ddbc8ba1e40ea8c5e5dbba11f9f966376b94cec44874144f94afebeac31d4，tests 685个py为ab0a2f57da589e82de5d97e99c1b15d3d06abf7880c5fd064d21dd5d621dec1d。
+
+### 对应与剩余出口
+
+v4 §6.3／§7／§12.1 → §208 → 原子完整审批停车＋独立版本化持久回执＋post-drain可选Runtime组合＋正式Worker活动 → 红绿／故障注入／最终受影响回归 → 专用停车只读原件复核与Redis ACK、决定准入／双归属后继／恢复及正式停车独立进程强杀仍待实现。不能将本回执的scope扩为恢复、用例结算或ACK，不能依赖未来可变的最新owner／native根／Session／Job全行hash校验旧停车事实。
+
+精确检查并提交本轮8个文件（4生产源码、2测试、路由说明、原实施记录），不含用户v3、日志／制品／环境或锁，不推送／建PR；实际commit id见Git与交付。未跑全量后端／前端、真实供应商／领域Runner、Docker／MySQL／RustFS、正式停车跨进程强杀、双制品部署／一致备份恢复和性能基线。完整v4与H01–H12范围保留，生产writer关闭，整体goal active；整体剩余仍粗估4–8周有效开发／验收，授权、环境及人工发布等待另计，非完成日期承诺。
+
+### 最终结果与提交核对
+
+原14文件串行句柄已返回：e208-affected-final.log为**423 passed、2071.19秒、exit0，无skip／deselect**。最终字节的新增34项在该总数内，不另累加；其他为原正式执行／结算／ACK／Dispatcher、原件／范围及Worker／Tool／模型账本消费方。独立Worker强杀的既有活动测试在受影响组内，但不是本步正式停车强杀证明，也没有据此宣称旧偶发进程超时或完整E3／E4已解决。
+
+最终组后以同一字节将PG／Redis／Docker／MySQL／PLAN_RUN_CREATION全设0，e208-optout-final.log实际**1 passed、69 skipped、8.63秒、exit0**；passed仅为无服务的显式组合准入测试，其余requires real PostgreSQL and Redis，不计业务通过。未启动服务或改pytest断言。e208-static-final.log重新compileall与pip check均exit0，src／tests聚合与上文相同；ruff／mypy仍缺包，独立lint／typecheck未做。
+
+全部本轮pytest／静态句柄已回收，进程核对无pytest／multiprocessing测试Worker残留；用户v3仍保持上述原hash。提交只含本轮8文件，提交前执行git status、完整暂存diff与diff --cached --check，检查新增行敏感材料；不包含原始日志或环境制品。实际本地feat commit id见Git／交付，不推送、不建PR。下一步仍须专用停车只读原件／ACK和正式决定／双归属后继／恢复，不将此原子停车子步当作完整v4完成。

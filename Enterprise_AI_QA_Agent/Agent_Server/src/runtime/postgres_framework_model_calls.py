@@ -292,7 +292,9 @@ class PostgresFrameworkModelCalls:
         The task-attempt table is the existing durable owner timeline.  Only
         framework execution operations are included; application-only
         ``approval_recover`` settlement/finalization tasks are deliberately
-        excluded.  An approval wait therefore appears as a gap between the
+        excluded. Formal ``case_execute`` uses the same observed return
+        boundary, not its lease expiry or the model's earlier response.
+        An approval wait therefore appears as a gap between the
         finished original attempt and a later ``approval_resume`` attempt.
         """
         def read():
@@ -346,7 +348,7 @@ class PostgresFrameworkModelCalls:
                 JOIN {attempts_table} AS attempt ON attempt.task_id=task.id
                 WHERE task.runtime_binding->>'binding_id'=%s
                   AND task.session_id=%s AND task.turn_id=%s
-                  AND task.operation IN ('message','message_recover','approval_resume')""",
+                  AND task.operation IN ('message','message_recover','approval_resume','case_execute')""",
                 (binding.binding_id, binding.session_id, binding.turn_id),
             )
             intervals.extend((row["started_at"], row["finished_at"]) for row in cur.fetchall())
@@ -362,7 +364,7 @@ class PostgresFrameworkModelCalls:
                 FROM {tasks_table} AS task
                 WHERE task.runtime_binding->>'binding_id'=%s
                   AND task.session_id=%s AND task.turn_id=%s
-                  AND task.operation IN ('message','message_recover','approval_resume')""",
+                  AND task.operation IN ('message','message_recover','approval_resume','case_execute')""",
                 (binding.binding_id, binding.session_id, binding.turn_id),
             )
             for task in cur.fetchall():

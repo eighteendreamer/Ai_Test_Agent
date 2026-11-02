@@ -804,6 +804,41 @@ Session／RunItem／AgentTask 原子 waiting 状态、预算等待边界、持�
 准入／后继或 ACK。§205 自动执行遇到 native wait 仍保持原 running／pending 及
 unavailable 语义，生产 writer／默认能力和公共 DTO／数据库 schema 不变。
 
+### 正式原子停车的显式组合（§208，未接 Redis 停车 ACK）
+
+`ControlledCaseApprovalWaits.park` 在同一 PostgreSQL 事务复用 §207 完整批次投影、
+原 RunStore waiting 核、AgentTask 返回事件及 Session 元数据写入。要求捕获的双 owner、
+原 ContextVar 和已 drain 的事件 sink；核原冻结输入／admission、真实 Worker claim、
+原模型账本和全部 Turn ToolJob。未结模型、未知工具尾巴、控制冲突、已有人工作出决定、
+已有结果回执或不完整批次不停车，不覆盖原件、不重跑外部操作。
+
+事务将原 RunItem／正式执行 Attempt 置为 waiting_approval，停止其 active 段并开始 waiting 段，
+保持原 Attempt 和 admission checkpoint1；Task／Agent Attempt completed 且 result_status=waiting_approval，
+通过真实 execution_returned 事件关闭 Worker 活动尾巴，**不表示用例完成或外部进程停止**。
+根活动读取同步纳入 case_execute，避免模型返回后漏计仍在运行的正式 Worker；根预算、usage、
+原冻结 deadline 和 native checkpoint 不重置／修改。
+
+Task.result_payload 的 controlled_case_approval_wait 保存独立 schema1、scope=
+controlled_case_atomic_approval_wait_only 回执：全批 approval／ToolJob／interrupt 身份与 native／link 摘要、
+原输入／admission／模型账本摘要、原 Worker claim／return 摘要及停车时间。无租约 token、
+原参数、Prompt 或结果正文；不是 completed result asset。原 Item 的单组 approval_id／tool_job_id
+只用于已有展示，不能代表全批。Session.pending_turn 保存全批 ID、原 binding 和回执摘要，
+Session 置 waiting_approval，原 turn lease 四字段清除；原子审计为 test_run.case_approval_waiting。
+
+全部可能等待的锁后重验双租约；状态与租约被清除后，最后一项写入之后再用新数据库时钟核对
+同一组锁下捕获的原到期时间，超期整笔回滚。调用者取消不证明 SQL 已停止，记录
+approval_wait_write_receipt_unknown／automatic_replay=false；回执丢失不得自动重复 park。
+已返回的失败 ToolJob 沿原 output_observed 事实闭合，不能把应用层合法丰富的最终输出
+与原始响应哈希混为一物；仅 failed／cancelled 标签不证明未知外部效果停止。
+
+ControlledCaseRuntime 可显式注入 approval_wait_service，并只在 executor 已 drain／关闭 sink 后
+组合上述事务，返回独立 approval_wait_receipt；原 state 仍是准备材料，不冒充 Session 快照或
+RuntimeTurnResult。**main／Dispatcher 不安装本端口**，带该可选服务的 require_dispatch_ready 明确
+拒绝尚未实现的停车 ACK 组合；默认 native wait 的 unavailable 语义不变，生产开关保持关闭。
+普通决定仍被专用范围隔离，既有终态 settlement reader 拒绝把本回执当成用例结算 ACK。
+专用只读停车原件复核／Redis ACK、决定准入／双归属后继、恢复和正式停车跨进程强杀仍待实现。
+新增内部 Python 回执格式和可选结果字段，无数据库 DDL、公共 HTTP 或依赖变更。
+
 ### 原路由与恢复验证
 
 关闭新选路时记录 `deep_agent_new_turn_route_disabled`，带 `session_id`、`turn_id` 和 `recovery_reason=new_turn_admission_disabled`；这是路由决定，不是取消/停止回执。
