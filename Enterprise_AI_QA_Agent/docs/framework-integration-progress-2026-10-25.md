@@ -2,7 +2,7 @@
 
 日期：2026-10-25 起。当前实施依据：[完整 v4 方案](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/docs/langgraph-deepagents-integration-plan-v4-2026-10-27.md)；[v3 方案](langgraph-deepagents-integration-plan-v3-2026-10-26.md)及[v2 方案](langgraph-deepagents-integration-plan-v2-2026-10-25.md)保留历史。
 
-**当前子步：v4 E／§12.1 的正式用例失租仅结算谱系准入（§201），承接 §198–200 原终态保留、Assessment／派生 Memory 只读对账。仅沿原 task／outbox 原子创建身份引用、不可变准入和审计；普通 Worker 不可领取，专用 claim／唯一事务结算尚未开放。§52–54 等历史结果保留原证据范围，不代替当前实现或全系统验收。完整 v4 及 H01–H12 仍按实际依赖推进，生产默认关闭。**
+**当前子步：v4 E／§12.1＋A2-3 的正式失租仅结算专用领取、原子结算与持久 ACK（§202），承接 §201 不可变谱系准入。独立 scoped Task 租约保留原生产者终态与 owner；复用唯一 RunStore 结算核，不重跑图／模型／工具／Session finalizer。普通 Worker 继续拒绝，未开放生产装配；验证范围及剩余出口见 §202。§52–54 等历史结果保留原证据范围，不代替当前源码或全系统验收。完整 v4 及 H01–H12 仍按实际依赖推进，生产默认关闭。**
 
 2026-10-26 附件再复核见 §37；冻结请求恢复见 §38，语义输入冻结见 §39，结算响应绑定及已结算 DTO 只读导入见 §40，语义服务消费原结算见 §41，冻结语义输入的应用编排消费见 §42，orchestrating 安全后继与代码制品指纹见 §43，Deep Agents 图输入资产见 §44。各阶段记录保留当时结果，以本页顶部快照及最新阶段的限定范围为准。
 
@@ -9737,3 +9737,71 @@ v4 E／§12.1＋A2-3正式域准入 → §201 → 6后端生产／4测试／1前
 下一出口仍是专用仅结算claim／lease、原件与谱系复核后的唯一正式结算事务、提交后持久ACK，以及后继领取后／结算提交前后强杀。准入不是结算完成，不重置原task／attempt终态，不将其当图执行，不重跑图／模型／工具／Session finalizer。业务审批继续、其他故障窗口、main／逐模式实际入口与质量、真实供应商／领域Runner、A3完整补偿／资源清理、E3／E4制品、一致备份恢复及性能基线仍未完成。
 
 本步不更改依赖声明、锁或运行时指纹；既有requirements.lock迁移已在README记录，历史uv.lock仍是被动绑定证据，不能直接删除。未执行付费模型／embedding、生产切换、实际目标测试、Docker／MySQL／RustFS或全量前后端。本轮范围之外的完整v4及H01–H12保持，goal仍active；整体剩余仍粗估 **4–8周有效开发／验收**，外部授权、环境及人工发布等待另计，不承诺交付日期。
+
+## 202. v4 E／§12.1＋A2-3：仅结算专用租约、原子正式结算与持久 ACK（2026-11-02）
+
+基线 `df9155345`（§201）。续接先核对六个已跟踪改动（含用户v3）、新增生命周期草稿、被ignore测试及原失败日志；用户v3原hash保持，不覆盖或混入本步。另核对用户补充的依赖迁移确认：`435d9cf7c` 已迁移Conda＋pip与哈希requirements.lock，根UV工作区声明已移除，本步不重做、不升级依赖或删除历史uv.lock。用户／系统级UV变量为空，本轮实际运行既有清理脚本清掉子进程继承的八项UV变量及失效专用bin路径，未改系统设置、缓存或旧环境；该操作不能反向清除已运行Codex父进程的继承值。
+
+### 依据 → 根因 → 采用
+
+- v4 §10.1 A2-3、§12.1 正式结果、§14.1 reader-first；§201不可变准入 → 原生产者已失租终态，不可将其改回running或completed → 独立后继Task租约，只授予结算，不接管RuntimeExecutionOwner。
+- `PostgresAgentTaskStore._claim_sync/_update_status/_transition_sync` → 既有Task／Attempt／Session租约与图owner原先写在同一方法 → 抽取原事务核 `_claim_task_attempt`、`_update_task_status`；普通图路径仍执行原owner采纳／更新，仅结算路径不碰它。
+- 原 projected message／approval结算 → Session最终状态来自已验证application commit，而不是RunItem状态 → 抽取 `_confirm_application_settlement` 共用原control合并与状态恢复；不再执行唯一finalizer。
+- 原RunStore `_complete_locked_item_in_transaction` 与正常结算 `_terminal_materials` → 正式结果和totals有既有唯一事务核 → 恢复路径复用完成核，正常／恢复共用 `_case_result_materials`，不复制结果写者或另建调度器。
+- 本地课程 `Agent轨迹与协议鲁棒性.html` 04.5／04.6／07 → 同时验证持久事实、轨迹、幂等、故障与效果次数，不仅断言非空receipt。
+
+### 实现与跨层边界
+
+新增 `src/runtime/controlled_case_recovery_settlement.py`，通过 `ControlledCaseSettlementRecovery.claim/renew/complete/acknowledge` 暴露内部端口。新 `ControlledCaseSettlementLease` 仅包含后继Task／Attempt／worker和Session租约，无图owner epoch或RunItem执行租约，token隐藏且不序列化。每次在原Session→RunItem／attempt→原owner／task→Run锁序内复核完整原件，随后锁后继Task／Attempt，复用准入信封／outbox／审计读者；所有阻塞读取后按数据库clock_timestamp做最终租约fence。
+
+并发claim仅一个有效lease；同后继失租仅结束旧Attempt，再新建Attempt，不把终态Task重置；旧Attempt／token不能结算新Attempt。原Task／AgentAttempt／RuntimeOwner保留完整物理行及recovery_required／execution_owner_expired分类，不更新为后继、不给图执行权。普通claim、Dispatcher及伪造owner的通用begin／finish仍不能获得权限。
+
+同一原事务根据已验证application commit恢复Session completed及scope内control（保留scope外键），按原Assessment写Result／RunItem／RunItem Attempt／totals，完成后继Task／Attempt、清Session租约，将schema1 `controlled_case_recovery_settlement_only`回执写入后继既有result_payload，追加 `test_run.case_recovery_settled` 审计。schema5冻结checkpoint不改写，不引入schema7或DDL。failed／blocked原Assessment照原件结算，后继Task completed不代表测试passed。
+
+新回执绑定准入／Assessment、原与后继身份及完整结果／物理终态／完成事件摘要。原case_execute交付ACK、后继ACK、ensure重入及相同lease重复complete均只确认原件，不补写；旧Attempt不可冒充新Attempt。关闭写者仍可读兼容回执；缺件或漂移只拒绝。新writer默认false、receipt reader上界1，未来字段／版本／scope defer，普通执行能力仍拒绝case_settle。全局核对result_payload消费方：Coordinator扫描限定coordinator_child；前端类型既有Record<string, unknown>，无新增公开DTO／REST或前端修改。无main／生产Worker接线，不据wire仍为v2宣称旧制品可消费新格式。
+
+拒绝日志保留operation／task、错误类型与兼容原因；取消等待者记录 `settlement_transaction_receipt_unknown`／automatic_replay=false，不冒称后台事务停止或回滚。
+
+### TDD 与保留的真实失败
+
+缺claim入口红测 `e202-settlement-red.log` 实际1 failed，16.63秒，AttributeError；第一版 `e202-settlement-first.log` 1 failed，17.47秒，是测试把RunItem Attempt当schema checkpoint，已执行真实生产结算。按原 `read_result_checkpoint` 修夹具后 `e202-settlement-first-fixed.log` 1 passed，21.56秒，含claim／结算与多路ACK。
+
+新增Session一致性断言后 `e202-session-state-red.log` 1 failed，17.89秒，真实状态interrupted而非completed。根因不是模型或RunStore，而是恢复路径遗漏原应用状态确认；抽取上述共享helper、同事务恢复，不重跑finalizer。接着 `e202-session-state-fixed.log` 1 failed，20.41秒：状态已正确，测试却把完整control与有限scope commit做全等；原协议明确合并，合法scope外queued_input_count=0必须保留。改为精确核全部commit键并独立保留该额外键，不删Session／control断言或扩大应用scope。
+
+扩展首次 `e202-expanded-first.log` 实际42 passed，503.32秒，exit0（34真实服务＋8原依赖迁移）；协议与三个新强杀窗口 `e202-protocol-process-first.log` 实际36 passed，143.43秒，exit0（33纯协议＋3独立进程）。以上为中间结果，不与最终矩阵重复累加。
+
+添加伪造owner负例时一次测试块插入位置错误，将旧lease接替段落放进尚未过期的新场景；`e202-scoped-final.log` 实际1 failed、9 passed，115.90秒，正确触发session_occupied。仅恢复测试函数边界与完整旧lease断言，不修改或放宽生产租约策略，随后以最终文件重跑整组。
+
+### 最终验证
+
+所有backend命令使用 `E:\MiniConda3\envs\Agent\python.exe`，工作目录Agent_Server；RUN_LIVE_POSTGRES_TESTS／REDIS=1，Docker／MySQL／PLAN_RUN_CREATION=0，QA_FRAMEWORK_WORKER_DIAGNOSTICS=1，PYTHONIOENCODING=utf-8，各命令先调用原UV清理脚本-ProcessOnly。复用已运行PG／Redis，隔离表／schema／Redis前缀，不启停服务。日志保存在不提交的.codex-logs，保留stdout与stderr。
+
+最终三组实际命令：
+
+~~~powershell
+& E:\MiniConda3\envs\Agent\python.exe -u -m pytest tests/test_controlled_case_recovery_settlement.py tests/test_controlled_case_settlement_protocol.py tests/test_controlled_case_recovery_settlement_process.py tests/test_pip_environment_migration.py -q -x -rs --tb=short --show-capture=no
+& E:\MiniConda3\envs\Agent\python.exe -u -m pytest tests/test_agent_task_dispatch.py tests/test_agent_v2_worker_contract.py tests/test_runtime_binding_contract.py tests/test_runtime_binding_persistence.py tests/test_framework_worker_activity.py tests/test_framework_projected_settlement.py tests/test_framework_approval_settlement.py -q -x -rs --tb=short --show-capture=no
+& E:\MiniConda3\envs\Agent\python.exe -u -m pytest tests/test_controlled_case_settlement.py tests/test_controlled_case_settlement_ack.py tests/test_controlled_case_assessment_reconciliation.py tests/test_controlled_case_finalization.py tests/test_controlled_case_settlement_recovery.py tests/test_controlled_case_settlement_recovery_process.py tests/test_controlled_case_settlement_process.py -q -x -rs --tb=short --show-capture=no
+~~~
+
+新四文件全LIVE及PLAN_RUN_CREATION=0的opt-out实际41 passed、38 skipped，86.41秒，exit0，`e202-optout-final.log`；38真实服务未执行不计通过，不重复累加41纯协议／依赖检查。compileall -q src tests与pip check均实际exit0，后者No broken requirements found；ruff／mypy实际未安装，不擅自加依赖，独立backend lint／typecheck未运行。未改前端，本步未运行前端测试／typecheck／build／浏览器。
+
+最终新四文件实际 **79 passed，583.91秒，exit0，无skip／deselect**，`e202-new-final.log`，取得NEW_FINAL_EXIT_CODE=0。35真实专用结算覆盖：完整原件／原身份／冻结checkpoint、六项写者与读者能力、四并发claim与complete、续租／过期／新Attempt接替与旧token fence、伪造图owner负例、七项待结算事实漂移、五个真实SQL写后故障回滚、九类漂移各经三条持久ACK端口拒绝、不确定等待者取消、真实后继行锁等待后DB时钟过期、failed／blocked原Assessment。回滚核对全部业务／模型／原生／工具事实摘要；不通过修补原件或弱化终态断言变绿。33纯协议验证新增lease／receipt的严格格式、稳定身份、时间／摘要和兼容性；8既有依赖迁移检查真实重跑，确认完整原锁包版本／哈希、源码制品／旧库存兼容与两种Windows shell清理脚本，不宣称重新安装了环境。
+
+3项新独立进程使用spawn，窗口为后继领取已提交、结算事务内已写原审计但尚未提交、结算已提交但未返回ACK。确认producer已kill且非0退出后，前两项只保留claimed后继且无Result／结算审计，经过期后由新进程新Attempt结算；后一项保留一份原子回执，新的writer关闭读者只确认原件。每个新读者复核后继／原交付ACK及ensure，无图owner构造／普通begin／finish／图／模型／工具／finalizer；原生产者物理身份不变，HTTP请求仍2、工具效果仍1。使用专用Redis socket_timeout=65等待连接，不改生产Redis设置。不是生产Dispatcher／resource-heartbeat接线或领域Runner验收。
+
+共享七文件实际 **515 passed，1214.79秒，exit0，无skip／deselect**，`e202-shared-regression.log`，取得SHARED_REGRESSION_EXIT_CODE=0。覆盖原AgentTaskDispatch、旧新Worker／RuntimeBinding契约及持久化、Worker活动、message／approval projected结算；共享Task租约／终态核及Session确认helper未破坏原路径。该组包含纯协议矩阵与真实服务／进程测试，不把515项全部称为真实服务。
+
+原正式七文件实际 **177 passed，1783.64秒，exit0，无skip／deselect**，`e202-formal-regression.log`，取得FORMAL_REGRESSION_EXIT_CODE=0。59正常正式结算、22原交付ACK、30失租Assessment读取、31 Session finalization、30仅结算准入、2准入独立强杀及3原生产者强杀窗口均以相同当前生产源码重跑，保持结果／totals／原件／原终态、真实回滚、锁等待和持久ACK边界，不以旧的§201绿色结果代替本步。
+
+三组最终合计 **771 passed**，无skip／deselect；中间42／36通过与失败组、opt-out不重复累加。全部原pytest句柄均已取回终态，未留后台测试。固定Python为3.11.18，另用已安装packaging解析requirements.lock环境标记并以importlib.metadata逐项核对本环境：115个适用pin全部一致、0缺失或版本差异，exit0；未安装或升级依赖。最终src聚合SHA256为 `9b8c931dc67ac0c105e678a3a981f74ab83add6584b058fdc00cad244f2b416a`（870个py），tests为 `0b42a83d5e225f91c57a5db41ffbc7ed12dfe706e263a87468b5c53632b31b84`（677个py），算法同§199（相对POSIX路径排序，路径UTF-8＋NUL＋原字节＋NUL）。三组生产字节一致；共享／原正式组运行期间只修了未被它们选择的新测试函数边界，新四文件随后按最终字节完整重跑，未冒称早前进程加载了后来才写入的测试。
+
+`git diff --check`实际通过，新增行高置信度私钥／API凭据模式扫描0命中（首次扫描命令因PowerShell引号解析失败，改用here-string后实际完成，不把模式扫描称为完整审计）。用户v3原hash复核保持 `8a43e94160767a0de20740f2cb30782f06322cbc3467076dfcb120d4efdf1ad4`，未修改或暂存。
+
+### 对应与剩余出口
+
+v4 E／§12.1＋A2-3 → §202 → 六生产源码／三测试／两文档 → 实际结果见本节最终记录 → 独立中文feat提交，实际ID见Git与交付。不提交用户v3、环境、日志或运行制品，不推送、不建PR。
+
+本步仅收口内部专用结算能力。下一出口仍是原生产Dispatcher／Worker显式受限接线与resource-heartbeat／队列ACK故障窗口，再按依赖继续逐模式入口与质量、业务审批、真实供应商／领域Runner、A3完整补偿／资源清理、E3／E4制品、一致备份恢复及性能基线。没有开放生产路由、付费模型／embedding或真实业务目标测试，未执行Docker／MySQL／RustFS与全量前后端。
+
+完整v4及H01–H12范围不缩小，goal保持active；整体剩余仍粗估4–8周有效开发／验收，授权、环境及人工发布等待另计，非交付日期承诺。

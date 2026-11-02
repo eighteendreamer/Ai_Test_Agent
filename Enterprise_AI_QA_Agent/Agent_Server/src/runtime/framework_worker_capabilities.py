@@ -49,6 +49,8 @@ class FrameworkWorkerCapabilities:
     controlled_case_checkpoint_max_version: int = 6
     controlled_case_settlement_admission_available: bool = False
     controlled_case_settlement_max_version: int = 1
+    controlled_case_settlement_available: bool = False
+    controlled_case_recovery_receipt_max_version: int = 1
 
     @classmethod
     def from_artifact(cls, *, deepagents_available: bool):
@@ -307,6 +309,16 @@ class FrameworkWorkerCapabilities:
         if type(version) is not int or not 1 <= version <= self.controlled_case_settlement_max_version:
             raise TaskDeferred(reason)
         return self._read_compatible(ControlledCaseSettlementAdmission.model_validate, value, reason,
+            literal_fields=("scope",))
+
+    def require_case_recovery_receipt_format(self, value):
+        from src.schemas.controlled_case_settlement_recovery import ControlledCaseRecoverySettlementReceipt
+
+        reason = "framework_case_recovery_receipt_format_unavailable"
+        version = value.get("schema_version") if isinstance(value, dict) else None
+        if type(version) is not int or not 1 <= version <= self.controlled_case_recovery_receipt_max_version:
+            raise TaskDeferred(reason)
+        return self._read_compatible(ControlledCaseRecoverySettlementReceipt.model_validate, value, reason,
             literal_fields=("scope",))
 
     @staticmethod

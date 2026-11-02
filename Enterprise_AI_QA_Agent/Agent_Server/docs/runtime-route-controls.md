@@ -628,7 +628,7 @@ Redis 只携谱系引用，不复制 Prompt／业务输入／原租约 token。
 `controlled_case_settlement_max_version` 的格式读者默认支持 1，但**可读不等于可写或可领**。
 关闭写者后可核对已存在的同一回执；不兼容格式 TaskDeferred，原件／outbox／审计漂移
 则拒绝且不补造。普通 `claim` 明确拒绝 case_settle，Dispatcher 能力检查在领取前 defer。
-后继保持 queued，无 attempt／worker／执行 owner；本步尚未实现专用 claim 或正式结算。
+准入只创建 queued 后继，无 attempt／worker／执行 owner；专用领取与结算见下一节。
 未新增 DDL、公开受理 API、main 接线或生产路由，旧读者不能因 wire 主版本仍为 2
 就视为兼容新增 operation／引用字段；须 reader-first 或隔离消费者后才可开放写者。
 
@@ -637,6 +637,45 @@ Redis 只携谱系引用，不复制 Prompt／业务输入／原租约 token。
 等待者取消记录 `controlled_case_settlement_admission_unknown`，
 `recovery_reason=admission_receipt_unknown`，不宣称后台事务已回滚，必须复核原回执。
 全部日志带 `automatic_replay=false`。实际红绿、并发／回滚和独立强杀范围见实施记录 §201。
+
+### 正式 case 失租后的专用领取、原子结算与持久 ACK（内部显式端口）
+
+`ControlledCaseSettlementRecovery.claim(delivery, worker_id=..., capabilities=...)`、
+`renew(lease, lease_seconds=..., capabilities=...)`、`complete(lease, capabilities=...)`
+使用独立的 `ControlledCaseSettlementLease`。它只有后继 Task／Attempt／Session 租约，
+不是 `RuntimeExecutionOwner`，不能启动图或调用原通用 begin／finish；token 不序列化。
+不接管、重置或覆盖原生产者的 task／attempt／runtime owner，也不重领原 RunItem。
+复用原 Task 领取／终态事务核和 RunStore 的唯一完成核，不另建调度器或 finalizer。
+
+领取、续租、结算每次都重新核对原交付、冻结 schema5、完整原件、准入、outbox、审计和
+原物理身份；所有可能阻塞的锁／读取之后，用 PostgreSQL `clock_timestamp()` 核最终租约。
+并发只产生一个有效租约；失租后仅结束旧后继 Attempt，再新建后继 Attempt，旧 token 不可结算。
+后继 Task 不先改成终态再重置；已完成后继不可重领。取消和漂移拒绝，不自动重跑。
+
+唯一事务根据原 application commit 恢复 Session completed／control（保留 scope 外键），
+按原 Assessment 写 Result、RunItem／RunItem Attempt 与 totals，完成后继 Task／Attempt、
+清该 Session 租约，再在后继既有 `result_payload.case_recovery_settlement_receipt` 写入
+schema1 `controlled_case_recovery_settlement_only` 回执及 `test_run.case_recovery_settled`
+审计。以上一同提交或回滚；原 schema5 checkpoint 内容不改写，不引入 schema7。
+原失败／blocked Assessment 不升级为 passed；Task completed 只表示结算执行已完成。
+
+`acknowledge(delivery, capabilities=...)`、原 `case_execute` 交付的
+`ControlledCaseSettlements.acknowledge_delivery`、已有后继的 `ensure` 均只核对已持久化
+回执与原件，不领取、不修补、不重新写结果／事件。相同租约重复 complete 也只 ACK，
+旧 Attempt 租约不能冒充新 Attempt。ACK 不构造执行 owner、不运行图／模型／工具／
+Assessment／Session finalizer；后续合法 Session 活动不被旧回执覆盖。
+
+`controlled_case_settlement_available` 默认 false，领取／续租／结算需显式能力；
+`controlled_case_recovery_receipt_max_version` 默认支持 1，只读 ACK 不需要打开写者。
+不兼容回执字段／版本／scope defer；缺失或漂移拒绝且不补造。新字段与操作仍须
+reader-first 或隔离消费者。普通 Dispatcher／Worker 继续拒绝 case_settle，无 main、
+生产路由或 REST 开放；该内部端口通过不等于生产 Worker、领域 Runner 或 E3／E4 验收。
+
+成功日志 `controlled_case_recovery_settlement_claim/renew/complete/ack`；拒绝日志
+`controlled_case_recovery_settlement_rejected` 带 operation／task、错误类型及兼容原因。
+等待者取消记录 `controlled_case_recovery_settlement_unknown`、
+`recovery_reason=settlement_transaction_receipt_unknown`；这不证明后台事务已停止或回滚，
+必须查询原回执。日志均带 `automatic_replay=false`。验证范围见实施记录 §202。
 
 ### 原路由与恢复验证
 

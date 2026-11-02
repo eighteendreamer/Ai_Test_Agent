@@ -1566,28 +1566,8 @@ class PostgresAgentTaskStore:
 
                 cur.execute("SELECT clock_timestamp() AS now")
                 require_case_submission(cur, self, row, case, cur.fetchone()["now"])
-            token, attempt_id = uuid4().hex, str(uuid4())
-            cur.execute(f"""UPDATE {self._tasks} SET status='claimed', attempt_no=attempt_no+1,
-                attempt_id=%s, lease_token=%s, worker_id=%s, waiting_reason=NULL, updated_at=NOW()
-                WHERE id=%s RETURNING *""", (attempt_id, token, worker_id, task_id))
-            row = cur.fetchone()
-            cur.execute(
-                f"""INSERT INTO {self._attempts}
-                (id,task_id,attempt_no,worker_id,lease_token,status)
-                VALUES (%s,%s,%s,%s,%s,'claimed')""",
-                (attempt_id, task_id, row["attempt_no"], worker_id, token),
-            )
-            cur.execute(f"""UPDATE {self._session_table} SET metadata=metadata || jsonb_build_object(
-                'turn_lease_turn_id',%s::text,'turn_lease_owner',%s::text,'turn_lease_token',%s::text,
-                'turn_lease_expires_at',to_jsonb(clock_timestamp() + %s * INTERVAL '1 second')),
-                state_revision=state_revision+1, updated_at=NOW() WHERE id=%s""",
-                (
-                    row["turn_id"],
-                    worker_id,
-                    token,
-                    self._settings.orchestration.turn_execution_lease_seconds,
-                    row["session_id"],
-                ))
+            row = self._claim_task_attempt(cur, row, worker_id)
+            token, attempt_id = row["lease_token"], row["attempt_id"]
             if saved_binding is not None:
                 cur.execute(f"""UPDATE {runtime_owner_table(self._settings)} SET
                     owner_epoch=owner_epoch+1,owner_token=%s,task_id=%s,attempt_id=%s,worker_id=%s,
@@ -1612,6 +1592,28 @@ class PostgresAgentTaskStore:
                 "owner_epoch": row["runtime_owner"].owner_epoch,
             } if saved_binding is not None else {}))
         return self._record(row)
+
+    def _claim_task_attempt(self, cur, row, worker_id):
+        """Existing task/Session lease kernel, not graph execution authority.
+
+        Caller holds the Session/task locks and has verified its own scoped
+        admission. Runtime owner adoption remains only in the graph claimant.
+        """
+        token, attempt_id = uuid4().hex, str(uuid4())
+        cur.execute(f"""UPDATE {self._tasks} SET status='claimed', attempt_no=attempt_no+1,
+            attempt_id=%s, lease_token=%s, worker_id=%s, waiting_reason=NULL, updated_at=NOW()
+            WHERE id=%s RETURNING *""", (attempt_id, token, worker_id, row["id"]))
+        row = cur.fetchone()
+        cur.execute(f"""INSERT INTO {self._attempts}
+            (id,task_id,attempt_no,worker_id,lease_token,status)
+            VALUES (%s,%s,%s,%s,%s,'claimed')""",
+            (attempt_id, row["id"], row["attempt_no"], worker_id, token))
+        cur.execute(f"""UPDATE {self._session_table} SET metadata=metadata || jsonb_build_object(
+            'turn_lease_turn_id',%s::text,'turn_lease_owner',%s::text,'turn_lease_token',%s::text,
+            'turn_lease_expires_at',to_jsonb(clock_timestamp() + %s * INTERVAL '1 second')),
+            state_revision=state_revision+1, updated_at=NOW() WHERE id=%s""",
+            (row["turn_id"], worker_id, token, self._settings.orchestration.turn_execution_lease_seconds, row["session_id"]))
+        return row
 
     def _transition_sync(
         self,
@@ -1669,10 +1671,7 @@ class PostgresAgentTaskStore:
                         raise FrameworkMessageStageRecoveryRequired("Projected settlement requires a completed result")
                     settlement = (require_projected_approval_settlement(cur, self._settings, session, row, task.runtime_owner, stage)
                         if approval_settlement else require_projected_settlement(cur, self, session, row, task.runtime_owner, stage))
-                    cur.execute(f"UPDATE {self._session_table} SET status='completed', "
-                        "metadata=jsonb_set(metadata,'{control}',COALESCE(metadata->'control','{}'::jsonb) || %s::jsonb), "
-                        "state_revision=state_revision+1,updated_at=clock_timestamp() WHERE id=%s",
-                        (json.dumps(settlement.control), task.session_id))
+                    self._confirm_application_settlement(cur, row, settlement)
             if status == "running":
                 if not resource_id or fencing_token is None:
                     raise ValueError("Running Agent task requires resource fencing metadata")
@@ -1705,6 +1704,17 @@ class PostgresAgentTaskStore:
                 "result_reference": settlement.output_message_id or settlement.snapshot_id})
         return case_input
 
+    def _confirm_application_settlement(self, cur, row, settlement):
+        """Restore the already verified application state, not its finalizer.
+
+        Caller holds the Session lock and has checked its scoped settlement
+        proof and current lease after all potentially blocking source reads.
+        """
+        cur.execute(f"UPDATE {self._session_table} SET status='completed', "
+            "metadata=jsonb_set(metadata,'{control}',COALESCE(metadata->'control','{}'::jsonb) || %s::jsonb), "
+            "state_revision=state_revision+1,updated_at=clock_timestamp() WHERE id=%s",
+            (json.dumps(settlement.control), row["session_id"]))
+
     def _update_status(self, cur, row, status, result_status, reason, *, execution_returned=False):
         if row.get("runtime_binding") is not None:
             saved_binding = RuntimeBinding.model_validate(row["runtime_binding"])
@@ -1712,6 +1722,10 @@ class PostgresAgentTaskStore:
                 expires_at=CASE WHEN %s='running' THEN expires_at ELSE clock_timestamp() END
                 WHERE binding_id=%s AND owner_token=%s""",
                 (status, status, saved_binding.binding_id, row["lease_token"]))
+        self._update_task_status(cur, row, status, result_status, reason, execution_returned=execution_returned)
+
+    def _update_task_status(self, cur, row, status, result_status, reason, *, execution_returned=False):
+        """Task/attempt/event kernel; does not change graph execution authority."""
         cur.execute(f"""UPDATE {self._tasks} SET status=%s, result_status=%s,
             waiting_reason=%s, error_code=%s, updated_at=NOW() WHERE id=%s""",
             (status, result_status, reason if status == "waiting_resource" else None,

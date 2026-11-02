@@ -174,6 +174,13 @@ class ControlledCaseSettlements:
             session = tasks._lock_session(cur, command.session_id)
             case, row = lock_case_delivery(cur, tasks, command, capabilities)
             checkpoint = read_result_checkpoint(case.attempt)
+            if (isinstance(checkpoint, ControlledCaseAssessmentCheckpoint)
+                and not isinstance(checkpoint, ControlledCaseSettlementCheckpoint) and case.item.result_id is not None):
+                from src.runtime.controlled_case_settlement_recovery import ControlledCaseSettlementRecovery
+                from src.runtime.controlled_case_recovery_settlement import ControlledCaseRecoverySettlement
+
+                return ControlledCaseRecoverySettlement(ControlledCaseSettlementRecovery(tasks)).acknowledge_original_in_transaction(
+                    cur, command, capabilities)
             _require(isinstance(checkpoint, ControlledCaseSettlementCheckpoint), "Controlled atomic settlement is missing")
             source = original_checkpoint_source(cur, settings, command.runtime_binding, row, checkpoint.settlement.owner_epoch)
             task, attempt, saved_owner = self._lock_identity_rows(cur, source)
@@ -242,19 +249,10 @@ class ControlledCaseSettlements:
             "Controlled settlement differs from its original dual execution identity")
         return task, attempt, saved_owner
 
-    def _terminal_materials(self, cur, owner, locked, result_id):
-        tasks, settings = self._tasks, self._tasks._settings
-        case, session, task, attempt, saved_owner = locked
-        checkpoint = read_result_checkpoint(case.attempt)
-        asset = checkpoint.assessment
-        _require(task["status"] == attempt["status"] == saved_owner["execution_state"] == "completed"
-            and task["result_status"] == "completed" and not task["interrupt_requested"]
-            and attempt["finished_at"] is not None and attempt["error_code"] is None and task["error_code"] is None
-            and session["metadata"].get("turn_lease_token") != task["lease_token"]
-            and session["metadata"].get("turn_lease_turn_id") != owner.binding.turn_id
-            and case.item.result_id == result_id
-            and case.item.status == case.attempt.status == asset.completion.status,
-            "Controlled settlement terminal state or cleared original lease changed")
+    def _case_result_materials(self, cur, case, result_id, asset):
+        """Shared formal result/RunItem/attempt/totals checks, never authority."""
+        _require(case.item.result_id == result_id and case.item.status == case.attempt.status == asset.completion.status,
+            "Controlled settlement case result or terminal state changed")
         cur.execute(f"SELECT * FROM {case.store._result_table} WHERE id=%s FOR SHARE", (result_id,))
         result_row = cur.fetchone()
         _require(result_row is not None, "Controlled settlement original result is missing")
@@ -278,13 +276,6 @@ class ControlledCaseSettlements:
         payload.pop("settlement", None)
         payload["schema_version"] = 5
         attempt_row["record"] = {**record, "checkpoint_version": 5, "checkpoint_payload": payload}
-        cur.execute(f"SELECT * FROM {settings.database.postgres_event_table} WHERE session_id=%s "
-            "AND type='agent_task.completed' AND payload->>'task_id'=%s FOR SHARE",
-            (owner.binding.session_id, owner.task_id))
-        events = cur.fetchall()
-        _require(len(events) == 1 and events[0]["payload"].get("execution_returned") is True
-            and events[0]["payload"].get("result_status") == "completed",
-            "Controlled settlement has no unique original task completion event")
         run = case.store._read_run(cur, case.item.run_id)
         cur.execute(f"SELECT status,count(*) AS n FROM {case.store._item_table} WHERE run_id=%s GROUP BY status",
             (case.item.run_id,))
@@ -293,8 +284,31 @@ class ControlledCaseSettlements:
         expected["total"] = sum(counts.values())
         _require(run.stats.model_dump() == expected, "Controlled settlement run totals differ from actual items")
         return {key + "_sha256": _hash(value) for key, value in {
-            "result": dict(result_row), "item": item_row, "attempt": attempt_row,
-            "task": dict(task), "task_attempt": dict(attempt), "owner": dict(saved_owner), "task_event": dict(events[0])}.items()}
+            "result": dict(result_row), "item": item_row, "attempt": attempt_row}.items()}
+
+    def _terminal_materials(self, cur, owner, locked, result_id):
+        tasks, settings = self._tasks, self._tasks._settings
+        case, session, task, attempt, saved_owner = locked
+        checkpoint = read_result_checkpoint(case.attempt)
+        asset = checkpoint.assessment
+        _require(task["status"] == attempt["status"] == saved_owner["execution_state"] == "completed"
+            and task["result_status"] == "completed" and not task["interrupt_requested"]
+            and attempt["finished_at"] is not None and attempt["error_code"] is None and task["error_code"] is None
+            and session["metadata"].get("turn_lease_token") != task["lease_token"]
+            and session["metadata"].get("turn_lease_turn_id") != owner.binding.turn_id
+            and case.item.result_id == result_id
+            and case.item.status == case.attempt.status == asset.completion.status,
+            "Controlled settlement terminal state or cleared original lease changed")
+        hashes = self._case_result_materials(cur, case, result_id, asset)
+        cur.execute(f"SELECT * FROM {settings.database.postgres_event_table} WHERE session_id=%s "
+            "AND type='agent_task.completed' AND payload->>'task_id'=%s FOR SHARE",
+            (owner.binding.session_id, owner.task_id))
+        events = cur.fetchall()
+        _require(len(events) == 1 and events[0]["payload"].get("execution_returned") is True
+            and events[0]["payload"].get("result_status") == "completed",
+            "Controlled settlement has no unique original task completion event")
+        return {**hashes, **{key + "_sha256": _hash(value) for key, value in {
+            "task": dict(task), "task_attempt": dict(attempt), "owner": dict(saved_owner), "task_event": dict(events[0])}.items()}}
 
     def _ack(self, cur, owner, native, case, session, task, checkpoint, locked):
         receipt = checkpoint.settlement

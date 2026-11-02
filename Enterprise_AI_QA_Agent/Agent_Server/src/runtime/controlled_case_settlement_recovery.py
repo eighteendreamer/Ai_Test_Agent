@@ -46,6 +46,26 @@ class ControlledCaseSettlementRecovery:
         self._tasks, self._settings = tasks, tasks._settings
         self._originals = ControlledCaseSettlements(tasks)
 
+    async def claim(self, delivery, *, worker_id, capabilities):
+        from src.runtime.controlled_case_recovery_settlement import ControlledCaseRecoverySettlement
+
+        return await ControlledCaseRecoverySettlement(self).claim(delivery, worker_id=worker_id, capabilities=capabilities)
+
+    async def complete(self, lease, *, capabilities):
+        from src.runtime.controlled_case_recovery_settlement import ControlledCaseRecoverySettlement
+
+        return await ControlledCaseRecoverySettlement(self).complete(lease, capabilities=capabilities)
+
+    async def renew(self, lease, *, lease_seconds, capabilities):
+        from src.runtime.controlled_case_recovery_settlement import ControlledCaseRecoverySettlement
+
+        return await ControlledCaseRecoverySettlement(self).renew(lease, lease_seconds=lease_seconds, capabilities=capabilities)
+
+    async def acknowledge(self, delivery, *, capabilities):
+        from src.runtime.controlled_case_recovery_settlement import ControlledCaseRecoverySettlement
+
+        return await ControlledCaseRecoverySettlement(self).acknowledge(delivery, capabilities=capabilities)
+
     async def ensure(self, delivery, *, capabilities):
         scope = {"operation": "case_settlement_admission"}
         try:
@@ -94,12 +114,11 @@ class ControlledCaseSettlementRecovery:
             case_settlement_reference={"origin_task_id": proof.origin_task_id, "origin_attempt_id": proof.origin_attempt_id,
                 "run_item_execution_attempt_id": proof.run_item_execution_attempt_id, "admission_sha256": proof.asset_sha256})
 
-    def _existing(self, cur, row, source, asset, capabilities, key):
+    def _validate_envelope(self, cur, row, source, capabilities, key):
         raw = row["input_payload"]
         _require(isinstance(raw, dict) and set(raw) == {ADMISSION_KEY}, "Controlled settlement admission payload changed")
         proof = capabilities.require_case_settlement_format(raw[ADMISSION_KEY])
-        current, origin = self._proof(cur, source, asset, proof.admitted_at)
-        _require(proof == current, "Controlled settlement admission original facts changed")
+        origin, _, _ = self._originals._lock_identity_rows(cur, source.owner)
         command = self._command(proof, origin, source.owner.binding)
         content_hash = self._tasks._input_hash("case_settle", {"input": raw,
             "runtime_binding_fingerprint": source.owner.binding.fingerprint})
@@ -119,6 +138,17 @@ class ControlledCaseSettlementRecovery:
         audit = cur.fetchone()
         _require(audit is not None, "Controlled settlement admission has no atomic audit")
         _require_event_intent(audit, event)
+        return proof
+
+    def _existing(self, cur, row, source, asset, capabilities, key):
+        proof = self._validate_envelope(cur, row, source, capabilities, key)
+        if row["status"] == "completed":
+            from src.runtime.controlled_case_recovery_settlement import ControlledCaseRecoverySettlement
+
+            ControlledCaseRecoverySettlement(self)._ack_source(cur, source, asset, row, proof, capabilities)
+        else:
+            current, _ = self._proof(cur, source, asset, proof.admitted_at)
+            _require(proof == current, "Controlled settlement admission original facts changed")
         return AgentTaskRecord.model_validate(row), True
 
     def _ensure(self, command, capabilities):

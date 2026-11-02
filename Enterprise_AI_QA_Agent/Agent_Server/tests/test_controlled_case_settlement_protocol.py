@@ -111,3 +111,68 @@ def test_unknown_settlement_command_format_is_deferred_before_claim(changed):
         raw["operation"] = "case_settle_future"
     with pytest.raises(TaskDeferred, match="framework_command_format_unavailable"):
         FrameworkWorkerCapabilities.require_command_format(raw)
+
+
+def recovery_receipt():
+    values = dict(schema_version=1, scope="controlled_case_recovery_settlement_only",
+        task_id=proof()["task_id"], attempt_id="settlement-attempt", origin_task_id="origin-task",
+        origin_attempt_id="origin-attempt", origin_owner_epoch=1, binding_fingerprint="a"*64,
+        admission_sha256="b"*64, assessment_sha256="c"*64, result_id="original-result",
+        settled_at="2026-11-02T00:00:00Z")
+    values.update({name: "d"*64 for name in ("result_sha256", "item_sha256", "attempt_sha256",
+        "origin_task_sha256", "origin_attempt_sha256", "origin_owner_sha256", "settlement_task_sha256",
+        "settlement_attempt_sha256", "task_event_sha256")})
+    return {**values, "receipt_sha256": approval_value_hash(values)}
+
+
+@pytest.mark.parametrize("change", ["future_field", "future_scope", "future_version", "bool_version", "old_reader"])
+def test_recovery_receipt_reader_is_strict_and_not_an_execution_grant(change):
+    raw, caps = recovery_receipt(), FrameworkWorkerCapabilities("a"*64, False)
+    assert caps.require_case_recovery_receipt_format(raw).model_dump(mode="json") == raw
+    if change == "future_field":
+        raw["future"] = True
+    elif change == "future_scope":
+        raw["scope"] = "future_scope"
+    elif change == "future_version":
+        raw["schema_version"] = 99
+    elif change == "bool_version":
+        raw["schema_version"] = True
+    else:
+        caps = replace(caps, controlled_case_recovery_receipt_max_version=0)
+    raw["receipt_sha256"] = approval_value_hash({key: value for key, value in raw.items() if key != "receipt_sha256"})
+    with pytest.raises(TaskDeferred, match="framework_case_recovery_receipt_format_unavailable"):
+        caps.require_case_recovery_receipt_format(raw)
+
+
+@pytest.mark.parametrize("change", ["task", "time", "digest", "owner_epoch"])
+def test_invalid_recovery_receipt_is_not_repaired_or_downgraded(change):
+    raw = recovery_receipt()
+    if change == "task":
+        raw["task_id"] = "foreign"
+    elif change == "time":
+        raw["settled_at"] = "2026-11-02T00:00:00"
+    elif change == "owner_epoch":
+        raw["origin_owner_epoch"] = True
+    else:
+        raw["result_sha256"] = "e"*64
+    if change != "digest":
+        raw["receipt_sha256"] = approval_value_hash({key: value for key, value in raw.items() if key != "receipt_sha256"})
+    with pytest.raises(ValidationError):
+        FrameworkWorkerCapabilities("a"*64, False).require_case_recovery_receipt_format(raw)
+
+
+def test_local_scoped_lease_never_serializes_secret_or_becomes_graph_execution_owner():
+    from src.schemas.controlled_case_settlement_recovery import ControlledCaseSettlementLease
+    from src.schemas.runtime_binding import RuntimeExecutionOwner
+
+    wire = command()
+    lease = ControlledCaseSettlementLease(binding=wire.runtime_binding, task_id=wire.task_id,
+        attempt_id="settlement-attempt", attempt_no=1, worker_id="settlement-worker",
+        lease_token="synthetic-local-lease", reference=wire.case_settlement_reference)
+    assert "synthetic-local-lease" not in repr(lease) + lease.model_dump_json()
+    assert not hasattr(lease, "owner_epoch") and not hasattr(lease, "controlled_case_lease")
+    with pytest.raises(ValidationError):
+        RuntimeExecutionOwner.model_validate(lease.model_dump())
+    with pytest.raises(TaskDeferred):
+        replace(FrameworkWorkerCapabilities("a"*64, False), controlled_case_settlement_available=True).require(
+            wire.runtime_binding, operation="case_settle")
