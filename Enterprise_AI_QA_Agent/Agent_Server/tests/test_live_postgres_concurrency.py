@@ -318,8 +318,10 @@ def _settings_with_database_overrides(**overrides: object) -> Settings:
     return base.model_copy(update={"database": database})
 
 
-def _create_claim_tables(settings: Settings) -> None:
+def _create_claim_tables(settings: Settings, *, result_table: str | None = None) -> None:
     """Create isolated run tables with the same columns used by the live Store."""
+    if result_table is not None and result_table != settings.database.postgres_test_case_result_table:
+        raise ValueError("Claim fixture result table must match its isolated Store configuration")
     with postgres_connect(settings) as conn:
         with conn.cursor() as cur:
             cur.execute(
@@ -346,6 +348,26 @@ def _create_claim_tables(settings: Settings) -> None:
                 "attempt_no INTEGER NOT NULL, lease_token TEXT NOT NULL, status TEXT NOT NULL, "
                 "record JSONB NOT NULL, UNIQUE(run_item_id, attempt_no), UNIQUE(lease_token))"
             )
+            if result_table is not None:
+                # Dependency-aware claiming reads results even when the selected
+                # items have no dependencies. Only explicit isolated callers
+                # opt in; never create a default/shared result table implicitly.
+                cur.execute(
+                    f"CREATE TABLE {result_table} ("
+                    "id UUID PRIMARY KEY, run_id UUID NOT NULL, run_item_id UUID NOT NULL UNIQUE, "
+                    "case_id UUID NOT NULL, case_version_id UUID NOT NULL, attempt_id UUID NOT NULL, "
+                    "status TEXT NOT NULL, payload_hash TEXT NOT NULL, regression_source_result_id UUID NULL, "
+                    "created_at TIMESTAMPTZ NOT NULL, record JSONB NOT NULL)"
+                )
+
+
+def test_claim_result_fixture_rejects_a_different_table_before_connecting(monkeypatch):
+    settings = _settings_with_database_overrides(postgres_test_case_result_table="fixture_result_selected")
+    def forbidden(*args, **kwargs):
+        raise AssertionError("mismatched fixture must not open a database connection")
+    monkeypatch.setattr("tests.test_live_postgres_concurrency.postgres_connect", forbidden)
+    with pytest.raises(ValueError, match="isolated Store configuration"):
+        _create_claim_tables(settings, result_table="fixture_result_other")
 
 
 def _worker_settings(overrides: dict[str, object]) -> Settings:
@@ -482,7 +504,7 @@ async def test_live_postgres_claims_each_item_once_without_deadlock():
     claim_latencies_ms: list[float] = []
 
     try:
-        _create_claim_tables(settings)
+        _create_claim_tables(settings, result_table=result_table)
         await store.create_run(run, items)
 
         async def claim_until_empty(worker_number: int) -> None:
@@ -534,7 +556,7 @@ async def test_live_postgres_claims_each_item_once_without_deadlock():
             f"p99={_percentile(claim_latencies_ms, 0.99):.2f}ms"
         )
     finally:
-        _drop_tables(settings, [attempt_table, item_table, run_table])
+        _drop_tables(settings, [result_table, attempt_table, item_table, run_table])
 
 
 @live_postgres
@@ -577,7 +599,7 @@ async def test_live_postgres_process_worker_takeover_restores_checkpoint():
     process_b = None
     result_queue = None
     try:
-        _create_claim_tables(settings)
+        _create_claim_tables(settings, result_table=result_table)
         await store.create_run(run, [item])
         context = multiprocessing.get_context("spawn")
         process_a = context.Process(

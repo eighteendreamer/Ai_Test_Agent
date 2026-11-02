@@ -74,6 +74,17 @@ def require_generic_checkpoint_write(attempt: TestRunAttemptRecord, checkpoint_k
         raise ValueError("Controlled case admission checkpoint requires its atomic writer")
 
 
+def require_generic_result_write(attempt: TestRunAttemptRecord) -> None:
+    # Like the checkpoint reservation, the original admission cannot be
+    # completed by a writer which does not settle its AgentTask in the same
+    # transaction. Do not parse/upgrade the reserved payload or add a bypass.
+    if attempt.checkpoint_key == CONTROLLED_CASE_ADMISSION_KEY:
+        logger.warning("controlled_case_result_atomic_writer_required", extra={"run_id": attempt.run_id,
+            "run_item_id": attempt.run_item_id, "attempt_id": attempt.id,
+            "recovery_reason": "controlled_case_atomic_settlement_required"})
+        raise ValueError("Controlled case result requires its atomic settlement")
+
+
 class TestRunStore(Protocol):
     async def initialize(self) -> None: ...
     async def initialize_plan_revision_storage(self) -> None: ...
@@ -1063,7 +1074,9 @@ class InMemoryTestRunStore:
             if item.approval_id != approval_id:
                 raise ValueError(f"Run item is not bound to this approval: {item_id}")
             if item.result_id:
-                return self._results[item.result_id].model_copy(deep=True)
+                existing = self._results[item.result_id]
+                require_generic_result_write(self._attempts[existing.attempt_id])
+                return existing.model_copy(deep=True)
             if item.status != "waiting_approval":
                 raise ValueError(f"Run item is not waiting for this approval: {item_id}")
             if completion.status != "blocked":
@@ -1071,6 +1084,7 @@ class InMemoryTestRunStore:
             if not item.lease_token:
                 raise ValueError(f"Waiting run item has no preserved lease token: {item_id}")
             attempt = self._active_attempt(item_id, item.lease_token)
+            require_generic_result_write(attempt)
             result = TestCaseResultRecord(
                 id=str(uuid4()),
                 run_id=item.run_id,
@@ -1144,11 +1158,13 @@ class InMemoryTestRunStore:
             if item.result_id:
                 existing = self._results[item.result_id]
                 attempt = self._attempts[existing.attempt_id]
+                require_generic_result_write(attempt)
                 if attempt.lease_token == lease_token and existing.payload_hash == completion.payload_hash:
                     return existing.model_copy(deep=True)
                 raise ValueError(f"Test run item already completed: {item_id}")
             item = self._require_active_lease(item_id, lease_token, now, {"running"})
             attempt = self._active_attempt(item_id, lease_token)
+            require_generic_result_write(attempt)
             result = TestCaseResultRecord(
                 id=str(uuid4()),
                 run_id=item.run_id,
@@ -2972,102 +2988,126 @@ class PostgresTestRunStore:
     ) -> TestCaseResultRecord:
         with postgres_connect(self._settings) as conn:
             with conn.cursor() as cur:
-                item = self._lock_item(cur, item_id)
-                if item.result_id:
-                    result = self._get_result_in_cursor(cur, item.result_id)
-                    attempt = self._get_attempt_by_id(cur, result.attempt_id)
-                    if (
-                        attempt.lease_token == lease_token
-                        and result.payload_hash == completion.payload_hash
-                    ):
-                        return result
-                    raise ValueError(f"Test run item already completed: {item_id}")
-                self._validate_lease(item, lease_token, now, {"running"})
-                attempt = self._lock_attempt(cur, item_id, lease_token)
-                active_duration_delta_ms = elapsed_ms(item.active_started_at, now)
-                waiting_duration_delta_ms = elapsed_ms(item.waiting_started_at, now)
-                result = TestCaseResultRecord(
-                    id=str(uuid4()),
-                    run_id=item.run_id,
-                    run_item_id=item.id,
-                    case_id=item.case_id,
-                    case_version_id=item.case_version_id,
-                    regression_source_result_id=item.regression_source_result_id,
-                    attempt_id=attempt.id,
-                    attempt_no=attempt.attempt_no,
-                    created_at=now,
-                    **completion.model_dump(mode="python"),
-                )
-                cur.execute(
-                    f"INSERT INTO {self._result_table} "
-                    "(id, run_id, run_item_id, case_id, case_version_id, "
-                    "regression_source_result_id, attempt_id, status, payload_hash, "
-                    "created_at, record) "
-                    "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb)",
-                    (
-                        result.id,
-                        result.run_id,
-                        result.run_item_id,
-                        result.case_id,
-                        result.case_version_id,
-                        result.regression_source_result_id,
-                        result.attempt_id,
-                        result.status,
-                        result.payload_hash,
-                        result.created_at,
-                        self._json(result),
-                    ),
-                )
-                item = item.model_copy(
-                    update={
-                        "status": completion.status,
-                        "result_id": result.id,
-                        "completed_at": now,
-                        "active_duration_ms": add_active_duration(
-                            active_duration_ms=item.active_duration_ms,
-                            active_started_at=item.active_started_at,
-                            now=now,
-                        ),
-                        "waiting_duration_ms": add_waiting_duration(
-                            waiting_duration_ms=item.waiting_duration_ms,
-                            waiting_started_at=item.waiting_started_at,
-                            now=now,
-                        ),
-                        "active_started_at": None,
-                        "waiting_started_at": None,
-                        "wall_clock_duration_ms": elapsed_ms(item.created_at, now),
-                        "updated_at": now,
-                    }
-                )
-                attempt = attempt.model_copy(
-                    update={
-                        "status": completion.status,
-                        "completed_at": now,
-                        "active_duration_ms": add_active_duration(
-                            active_duration_ms=attempt.active_duration_ms,
-                            active_started_at=attempt.active_started_at,
-                            now=now,
-                        ),
-                        "waiting_duration_ms": add_waiting_duration(
-                            waiting_duration_ms=attempt.waiting_duration_ms,
-                            waiting_started_at=attempt.waiting_started_at,
-                            now=now,
-                        ),
-                        "active_started_at": None,
-                        "waiting_started_at": None,
-                        "wall_clock_duration_ms": elapsed_ms(attempt.claimed_at, now),
-                    }
-                )
-                self._write_item(cur, item)
-                self._write_attempt(cur, attempt)
-                self._refresh_run_in_cursor(
-                    cur,
-                    item.run_id,
-                    now,
-                    status_deltas=[("running", completion.status)],
-                    active_duration_delta_ms=active_duration_delta_ms,
-                    waiting_duration_delta_ms=waiting_duration_delta_ms,
-                )
+                return self._complete_item_in_transaction(cur, item_id, lease_token, completion, now)
+
+    def _complete_item_in_transaction(
+        self, cur, item_id: str, lease_token: str, completion: RunItemCompletion, now: datetime,
+    ) -> TestCaseResultRecord:
+        """Original generic completion, using only the caller's transaction.
+
+        The reservation guard still applies here, including idempotent reads.
+        This is not a controlled-case settlement or an owner-check bypass.
+        """
+        item = self._lock_item(cur, item_id)
+        if item.result_id:
+            result = self._get_result_in_cursor(cur, item.result_id)
+            attempt = self._get_attempt_by_id(cur, result.attempt_id)
+            require_generic_result_write(attempt)
+            if (
+                attempt.lease_token == lease_token
+                and result.payload_hash == completion.payload_hash
+            ):
+                return result
+            raise ValueError(f"Test run item already completed: {item_id}")
+        self._validate_lease(item, lease_token, now, {"running"})
+        attempt = self._lock_attempt(cur, item_id, lease_token)
+        require_generic_result_write(attempt)
+        return self._complete_locked_item_in_transaction(cur, item, attempt, completion, now)
+
+    def _complete_locked_item_in_transaction(
+        self, cur, item: TestRunItemRecord, attempt: TestRunAttemptRecord,
+        completion: RunItemCompletion, now: datetime,
+    ) -> TestCaseResultRecord:
+        """Original result/item/attempt/totals writer; never opens or commits a connection.
+
+        Internal primitive, like _write_item/_write_attempt: its caller must
+        hold the original locks and validate execution authority before writing.
+        It does not grant settlement or recovery authority to a reserved case.
+        """
+        active_duration_delta_ms = elapsed_ms(item.active_started_at, now)
+        waiting_duration_delta_ms = elapsed_ms(item.waiting_started_at, now)
+        result = TestCaseResultRecord(
+            id=str(uuid4()),
+            run_id=item.run_id,
+            run_item_id=item.id,
+            case_id=item.case_id,
+            case_version_id=item.case_version_id,
+            regression_source_result_id=item.regression_source_result_id,
+            attempt_id=attempt.id,
+            attempt_no=attempt.attempt_no,
+            created_at=now,
+            **completion.model_dump(mode="python"),
+        )
+        cur.execute(
+            f"INSERT INTO {self._result_table} "
+            "(id, run_id, run_item_id, case_id, case_version_id, "
+            "regression_source_result_id, attempt_id, status, payload_hash, "
+            "created_at, record) "
+            "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb)",
+            (
+                result.id,
+                result.run_id,
+                result.run_item_id,
+                result.case_id,
+                result.case_version_id,
+                result.regression_source_result_id,
+                result.attempt_id,
+                result.status,
+                result.payload_hash,
+                result.created_at,
+                self._json(result),
+            ),
+        )
+        item = item.model_copy(
+            update={
+                "status": completion.status,
+                "result_id": result.id,
+                "completed_at": now,
+                "active_duration_ms": add_active_duration(
+                    active_duration_ms=item.active_duration_ms,
+                    active_started_at=item.active_started_at,
+                    now=now,
+                ),
+                "waiting_duration_ms": add_waiting_duration(
+                    waiting_duration_ms=item.waiting_duration_ms,
+                    waiting_started_at=item.waiting_started_at,
+                    now=now,
+                ),
+                "active_started_at": None,
+                "waiting_started_at": None,
+                "wall_clock_duration_ms": elapsed_ms(item.created_at, now),
+                "updated_at": now,
+            }
+        )
+        attempt = attempt.model_copy(
+            update={
+                "status": completion.status,
+                "completed_at": now,
+                "active_duration_ms": add_active_duration(
+                    active_duration_ms=attempt.active_duration_ms,
+                    active_started_at=attempt.active_started_at,
+                    now=now,
+                ),
+                "waiting_duration_ms": add_waiting_duration(
+                    waiting_duration_ms=attempt.waiting_duration_ms,
+                    waiting_started_at=attempt.waiting_started_at,
+                    now=now,
+                ),
+                "active_started_at": None,
+                "waiting_started_at": None,
+                "wall_clock_duration_ms": elapsed_ms(attempt.claimed_at, now),
+            }
+        )
+        self._write_item(cur, item)
+        self._write_attempt(cur, attempt)
+        self._refresh_run_in_cursor(
+            cur,
+            item.run_id,
+            now,
+            status_deltas=[("running", completion.status)],
+            active_duration_delta_ms=active_duration_delta_ms,
+            waiting_duration_delta_ms=waiting_duration_delta_ms,
+        )
         return result
 
     def _mark_waiting_approval_sync(
@@ -3363,7 +3403,9 @@ class PostgresTestRunStore:
                 if item.approval_id != approval_id:
                     raise ValueError(f"Run item is not bound to this approval: {item_id}")
                 if item.result_id:
-                    return self._get_result_in_cursor(cur, item.result_id)
+                    existing = self._get_result_in_cursor(cur, item.result_id)
+                    require_generic_result_write(self._get_attempt_by_id(cur, existing.attempt_id))
+                    return existing
                 if item.status != "waiting_approval":
                     raise ValueError(f"Run item is not waiting for this approval: {item_id}")
                 if completion.status != "blocked":
@@ -3371,6 +3413,7 @@ class PostgresTestRunStore:
                 if not item.lease_token:
                     raise ValueError(f"Waiting run item has no preserved lease token: {item_id}")
                 attempt = self._lock_attempt(cur, item_id, item.lease_token)
+                require_generic_result_write(attempt)
                 waiting_duration_delta_ms = elapsed_ms(item.waiting_started_at, now)
                 result = TestCaseResultRecord(
                     id=str(uuid4()),

@@ -441,6 +441,27 @@ schema5下原分项／派生 Memory 回执写入保留评估，完整应用证�
 业务审批继续、失租后的正式恢复、独立 case Worker 强杀、main／逐模式／真实领域与 E3/E4
 仍保留为独立验收出口。测试证据与剩余范围见实施记录 §194。
 
+### 正式 case 完成旁路封闭与原 RunStore 事务核（v4 E／§12.1）
+
+原 `complete_item` 和 `complete_denied_approval` 现在均拒绝原 attempt 的
+`checkpoint_key=controlled_case_admission`，包括已存在 result 的重复确认分支；
+内存与 PG 存储保持一致。识别依据是已有精确保留 key，不解析、降级或覆盖未知 checkpoint。
+旧 `agent_case_execution`／其他非受控 key 的合法完成与幂等语义不变。
+通用 HTTP 完成接口沿既有 ValueError 映射返回409，不新增请求字段或绕过开关。
+拒绝时记录 `controlled_case_result_atomic_writer_required`，reason 为
+`controlled_case_atomic_settlement_required`，不把 lease 或原 payload 写入日志。
+
+原 PG 完成路径抽为 `_complete_item_in_transaction`，只使用调用方 cursor，仍执行原幂等、
+lease 校验及上述保留检查。原结果／item／attempt／时长／run totals 写入算法统一移入
+`_complete_locked_item_in_transaction`，没有复制另一套完成算法。
+后者只是与 `_write_item` 同级的内部存储原语：调用方必须持原锁并完成权限核验，
+它不是可供 Worker／HTTP 调用的结算端口，不自行创建连接、commit、重试或发起执行。
+
+这一步只封闭两个完成入口的半提交旁路并准备原事务核，不补造既存半结果的结算证明，
+也不代表所有历史异常或领取／回收路径已验收。正式双 owner 结算、原子证明、终态只读 ACK、
+业务审批继续及失租恢复仍待实现；不以 Session completed 或原 Assessment 资产替代它们。
+main／CLI／生产 Worker 装配、checkpoint 版本与默认能力开关均未改变。证据见实施记录 §195。
+
 ### 原路由与恢复验证
 
 关闭新选路时记录 `deep_agent_new_turn_route_disabled`，带 `session_id`、`turn_id` 和 `recovery_reason=new_turn_admission_disabled`；这是路由决定，不是取消/停止回执。

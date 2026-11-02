@@ -9327,3 +9327,61 @@ v4 E／§12.1 → 本节 → 13个生产文件＋新专项＋旧基线契约测�
 当前Assessment只是原准备资产：AgentTask仍running、RunItem仍无result_id，原finish(completed)仍拒绝，未覆盖原结果或重置旧任务／attempt。下一依赖是复用原RunStore完成事务，将原评估内容、原应用proof、双租约与RunItem／attempt／run totals／AgentTask终态作fenced原子结算，而不是调用两个独立提交或复制完成算法；后续还需原业务审批继续、正式失租恢复／Memory只读对账、独立case Worker强杀、main与逐模式有效输入／质量及E3／E4制品、备份恢复验收。
 
 完整v4范围A2/A3/B/C/D/E/F、H01–H12、历史异常／空结构化结果／流式／取消出口未缩小，goal保持active，不标complete。未执行Docker、启动／重启服务、付费供应商／embedding、实际MySQL／RustFS／领域Runner、全资源main、双制品部署、一致备份恢复、性能基线、独立backend lint／typecheck、全量前后端或浏览器验收；这不代表这些出口已通过。整体剩余仍粗估 **4–8周有效开发／验收**，外部授权、环境和人工发布等待另计，非承诺；本子步通过不替代完整系统验收。
+
+## 195. E／§12.1：封闭正式 case 完成旁路并抽取原 RunStore 事务核（2026-11-02）
+
+### 续接、根因与范围
+
+续接 §194／0e32ac3b0，核原 RunStore 与 AgentTask 完成事务后，发现直接组合前必须先修复的边界缺口：原 generic complete_item 能独立插入已保留 controlled_case_admission 的结果，并完成 item／attempt／run totals，而 AgentTask 不在该事务中；complete_denied_approval 及重复结果返回也没有保留检查。已有 Session proof／Assessment 不是该旁路的完成许可。这里是原事务组合边界缺失，不另造裁决或以一个 skip_owner／allow_controlled 开关绕过执行权。
+
+本轮先收敛为可独立验证的前置修复，不谎称已完成原先待实现的双 owner 原子结算／终态 ACK。依据 run_store.require_generic_checkpoint_write 的精确保留 key → 同级 require_generic_result_write；依据原 _mark_waiting_approval_sync／_mark_waiting_approval_in_transaction → 完成入口同样使用调用方 cursor；依据原 _complete_item_sync → 原写入算法移入唯一内部事务核。课程 Agent轨迹与协议鲁棒性.html §04.5 的重复执行／幂等断言与 v4 §12.1 的不可重置原结果 → 拒绝把历史半结果当作完整结算 ACK，合法非受控原结果仍幂等只读。
+
+生产仅改 src/application/test_runs/run_store.py；新增 tests/test_controlled_case_completion_boundary.py，补正 tests/test_live_postgres_concurrency.py 的两项既有夹具，更新 docs/runtime-route-controls.md 与本记录，共5文件。未改 Assessment／Session finalizer／原图／任务状态事务、DDL、依赖、checkpoint schema／Worker 能力版本、main／CLI／生产路由或前端源码。默认 controlled_case_available=false 不变。UV→Conda／pip 已完成的迁移不重复；用户 v3 草稿不纳入本轮。
+
+### 原完成边界与可组合事务核
+
+内存与 PG 的 complete_item、complete_denied_approval，在首次结果写入及已有结果返回分支，读取原 attempt 的精确 checkpoint key；只有 controlled_case_admission 被拒绝。不解析或升级保留 payload，旧／未来版本及未知字段都不会被丢弃或降级；合法 agent_case_execution、普通断言或无 key 完成不受影响。错误为 ValueError("Controlled case result requires its atomic settlement")，HTTP 继续使用既有409映射，无 DTO 改动。日志 controlled_case_result_atomic_writer_required 携原 run／item／attempt 与 recovery_reason=controlled_case_atomic_settlement_required，不输出租约能力／输入／原结果。
+
+_complete_item_sync 只开原连接并委托 _complete_item_in_transaction；后者保留原 item 锁、结果／payload hash 幂等、lease 校验及 attempt 锁，并执行上述保留检查。结果插入、item／attempt 终态、原 active／waiting／wall-clock 时长及 run totals，统一移入 _complete_locked_item_in_transaction，未复制算法。实际读取 git show HEAD 的原方法，去掉事务包裹并比对写入语句与 return 的完整 AST，与新内部核逐语句相同。
+
+内部核与 _write_item／_write_attempt 一样是存储原语，不是外部结算入口：调用方须持原锁并核执行权；它不打开连接、不 commit、不自动重试、不调用模型／工具、不授予恢复资格。通用事务入口仍拒绝保留 case；没有加入绕过参数。未来唯一受控结算应在 Session→plan→item／attempt→owner／task 锁和写前 DB clock 双租约核验后，复用此核，再与 AgentTask／attempt、Session lease 和稳定证明一起提交。不能串联两个独立提交，也不能结算后伪造 live owner 读 ACK。
+
+### TDD、真实失败与夹具修正
+
+首项真实 PG 红测实际 **1 failed，19.72秒**，失败为 DID NOT RAISE ValueError：原正式草稿→评审→启用、Suite／Run、claim／start、原受理后的 complete_item 接受了不应独立完成的结果。新拒绝审批反例以 git show HEAD 原 _complete_denied_approval_sync 在新进程内加载，实际 **1 failed，7.70秒**，同为 DID NOT RAISE；未覆盖工作区或替换测试断言。该诊断因预加载 anyio 有1条 PytestAssertRewriteWarning，不冒充普通 pytest 结果。
+
+扩展专项首次实际 **1 failed、13 passed，69.18秒**：调用方事务事件夹具漏传既有 ExecutionEvent 必填 timestamp，尚未走到预期主动回滚。按原 DTO 补固定 now，调用方先锁原 Session，不改生产事件协议。随后完整专项实际 **33 passed，91.08秒，exit0**，无 skip／deselect。覆盖实际原受理、三种结论拒绝、Store／事务／Service／HTTP、schema5 原评估不构成 generic 完成许可、拒绝审批、原缺陷半结果重复 ACK 拒绝、四处真实 SQL 回滚、同事务结果与事件、完整 completion／身份／时长／totals、原结果幂等与 payload／token 冲突、四并发仅写一次，以及内存保留1–5／未知99格式和非受控 key 兼容。历史半结果反例只在隔离表中用经 AST 核对的原存储核制造旧缺陷事实，不将其称为合法受控结算。
+
+扩大14文件回归首次实际 **1 failed、171 passed、32 skipped，182.87秒，exit1**，失败在 test_live_postgres_claims_each_item_once_without_deadlock：UndefinedTable，fixture 的 live_result_<随机后缀> 不存在；后续正式／task 组因脚本显式停在非零结果而没有启动。原 _create_claim_tables 只建 run／item／attempt，当前依赖感知领取即使空依赖也解析 result join。只在独立进程从 git show HEAD 加载完整原 PostgresTestRunStore，以未修改失败测试再现 **1 failed，2.41秒**，相同缺表；诊断有1条预加载 anyio 警告。没有为此改生产 SQL、跳过测试或吞掉 UndefinedTable。
+
+仅扩展该测试 helper 的显式 result_table 参数，要求与隔离 settings 的目标一致；未传时保持原三表行为，不隐式创建默认／共享结果表。两个使用随机独立 result 配置的领取／独立进程接管用例显式建表，清理包含本轮结果表。DDL 复用现有 duration／capacity 测试的实际字段，不调用带正式 case 外键的全资源初始化。两项定向实际 **2 passed，26.12秒，exit0**；新增无 DB 反例要求配置不符时连接前拒绝。其他 helper 消费方保留原调用，未扩展它们的环境能力声明。
+
+### 最终源码回归与证据边界
+
+backend 工作目录 Agent_Server；每个 PG／Redis 组先执行 scripts/clear_uv_environment.ps1 -ProcessOnly，固定 E:\MiniConda3\envs\Agent\python.exe，设置 PYTHONIOENCODING=utf-8、RUN_LIVE_POSTGRES_TESTS=1、RUN_LIVE_REDIS_TESTS=1、RUN_LIVE_DOCKER_TESTS=0、RUN_LIVE_MYSQL_TESTS=0、RUN_LIVE_PLAN_RUN_CREATION=0、QA_FRAMEWORK_WORKER_DIAGNOSTICS=1。不启动／重启服务、不调用付费模型，stdout＋stderr 完整保留在未提交 .codex-logs；长 handle 不因等待而重启。
+
+~~~powershell
+& E:\MiniConda3\envs\Agent\python.exe -u -m pytest tests/test_controlled_case_completion_boundary.py tests/test_test_run_lifecycle.py tests/test_test_run_postgres_claim.py tests/test_test_run_duration_transitions.py tests/test_test_run_regression.py tests/test_run_item_dependencies.py tests/test_run_plan_projection_lock.py tests/test_case_execution_service.py tests/test_case_execution_verification.py tests/test_agent_case_execution.py tests/test_cancelled_run_missing_approval_recovery.py tests/test_live_postgres_concurrency.py tests/test_test_run_outbox_transaction.py tests/test_test_run_timing.py -q -x -rs --tb=short --show-capture=no --log-level=INFO
+~~~
+
+上述14文件完整重跑实际 **181 passed、32 skipped，193.20秒，exit0，无deselect**，日志 e195-run-store-final-2.log，原 handle 已取回完整摘要及 RUN_STORE_PYTEST_EXIT_CODE=0。含新专项33项，不重复累加；32项为原领域依赖／计划锁／实际 MySQL／RustFS／完整 Worker 的显式 opt-in，未开启，不能算通过。实际覆盖普通原结果／幂等、拒绝审批、时长、领取与事务回滚、公开完成接口、内存领域样本，及隔离 PG／Redis 的原并发／进程领取／接管等；后者不是独立受控 case AgentTask 强杀验收，也不是性能基线。
+
+四个 RUN_LIVE 开关全0、RUN_LIVE_PLAN_RUN_CREATION=0，以相同 pytest 后缀重跑新专项，最终源码实际 **15 passed、18 skipped，11.32秒，exit0**，日志 e195-boundary-optout-final.log（此前同组为15／18、11.62秒）。这15项只证明内存保留 key／普通完成兼容，18项是显式未运行的真实服务用例，不计为通过。
+
+固定 Python 实际运行 compileall -q Agent_Server/src Agent_Server/tests 及 pip check，均exit0，后者 No broken requirements found；在最后测试 helper 修改后重新执行。ruff／mypy 均未安装，未新增依赖，独立 backend lint／typecheck 未运行。无前端源码／DTO 改动，本轮未重跑前端 typecheck、测试、build 或浏览器；不借用 §194 的历史绿色结果代表本轮执行。
+
+~~~powershell
+& E:\MiniConda3\envs\Agent\python.exe -u -m pytest tests/test_controlled_case_admission.py tests/test_controlled_case_execution_lease.py tests/test_controlled_case_assessment.py tests/test_controlled_case_finalization.py tests/test_agent_task_dispatch.py tests/test_agent_v2_worker_contract.py -q -x -rs --tb=short --show-capture=no --log-level=INFO
+~~~
+
+上述正式来源／双租约／原 Assessment／唯一 finalizer／调度及 Worker 契约6文件实际 **528 passed，1052.01秒，exit0，无skip／deselect**，日志 e195-formal-task-final.log。与最终14文件组在同一串行 handle 中执行，现已取回完整终态及 FORMAL_TASK_PYTEST_EXIT_CODE=0，未将中间进度点当全绿。沿真实原服务草稿→评审→启用、冻结 Suite／Run、原 PG claim／start／受理／双 owner、官方框架与本地模型 HTTP／工具替身、真实 PG／Redis 及原应用 proof／Assessment 验证；不是实际供应商、领域 Runner 或生产入口验收。
+
+最终 src 聚合 SHA256 为 06b6149473c364d14a5a75944489449fbde126aa955e95b1a0f304720c62fba1（865个py）；tests 为 1f7230e1f1eb1982e083c6b0d4985820fc88edda3cdcb6d656cb28d0abb27fd2（666个py）。算法仍为工作区相对 POSIX 路径排序，UTF-8路径＋NUL＋原字节＋NUL。最终181／528组使用同一源码与测试字节，运行中只更新文档，没有改 Python 源码或测试。最初专项33项后的唯一测试变动是上述并发夹具修正及其无 DB 反例，未改新专项；没有把最初失败组当成最终通过。
+
+### 对应、交付与剩余出口
+
+v4 E／§12.1 → §195 → 1生产＋2测试＋2文档 → 真实旁路红测／原算法 AST 核对／33专项、181＋528两组、32项明确skip、opt-out与compileall／pip check → 独立提交“【fix】封闭正式用例完成旁路并复用原事务核”，实际ID见Git与交付。暂存仅本轮5文件；新测试按既有ignore惯例精确单文件加入，不扩大ignore／force范围；不纳入用户v3、日志、认证、环境或制品，不推送、不建PR。新增行敏感模式检查不是完整安全审计。
+
+本轮没有写正式 ControlledCaseSettlement 端口或 checkpoint6，不宣称把 RunItem 与 AgentTask 原子结算成功，也未补做终态 ACK／失租恢复。下一步复用本轮原事务核：先建立严格原子结算证明及真实故障测试，再在同连接核原 Assessment／应用 proof／输入／证据与双租约，原子完成 result／item／attempt／totals／task／task attempt／owner／Session lease；终态只读必须先核完整结算原件，不能向普通 live reader 添加宽泛跳过 owner 参数。保留 failed／blocked，不把 Session completed 或模型自报通过转成 case passed。
+
+业务审批继续、正式失租后的恢复／只读 Memory 对账、独立受控case Worker强杀、main与逐模式有效输入／质量、真实供应商／领域Runner、E3/E4制品／备份恢复、性能基线仍未完成；也未声称这两个完成入口的修复覆盖所有历史异常或领取／回收路径。未执行Docker、启动／重启服务、付费模型、实际MySQL／RustFS或全量前后端验收。完整v4范围和H01–H12不缩小，goal保持active，不标complete／paused／blocked。整体剩余仍粗估 **4–8周有效开发／验收**，环境、授权及人工发布等待另计，非承诺。
