@@ -23,6 +23,7 @@ from src.runtime.task_deferred import TaskDeferred
 from src.runtime.framework_worker_capabilities import FrameworkWorkerCapabilities
 from src.runtime.framework_message_stages import FrameworkMessageStageRecoveryRequired
 from src.schemas.runtime_binding import RuntimeBinding
+from src.schemas.controlled_case_approval_wait import ControlledCaseApprovalWaitReceipt
 from src.schemas.agent_task import (
     AgentTaskAccepted,
     AgentTaskCommand,
@@ -43,6 +44,12 @@ from src.schemas.session import (
 )
 
 LOGGER = logging.getLogger(__name__)
+
+
+def _case_receipt_fields(receipt):
+    if isinstance(receipt, ControlledCaseApprovalWaitReceipt):
+        return {"result_status": "waiting_approval", "wait_sha256": receipt.receipt_sha256}
+    return {"result_status": "completed", "result_id": receipt.result_id}
 
 
 def _task_type(value) -> str:
@@ -810,7 +817,7 @@ class AgentTaskDispatcher:
             if stored.status in TERMINAL_AGENT_TASK_STATUSES:
                 receipt = await runtime.acknowledge_delivery(delivery, capabilities=capabilities)
                 LOGGER.info("agent_case_delivery_acknowledged", extra={"task_id": task.id,
-                    "worker_id": worker_id, "result_id": receipt.result_id, "automatic_replay": False})
+                    "worker_id": worker_id, **_case_receipt_fields(receipt), "automatic_replay": False})
                 return
             capabilities.require(command.runtime_binding, operation=command.operation)
             runtime.require_dispatch_ready(stored, capabilities=capabilities)
@@ -853,14 +860,21 @@ class AgentTaskDispatcher:
                 if monitor in done:
                     await monitor
                 outcome = await execution
-                if outcome.settlement_receipt is None:
+                receipt = outcome.settlement_receipt
+                if outcome.approval_wait_receipt is not None:
+                    if receipt is not None:
+                        raise ValueError("Controlled execution cannot both park and settle")
+                    receipt = await runtime.acknowledge_delivery(delivery, capabilities=capabilities)
+                    if receipt != outcome.approval_wait_receipt:
+                        raise ValueError("Controlled execution wait differs from its acknowledged original")
+                if receipt is None:
                     reason = ("framework_case_approval_projection_unavailable"
                         if outcome.graph_outcome.native_interrupts else "framework_case_result_unsettled")
                     raise TaskDeferred(reason)
                 completed = True
                 LOGGER.info("agent_case_execution_committed", extra={"task_id": task.id,
                     "attempt_id": task.attempt_id, "worker_id": worker_id,
-                    "result_id": outcome.settlement_receipt.result_id, "automatic_replay": False})
+                    **_case_receipt_fields(receipt), "automatic_replay": False})
         except asyncio.CancelledError:
             LOGGER.warning("agent_case_execution_receipt_unknown", extra={"task_id": task.id,
                 "attempt_id": task.attempt_id, "worker_id": worker_id, "automatic_replay": False})

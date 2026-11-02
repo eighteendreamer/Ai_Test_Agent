@@ -16,7 +16,7 @@ from psycopg.rows import dict_row
 
 from src.application.deep_agents.checkpoint_provider import checkpoint_serializer
 from src.application.deep_agents.fenced_postgres_saver import BoundPostgresReader
-from src.application.deep_agents.native_interrupts import collect_pending_tool_interrupts_from_snapshot
+from src.application.deep_agents.native_interrupts import collect_pending_tool_interrupts_from_snapshot, _source_call
 from src.application.runtime.framework_native_schema import native_graph_schema
 from src.runtime.framework_approval_journal import FrameworkApprovalJournal, FrameworkApprovalRecoveryRequired
 from src.schemas.controlled_case_graph_input import parse_controlled_graph_input
@@ -25,6 +25,53 @@ from src.schemas.runtime_binding import RuntimeCheckpointSource
 
 
 logger = logging.getLogger(__name__)
+
+
+def require_historical_tool_interrupts_original(cur, settings, source, graph_input, identities):
+    """Exact retained checkpoints, NOT the latest pending batch or resume grant.
+
+    The atomic business wait receipt proves batch completeness. Reuse the
+    native journal's interrupt identity and the same source-AI kernel as live
+    projection, but do not require historical tasks to remain unconsumed.
+    """
+    original = parse_controlled_graph_input(graph_input)
+    if original.binding != source.binding or not identities:
+        raise FrameworkApprovalRecoveryRequired("Historical wait has no matching frozen native input")
+    with cur.postgres_driver_connection() as connection, connection.cursor(row_factory=dict_row) as native_cur:
+        native_cur.execute("SELECT current_setting('search_path') AS path")
+        path = native_cur.fetchone()["path"]
+        native_cur.execute("SELECT set_config('search_path', %s, true)",
+            (sql.Identifier(settings.deep_agents.checkpoint_schema).as_string(connection),))
+        try:
+            reader = BoundPostgresReader(connection, source=source, serde=checkpoint_serializer())
+            graph = native_graph_schema(original, source=source, saver=reader)
+            journal = FrameworkApprovalJournal(settings, serde=reader.serde)
+            snapshots = {}
+            for identity in identities:
+                key = (identity.checkpoint_namespace, identity.checkpoint_id)
+                config = {"configurable": {"thread_id": source.binding.thread_id,
+                    "checkpoint_ns": key[0], "checkpoint_id": key[1]}}
+                if key not in snapshots:
+                    checkpoint = reader.get_tuple(config)
+                    original.require_checkpoint(checkpoint)
+                    snapshot = graph.get_state(config, subgraphs=True)
+                    if (snapshot.config["configurable"].get("checkpoint_id") != key[1]
+                        or snapshot.metadata.get("source") != "loop"):
+                        raise FrameworkApprovalRecoveryRequired("Historical wait native checkpoint changed")
+                    snapshots[key] = snapshot
+                snapshot = snapshots[key]
+                rows = journal.pending_task_in_transaction(native_cur, source.binding,
+                    reader._storage_config(config), identity.graph_task_id)
+                journal._assert_native_interrupt(identity, rows.get("__interrupt__"))
+                message, _ = _source_call(snapshot.values.get("messages", []),
+                    identity.tool_call_id, identity.tool_name, identity.arguments)
+                if message.id != identity.source_message_id:
+                    raise FrameworkApprovalRecoveryRequired("Historical wait source AI identity changed")
+        finally:
+            native_cur.execute("SELECT set_config('search_path', %s, true)", (path,))
+    logger.info("framework_historical_wait_originals_read", extra={"task_id": source.task_id,
+        "binding_id": source.binding.binding_id, "interrupt_count": len(identities),
+        "scope": "historical_native_wait_only", "automatic_replay": False})
 
 
 def require_pending_tool_interrupts_original(cur, settings, source, graph_input, expected):

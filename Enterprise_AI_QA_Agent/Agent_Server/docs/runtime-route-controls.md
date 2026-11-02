@@ -839,6 +839,38 @@ RuntimeTurnResult。**main／Dispatcher 不安装本端口**，带该可选服�
 专用只读停车原件复核／Redis ACK、决定准入／双归属后继、恢复和正式停车跨进程强杀仍待实现。
 新增内部 Python 回执格式和可选结果字段，无数据库 DDL、公共 HTTP 或依赖变更。
 
+### 正式停车历史原件 ACK 与 Worker 组合（§209，非决定／恢复权限）
+
+本节更新 §208 当时的接线边界：main 现在将同一个 FrameworkApprovalProjection 实例交给
+RuntimeService 和 ControlledCaseApprovalWaits，正式 Dispatcher 可识别 approval_wait_receipt。
+只有完整执行组合且 Worker 支持 controlled_case_approval_wait_max_version=1 时，才允许首次领取；
+默认 controlled_case_available 仍为 false，不因安装读者或 main 接线开放生产 writer。
+
+首次执行完成原子停车后，Dispatcher 还必须调用专用 acknowledge_delivery 复核持久原件，
+回执与本次返回一致才能正常返回给原 RedisTaskWorker；只有原 Worker 的 ack_owned 确认投递。
+重复投递按持久 Task.result_status 显式分流，不尝试 settlement 失败后 fallback。停车日志使用
+wait_sha256／result_status=waiting_approval，不伪装 result_id 或正式用例完成。旧 settlement 读者
+仍不接受停车 scope；缺读者、不兼容、原件缺失或漂移保持 pending，不通用 finish／fail 或重跑图。
+
+专用只读核沿原 reference-only delivery、冻结输入和 admission、原 Task／AgentAttempt 身份、
+完整 claim／execution_returned 事件摘要、原子停车审计及全批 link／业务身份复核。
+模型账本只取 created_at 不晚于原数据库停车时刻的保留调用，并与原根预算、已结记录完整摘要
+比较；后来新增调用不成为旧 ACK 的材料。历史 native 按 link 的精确 checkpoint_id／namespace
+在调用方同一 PostgreSQL 连接读取，复用官方 get_tuple／get_state、source-only saver、原 interrupt
+journal 和来源 AI 核；不读“最新根”代替原件，不放开 saver 的决定／写入端口，不部署表或 invoke。
+原件拒绝日志包含 original_stage、Task／binding 和 error_type，不记录 token、参数或响应正文。
+
+旧 ACK 不要求当前 Session 仍 waiting、当前 RuntimeOwner 仍原 epoch、RunItem 未被合法取消，
+也不要求历史 interrupt 尚未有后来 resume。它不覆盖人工决定或当前 Job 状态，不把后来的变化
+还原成停车时状态。receipt 格式解析本身仍不是 ACK：缺原输入、原审计、原 batch 或历史 native
+不能修复或合成。取消等待者不证明 SQL 已停止；提交后回执丢失／Redis ACK 丢失只走原件确认。
+
+真实隔离 PG／Redis 与本机 HTTP 已覆盖首次停车、重复只读、SQL／Redis 回执丢失和取消等待者
+后 SQL 仍提交，另有手工隔离后续根／resume／owner 变化及真实 RunStore 取消的历史读取测试。
+这些后续材料不构成正式决定受理或恢复授权；本轮未验收正式停车独立进程强杀、真实供应商／
+领域 Runner 或完整 main lifespan。普通决定入口仍隔离正式审批，专用决定准入／双归属后继与
+继续执行尚待实现。无公共 HTTP／数据库 schema／依赖变更。
+
 ### 原路由与恢复验证
 
 关闭新选路时记录 `deep_agent_new_turn_route_disabled`，带 `session_id`、`turn_id` 和 `recovery_reason=new_turn_admission_disabled`；这是路由决定，不是取消/停止回执。

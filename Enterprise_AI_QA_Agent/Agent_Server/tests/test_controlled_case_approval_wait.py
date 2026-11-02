@@ -324,11 +324,11 @@ async def test_prior_real_tool_return_is_distinct_from_an_unconfirmed_terminal_l
     assert len(p.requests) == 1 and p.effects == []
 
 
-def test_explicit_in_process_wait_does_not_advertise_unimplemented_redis_wait_ack():
+def test_explicit_wait_alone_does_not_advertise_full_redis_execution_composition():
     from src.application.runtime.controlled_case_runtime import ControlledCaseRuntime
 
     runtime = ControlledCaseRuntime(runtime_service=None, approval_wait_service=object())
-    with pytest.raises(ValueError, match="dedicated delivery ACK"):
+    with pytest.raises(ValueError, match="executor, finalizer, assessment and settlement"):
         runtime.require_dispatch_ready(None, capabilities=None)
 
 

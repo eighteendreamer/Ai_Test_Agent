@@ -1,4 +1,4 @@
-"""Compose the original formal wait kernels; no new scheduler or ACK path.
+"""Original atomic wait and its read-only historical delivery ACK.
 
 No upstream counterpart (checked: RunStore approval wait, formal settlement,
 native batch projection, Worker activity, v4 §7/§12.1): native interrupts do
@@ -19,11 +19,13 @@ from src.runtime.execution_context import current_framework_owner, current_graph
 from src.runtime.framework_approval_journal import FrameworkApprovalRecoveryRequired
 from src.runtime.framework_tool_activity import read_tool_activity
 from src.runtime.framework_worker_activity import read_worker_activity
+from src.runtime.framework_application_projection import _require_event_intent
 from src.runtime.postgres_framework_model_calls import PostgresFrameworkModelCalls
 from src.runtime.postgres_runtime_owner import assert_runtime_owner, configure_runtime_owner_transaction, lock_owner_row
 from src.runtime.store import ContinuationLeaseLostError
 from src.schemas.controlled_case_approval_wait import ControlledCaseApprovalWaitReceipt
 from src.schemas.framework_approval import NativeToolInterrupt, approval_value_hash
+from src.schemas.framework_model_call import FrameworkModelBudgetSnapshot
 from src.schemas.session import ExecutionEvent
 from src.schemas.tool_job import ToolOutputObservation
 
@@ -41,11 +43,160 @@ def _event_hash(row):
     return approval_value_hash(ExecutionEvent.model_validate(row).model_dump(mode="json"))
 
 
+def approval_wait_event(receipt, binding):
+    return ExecutionEvent(id=str(uuid5(NAMESPACE_URL, "controlled-case-approval-wait:" + receipt.task_id)),
+        session_id=binding.session_id, type="test_run.case_approval_waiting", timestamp=receipt.parked_at,
+        payload={"turn_id": binding.turn_id, "task_id": receipt.task_id, "attempt_id": receipt.attempt_id,
+            "owner_epoch": receipt.owner_epoch, "run_id": receipt.run_id, "run_item_id": receipt.run_item_id,
+            "run_item_execution_attempt_id": receipt.run_item_execution_attempt_id,
+            "wait_sha256": receipt.receipt_sha256, "approval_ids": [item.approval_id for item in receipt.batch]})
+
+
 class ControlledCaseApprovalWaits:
     def __init__(self, tasks, *, projection):
         if projection._settings != tasks._settings or projection._sessions is not tasks._sessions:
             raise ValueError("Controlled wait requires the original shared projection transaction")
         self._tasks, self._projection = tasks, projection
+
+    async def acknowledge_delivery(self, delivery, *, capabilities):
+        scope = {"operation": "historical_approval_wait_ack"}
+        try:
+            command = deepcopy(capabilities.require_command_format(delivery))
+            scope["task_id"] = command.task_id
+            capabilities.require_runtime_artifact(command.runtime_binding)
+            receipt = await asyncio.to_thread(self._delivery_original, command, capabilities)
+        except (Exception, asyncio.CancelledError) as exc:
+            logger.warning("controlled_case_approval_wait_ack_unsettled", extra={**scope,
+                "error_type": type(exc).__name__, "recovery_reason": "approval_wait_originals_unsettled",
+                "automatic_replay": False})
+            raise
+        logger.info("controlled_case_approval_wait_acknowledged", extra={**scope,
+            "wait_sha256": receipt.receipt_sha256, "approval_count": len(receipt.batch), "automatic_replay": False})
+        return receipt
+
+    def _delivery_original(self, command, capabilities):
+        scope = {"task_id": command.task_id, "binding_id": command.runtime_binding.binding_id,
+            "original_stage": "delivery_admission", "automatic_replay": False}
+        try:
+            return self._read_delivery_original(command, capabilities, scope)
+        except Exception as exc:
+            logger.warning("controlled_case_approval_wait_original_rejected", extra={**scope,
+                "error_type": type(exc).__name__})
+            raise
+
+    def _read_delivery_original(self, command, capabilities, scope):
+        from src.application.deep_agents.native_approval_batch import require_historical_tool_interrupts_original
+        from src.runtime.controlled_case_execution import lock_case_delivery
+        from src.runtime.framework_event_completion import original_checkpoint_source
+        from src.schemas.controlled_case_task_input import parse_controlled_case_task_input
+
+        tasks, settings, binding = self._tasks, self._tasks._settings, command.runtime_binding
+        with postgres_connect(settings) as conn, conn.cursor() as cur:
+            configure_runtime_owner_transaction(cur, settings)
+            tasks._lock_session(cur, binding.session_id)  # Lock order only, NOT current Session authority.
+            case, _ = lock_case_delivery(cur, tasks, command, capabilities)
+            scope["original_stage"] = "producer_receipt"
+            cur.execute(f"SELECT * FROM {tasks._tasks} WHERE id=%s FOR SHARE", (command.task_id,))
+            task = cur.fetchone()
+            payload = task["result_payload"]
+            _require(task["status"] == "completed" and task["result_status"] == "waiting_approval"
+                and task["error_code"] is None and isinstance(payload, dict) and set(payload) == {WAIT_KEY},
+                "Controlled wait original completed producer/receipt is missing")
+            receipt = capabilities.require_case_approval_wait_format(payload[WAIT_KEY])
+            scope["original_stage"] = "producer_admission_identity"
+            source = original_checkpoint_source(cur, settings, binding, task, receipt.owner_epoch)
+            cur.execute(f"SELECT * FROM {tasks._attempts} WHERE id=%s FOR SHARE", (source.attempt_id,))
+            attempt = cur.fetchone()
+            _require(attempt is not None and attempt["status"] == "completed" and attempt["error_code"] is None
+                and attempt["finished_at"] is not None
+                and (attempt["task_id"], attempt["worker_id"], attempt["lease_token"], attempt["attempt_no"])
+                    == (task["id"], task["worker_id"], task["lease_token"], task["attempt_no"])
+                and (receipt.binding_fingerprint, receipt.task_id, receipt.attempt_id, receipt.run_id,
+                    receipt.run_item_id, receipt.run_item_execution_attempt_id, receipt.input_sha256, receipt.submission_sha256)
+                    == (binding.fingerprint, task["id"], source.attempt_id, case.item.run_id,
+                        case.item.id, case.attempt.id, case.checkpoint.input_sha256, case.checkpoint.submission_sha256)
+                and receipt.admission_sha256 == approval_value_hash(case.checkpoint.model_dump(mode="json")),
+                "Controlled wait original producer/admission identity changed")
+            scope["original_stage"] = "worker_claim_return"
+            _require(receipt.task_claim_sha256 == self._worker_fact(cur, source, task, attempt, "agent_task.claimed")
+                and receipt.task_return_sha256 == self._worker_fact(cur, source, task, attempt, "agent_task.completed"),
+                "Controlled wait original Worker claim/return changed")
+            scope["original_stage"] = "atomic_wait_audit"
+            event = approval_wait_event(receipt, binding)
+            cur.execute(f"SELECT * FROM {settings.database.postgres_event_table} WHERE id=%s FOR SHARE", (event.id,))
+            _require_event_intent(cur.fetchone(), event)
+            scope["original_stage"] = "historical_model_ledger"
+            self._historical_ledger(cur, binding, task, receipt, capabilities)
+            scope["original_stage"] = "complete_batch_links"
+            natives = self._batch_original(cur, binding, receipt, capabilities, project_id=command.project_id)
+            scope["original_stage"] = "historical_native_interrupts"
+            original = parse_controlled_case_task_input(task["input_payload"]["case_execution_input"])
+            require_historical_tool_interrupts_original(cur, settings, source, original.graph_input, natives)
+            return receipt
+
+    def _historical_ledger(self, cur, binding, task, receipt, capabilities):
+        """Freeze at the DB parking boundary; later calls are not old ACK facts."""
+        ledger = PostgresFrameworkModelCalls(self._tasks._settings)
+        cur.execute(f"SELECT policy FROM {ledger.budgets_table} WHERE binding_id=%s FOR SHARE", (binding.binding_id,))
+        budget = cur.fetchone()
+        _require(budget is not None, "Controlled wait original model budget is missing")
+        capabilities.require_model_ledger_format("budget", budget["policy"])
+        cur.execute(f"SELECT attempt_id,record FROM {ledger.calls_table} WHERE binding_id=%s "
+            "AND (record->>'created_at')::timestamptz <= %s ORDER BY record->>'created_at',attempt_id FOR SHARE",
+            (binding.binding_id, receipt.parked_at))
+        calls = []
+        for row in cur.fetchall():
+            capabilities.require_model_ledger_format("call", row["record"])
+            calls.append(ledger._decode_call(row["record"], binding.binding_id, row["attempt_id"]))
+        ledger._validate_call_owner_lineage(cur, binding, calls)
+        snapshot = FrameworkModelBudgetSnapshot(policy=budget["policy"], calls=calls)
+        expected = self._tasks._input_hash("case_execute", {"input": task["input_payload"],
+            "runtime_binding_fingerprint": binding.fingerprint, "model_budget": snapshot.policy.model_dump(mode="json")})
+        _require(expected == receipt.submission_sha256 and calls
+            and all(call.phase == "completed" and call.settled_at is not None and call.settled_at <= receipt.parked_at for call in calls)
+            and receipt.model_ledger_sha256 == approval_value_hash(snapshot.model_dump(mode="json")),
+            "Controlled wait original settled model ledger changed")
+
+    def _batch_original(self, cur, binding, receipt, capabilities, *, project_id):
+        from src.schemas.framework_approval import framework_approval_id, framework_tool_call_id
+
+        journal, settings = self._projection._journal, self._tasks._settings
+        formal = {"project_id": project_id, "run_id": receipt.run_id,
+            "run_item_id": receipt.run_item_id, "attempt_id": receipt.run_item_execution_attempt_id}
+        natives = []
+        for entry in receipt.batch:
+            cur.execute(f"SELECT * FROM {journal._links} WHERE approval_id=%s FOR SHARE", (entry.approval_id,))
+            row = cur.fetchone()
+            _require(row is not None, "Controlled wait original interrupt link is missing")
+            capabilities.require_approval_journal_format("link", row["link"])
+            cur.execute(f"SELECT * FROM {settings.database.postgres_approval_table} WHERE id=%s FOR SHARE", (entry.approval_id,))
+            approval = cur.fetchone()
+            link = journal.require_link_in_transaction(cur, binding, entry.approval_id, approval)
+            native = NativeToolInterrupt.model_validate(link.model_dump(mode="json", include=set(NativeToolInterrupt.model_fields)))
+            call_id = framework_tool_call_id(binding, native)
+            cur.execute(f"SELECT * FROM {settings.database.postgres_tool_job_table} WHERE id=%s FOR SHARE", (entry.tool_job_id,))
+            job = cur.fetchone()
+            _require((entry.tool_job_id, entry.interrupt_id, entry.native_sha256, entry.link_sha256)
+                    == (link.tool_job_id, link.interrupt_id, approval_value_hash(native.model_dump(mode="json")),
+                        approval_value_hash(link.model_dump(mode="json")))
+                and link.binding_id == binding.binding_id and link.tool_schema_version == binding.tool_schema_version
+                and entry.approval_id == framework_approval_id(binding, native) and link.business_call_id == call_id
+                and all(row[key] == value for key, value in {"binding_id": binding.binding_id,
+                    "checkpoint_ns": journal._namespace(binding, link.checkpoint_namespace), "checkpoint_id": link.checkpoint_id,
+                    "graph_task_id": link.graph_task_id, "resume_index": link.resume_index,
+                    "source_message_id": link.source_message_id, "tool_call_id": link.tool_call_id}.items())
+                and approval["metadata"].get("source") == "test_run_agent_execution"
+                and all(approval["metadata"].get(k) == v for k, v in formal.items())
+                and job is not None and job["session_id"] == binding.session_id and job["turn_id"] == binding.turn_id
+                and job["call_id"] == call_id and job["tool_key"] == link.tool_key
+                and job["id"] == self._projection._jobs.call_job_id(binding.session_id, binding.turn_id, call_id)
+                and approval_value_hash(job["input_payload"]) == approval_value_hash(native.arguments)
+                and job["metadata"].get("framework_binding_id") == binding.binding_id
+                and job["metadata"].get("framework_native_identity") == native.model_dump(mode="json")
+                and all(job["metadata"].get(k) == v for k, v in formal.items()),
+                "Controlled wait original complete batch identity changed")
+            natives.append(native)
+        return natives
 
     async def park(self, owner, *, proposals):
         scope = {"task_id": getattr(owner, "task_id", None), "operation": "approval_wait",
@@ -206,12 +357,7 @@ class ControlledCaseApprovalWaits:
                 "metadata=metadata || %s::jsonb, state_revision=state_revision+1, updated_at=clock_timestamp() WHERE id=%s",
                 (json.dumps({"pending_turn": pending, "control": control}), binding.session_id))
             tasks._clear_lease(cur, task)
-            event = ExecutionEvent(id=str(uuid5(NAMESPACE_URL, "controlled-case-approval-wait:" + owner.task_id)),
-                session_id=binding.session_id, type="test_run.case_approval_waiting", timestamp=now,
-                payload={"turn_id": binding.turn_id, "task_id": owner.task_id, "attempt_id": owner.attempt_id,
-                    "owner_epoch": owner.owner_epoch, "run_id": case.item.run_id, "run_item_id": case.item.id,
-                    "run_item_execution_attempt_id": case.attempt.id, "wait_sha256": receipt.receipt_sha256,
-                    "approval_ids": [item.approval_id for item in receipt.batch]})
+            event = approval_wait_event(receipt, binding)
             _require(tasks._sessions.append_event_in_transaction(cur, binding.session_id, event),
                 "Controlled wait audit exists without its original task receipt")
             # Authority rows have deliberately transitioned/cleared, so the

@@ -10223,3 +10223,57 @@ v4 §6.3／§7／§12.1 → §208 → 原子完整审批停车＋独立版本化
 最终组后以同一字节将PG／Redis／Docker／MySQL／PLAN_RUN_CREATION全设0，e208-optout-final.log实际**1 passed、69 skipped、8.63秒、exit0**；passed仅为无服务的显式组合准入测试，其余requires real PostgreSQL and Redis，不计业务通过。未启动服务或改pytest断言。e208-static-final.log重新compileall与pip check均exit0，src／tests聚合与上文相同；ruff／mypy仍缺包，独立lint／typecheck未做。
 
 全部本轮pytest／静态句柄已回收，进程核对无pytest／multiprocessing测试Worker残留；用户v3仍保持上述原hash。提交只含本轮8文件，提交前执行git status、完整暂存diff与diff --cached --check，检查新增行敏感材料；不包含原始日志或环境制品。实际本地feat commit id见Git／交付，不推送、不建PR。下一步仍须专用停车只读原件／ACK和正式决定／双归属后继／恢复，不将此原子停车子步当作完整v4完成。
+
+## §209 正式停车的历史原件只读 ACK、首次 Worker 与 main 显式组合
+
+### 基线、范围与依据
+
+续接 §208 已提交 06bb97d598260699b56c7410bf874fc9b4ca6954。核实 active goal、当前 Git 与原件调用链；原 tracked dirty 仅用户 v3，SHA256 仍为 8a43e94160767a0de20740f2cb30782f06322cbc3467076dfcb120d4efdf1ad4，不修改或暂存。固定使用 E:\MiniConda3\envs\Agent\python.exe，沿 Conda＋pip 已迁移结果；历史 uv.lock 保留为绑定证据，不改依赖、配置或锁。不启停服务，不开放生产 writer、不付费调用或测试真实目标。
+
+本步对应 v4 §7／§8–10／§12.1、A2-3／E 的正式审批交付边界。§208 的回执只证明原子停车，缺历史原件读者和 Worker ACK；这是应用交付契约缺失，不是给原回执解析加成功 fallback。依据采用：
+
+- 原 ControlledCaseSettlements.acknowledge_delivery、lock_case_delivery、read_admission_checkpoint 和 framework_event_completion.original_checkpoint_source → 复用 reference-only 投递、冻结输入／admission 和无 token 的历史 producer source；不重建执行 owner、不改变原 Attempt。
+- 原 FrameworkApprovalJournal 的业务 link／native interrupt 核、native_interrupts._source_call、BoundPostgresReader 和 native_terminal 原连接读取方式 → 按保留 link 的精确 checkpoint 读官方状态，复用来源 AI 身份核，不用最新 pending 校验旧停车。最新 pending 核仍只用于停车创建，不放宽它的未消费／完整批次条件。
+- 原 Worker 活动／审计设施、模型已结账本与原 Task 事务回执 → 复核不可变停车事实，不对当前 Session／owner／RunItem／Job 全行取 hash。模型账本按原 DB 停车时间截止，后来合法新调用不影响旧投递确认。
+- 原 Dispatcher／RedisTaskWorker → 继续由原 Worker ack_owned 确认投递，不新增队列、调度器或决定／恢复链。
+- 本地课程 Agent测试专项.html 的幂等性／轨迹测试，以及 Agent轨迹与协议鲁棒性.html 的中间步骤、重试与回退风险 → 断言请求／工具效果次数、真实状态、全表摘要、pending 和失败窗口，而非只看 handler 返回成功。
+
+### 实现与权限边界
+
+1. ControlledCaseApprovalWaits 新增独立 acknowledge_delivery。持久 Task 必须 completed／result_status=waiting_approval 且只含原 wait 回执；核原命令、输入、admission 摘要、Task／AgentAttempt 稳定身份、唯一真实 claim／return 及其完整摘要、原子 test_run.case_approval_waiting 审计和全批 approval／Job／link／native 身份。抽 approval_wait_event 给创建与 ACK 共用，避免第二份审计意图。
+2. 历史模型核保留原根 policy，读取 created_at <= receipt.parked_at 的调用，复用 codec、decode 与历史 claim lineage 校验，核已结／settled_at 和原完整 snapshot SHA。后来的新调用不纳入旧 ACK；旧调用缺失／修改、预算漂移仍拒绝，不追加／转移预留或重结 usage。
+3. native_approval_batch 新增 source-only 精确历史读：同一 SQLAlchemy-managed PostgreSQL 连接／savepoint、原 serializer 和 namespace 映射、官方 get_tuple／get_state；保留 frozen input metadata、loop 来源、interrupt 参数／路径和 source AI call 对账。允许旧任务后来有 resume，不作决定交付或工具效果证明。不新增连接、setup 或 invoke，不放开 BoundPostgresReader 的写／审批接口。阶段失败日志保存 original_stage，不输出原参数／Prompt／token。
+4. Runtime 按持久 result_status 显式选择 wait 或 settlement 读者；不先尝试一个读者再异常 fallback。Dispatcher 首次停车也复核持久原件且要求回执与本次结果一致，再正常返回给原 Redis Worker；重复投递仅只读。日志用 wait_sha256，与正式 result_id 区分。未注入 wait 的原运行仍保持 unavailable，不静默升级旧组合。
+5. Worker capabilities 新增 controlled_case_approval_wait_max_version=1 与独立 codec；未知版本／scope／extra 明确 TaskDeferred，hash／身份错误不伪装格式兼容。首次有 wait 的完整组合缺 codec 时，领取前保持 pending；旧 ACK 不依赖 controlled_case_available=true。
+6. main 给 RuntimeService 与 wait 服务共享同一个 FrameworkApprovalProjection，显式安装到原 ControlledCaseRuntime；静态 AST 同时检查共享关系和原 ports，不开启 writer。没有改公共 HTTP、数据库 DDL、正式决定入口或恢复权限；原 settlement 读者仍拒绝 wait scope。
+
+旧停车 ACK 不要求当前 Session／runtime owner／最新 native root 保持停车时状态，也不撤销后来的人工作出决定或正式 RunStore 取消。完整 batch 以原原子停车回执及审计封存，逐项保留原件再核；缺件不能用当前状态重新造回执。receipt 的单独格式解析仍不代表 ACK、用例完成或继续执行权限。
+
+### TDD、真实失败与修正
+
+新增 test_controlled_case_approval_wait_ack.py（最终 30 项）：
+
+- e209-first-red.log：22 failed、1 passed、112.89 秒。缺 acknowledge_delivery／wait codec，首次 Worker 拒绝待实现组合；1 条坏 hash 保留 pending 的负例通过，不代表功能已实现。
+- e209-first-green.log：22 passed、1 failed、112.66 秒。原件读者通过，首次 Worker 仍被拒绝。e209-worker-diagnostic.log（1 failed、22 deselected、12.84 秒）和 e209-worker-trace.log（1 failed、22 deselected、12.55 秒）捕获 Native approval gate changed before business projection：assessment 夹具冻结 ask 工具，却给运行时 business_bridge 注册 safe。原生产治理校验正确拒绝；改夹具沿 approval 选项同步注册，未删除或放宽业务校验。e209-worker-green.log 为 1 passed、22 deselected、11.60 秒。
+- 扩充 SQL 提交回执丢失、Redis ACK 失败、取消 SQL 等待者、真实 RunStore 取消及人工作出决定、隔离后续 owner／root／resume／模型记录；e209-wait-contracts.log 实际 62 passed、1 failed、285.52 秒。失败来自新增“领取前 codec 不支持”测试使用已执行图的 facts helper，错误要求尚未创建的 checkpoint 表存在。该测试必须证明没有部署／执行，改复用原 preflight originals_digest 读取真实现存表，而不是预创建 native schema。e209-isolated-boundaries.log 为 2 passed、28 deselected、15.48 秒，含同连接看到未提交 native 漂移、拒绝后不隐藏提交／不修复、search_path 及外层回滚保持。
+- e209-contracts-final.log：最终字节三文件 wait ACK／wait／正式 Dispatcher 共 **93 passed、468.52 秒、exit0，无 skip／deselect**。30 项新测试均在内，另有原 wait 34 与 Dispatcher 29；不累加中间运行的 passed。
+
+这些是固定官方框架、真实隔离 PG／Redis、本机 HTTP、原持久服务与受控工具／配置的混合证据；后续新 root／resume／owner／模型记录为隔离构造，不能说正式决定／后继恢复已实现。真实取消使用原 RunStore，仍不是业务 API 全链继续执行验收。新首次 Worker 只请求一次本机模型、不执行待审批工具；重复及提交后回执丢失仅 ACK，无新模型／工具效果。SQL 等待者取消后线程仍可能提交，测试等待其真实终态，不推断 SQL 已停止。
+
+### 冻结验证与剩余出口
+
+最终扩大串行回归 e209-affected-final.log 已按精确 16 文件启动：wait ACK、wait、正式 Dispatcher、pending 原件、正式 approval projection、assessment、runtime、executor、settlement ACK、settlement、native interrupts、共享 approval projection、model calls、v2 Worker contract、Redis Worker 和 settlement delivery faults。等待原句柄真实终态后追加结果；不得沿用 93 条结果代表全部受影响文件通过。
+
+冻结 src 为 873 个 py，聚合 SHA256 33f7e6dcc00be5caebc275f4fc33510726ea1cb289a9d439c5d59079de6e01bd；tests 为 686 个 py，06be14fbf19988bca12033414cc2da2558225f1468f9bc0731bde5315cd265dc。算法仍为 Agent_Server 下相对 POSIX 路径排序，路径 UTF8＋NUL＋原字节＋NUL。随后只更新文档，不再改源码或测试。已实际 compileall -q Agent_Server/src Agent_Server/tests 与 pip check，均 exit0；ruff／mypy 未安装，不做独立 lint／typecheck、不擅自安装依赖。扩大组后再次核字节、静态检查及 opt-out。
+
+v4 §7／§8–10／§12.1 → §209 → 历史停车原件 ACK＋首次／重复 Worker＋main 显式共享投影组合 → TDD／故障窗口／串行受影响验证 → 正式停车独立进程强杀、专用决定准入／双归属后继／继续仍待实现。完整 v4 与 H01–H12、真实模式／供应商／领域 Runner、完整 A3／E3／E4、一致备份恢复和性能基线范围保留。未跑全量后端或前端，未验收 Docker／MySQL／RustFS 或完整 main lifespan；不将已有独立 Worker 测试等同本步停车跨进程强杀。
+
+本步预期精确提交 12 文件（6 生产源码、4 测试／helper、路由说明与原实施记录），不含用户 v3、日志／制品／环境或依赖锁；本地中文 feat commit，不推送／建 PR，实际 id 见 Git 与交付。整体 goal 保持 active，生产 writer 关闭。整体剩余仍粗估 4–8 周有效开发／验收，授权、外部环境及人工发布等待另计，不作完成日期承诺。
+
+### 最终实测与交付核对
+
+原 16 文件串行句柄已取得终态：e209-affected-final.log 为 **765 passed、2338.61 秒、exit0，无 skip／deselect**。包括上文最终 93 项及所有列明的跨层消费方；30 项新增 ACK 测试包含在内，不累加历史绿色运行。是官方固定框架、真实隔离 PG／Redis、本机 HTTP 与受控配置／工具、原有内存／静态及 Worker 协议测试的混合证据，不能把 765 条说成 765 个真实业务目标或正式停车独立进程强杀验收。
+
+同一冻结源码／测试将全部 live 开关设 0 后，e209-optout-final.log 实际 **2 passed、91 skipped、10.08 秒、exit0**。2 项是组合准入与 main 静态装配，91 项按显式 PG／Redis 授权门跳过，不算业务通过。e209-static-final.log 在扩大组后重新运行 compileall 与 pip check，均 exit0；src／tests 聚合与上文冻结值完全一致，ruff／mypy 仍缺包，独立 lint／typecheck 未做。前端未改未运行，未运行全量后端、真实供应商／Runner、完整 main lifespan、Docker／MySQL／RustFS 或完整 E3／E4。
+
+本轮所有 pytest／静态句柄已回收；核对固定环境的 pytest／multiprocessing 进程为 0。用户 v3 原 SHA256 保持不变。提交前精确检查 12 文件及完整暂存 diff、diff --cached --check 和高置信度敏感新增行，不包含日志、原始制品、环境／依赖锁或用户 v3；只本地提交，不推送／建 PR。下一步仍为正式停车跨进程故障及专用决定／后继／继续权限，不将当前 ACK 子步当作全系统完成，整体 goal 保持 active。

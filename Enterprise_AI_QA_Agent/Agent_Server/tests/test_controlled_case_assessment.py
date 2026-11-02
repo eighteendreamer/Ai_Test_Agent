@@ -68,7 +68,7 @@ async def assessment_case(formal_case, tmp_path, monkeypatch, request):
         async with execution(s, providers._config(transport, url), prepare_input=prepare_input,
                 claim_task=not options.get("dispatch")) as h:
             effects = []
-            async with business_bridge(h, effects, approval_required=False) as bridge:
+            async with business_bridge(h, effects, approval_required=options.get("approval", False)) as bridge:
                 async def handle(arguments, context):
                     effects.append(context.tool_job_id)
                     # The formal receipt uses the original business call ID,

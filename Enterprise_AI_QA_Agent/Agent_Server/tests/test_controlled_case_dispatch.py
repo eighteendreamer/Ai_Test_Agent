@@ -340,9 +340,13 @@ def test_main_composes_existing_controlled_ports_without_enabling_writer():
     runner = keywords("ControlledCaseExecutor")
     adapter = keywords("ControlledCaseGraphAdapter")
     assert dispatcher["controlled_case_runtime"] == "controlled_case_runtime"
+    assert keywords("RuntimeService")["framework_approval_projection"] == "framework_approval_projection"
+    assert keywords("FrameworkApprovalProjection") == {"sessions": "store", "jobs": "tool_job_service"}
+    assert keywords("ControlledCaseApprovalWaits") == {"projection": "framework_approval_projection"}
     assert runtime == {"runtime_service": "runtime_service", "session_service": "session_service",
         "assessment_service": "ControlledCaseAssessments(agent_task_store)",
-        "settlement_service": "ControlledCaseSettlements(agent_task_store)", "executor": "controlled_case_executor"}
+        "settlement_service": "ControlledCaseSettlements(agent_task_store)", "executor": "controlled_case_executor",
+        "approval_wait_service": "ControlledCaseApprovalWaits(agent_task_store, projection=framework_approval_projection)"}
     assert runner == {"task_store": "agent_task_store", "graph_adapter": "controlled_case_graph_adapter"}
     assert adapter == {"model_resolver": "model_runtime_service.resolve_langchain_chat_model",
         "checkpointer_factory": "deep_agent_checkpoint_provider.open if deep_agent_checkpoint_provider is not None else None",

@@ -73,12 +73,12 @@ class ControlledCaseRuntime:
 
     def require_dispatch_ready(self, task, *, capabilities):
         """Check full first-execution composition before taking either owner."""
-        if self._approval_waits is not None:
-            # Explicit in-process parking is independently verifiable. Do not
-            # install it in Redis dispatch until its dedicated ACK is admitted.
-            raise ValueError("Controlled approval wait dispatch requires its dedicated delivery ACK reader")
         if any(port is None for port in (self._sessions, self._assessments, self._settlements, self._executor)):
             raise ValueError("Controlled dispatch requires executor, finalizer, assessment and settlement")
+        if self._approval_waits is not None and capabilities.controlled_case_approval_wait_max_version < 1:
+            from src.runtime.task_deferred import TaskDeferred
+
+            raise TaskDeferred("framework_case_approval_wait_format_unavailable")
         self._executor.require_execution_available()
         if set(task.input) != {"case_execution_input"}:
             raise ValueError("Controlled dispatch requires its single frozen formal input")
@@ -95,6 +95,14 @@ class ControlledCaseRuntime:
         # availability and the current writer switch.
         if self._settlements is None:
             raise ValueError("Controlled delivery requires its original settlement reader")
+        command = capabilities.require_command_format(delivery)
+        stored = await self._settlements._tasks.get(command.task_id, framework_capabilities=capabilities)
+        if stored.result_status == "waiting_approval":
+            # This read is routing only. The dedicated reader rechecks the
+            # full durable command/receipt scope in its own locked transaction.
+            if self._approval_waits is None:
+                raise ValueError("Controlled delivery requires its original approval wait reader")
+            return await self._approval_waits.acknowledge_delivery(delivery, capabilities=capabilities)
         return await self._settlements.acknowledge_delivery(delivery, capabilities=capabilities)
 
     async def prepare_input(self, session, request, *, detail, item, version, attempt_id, projection_identity):

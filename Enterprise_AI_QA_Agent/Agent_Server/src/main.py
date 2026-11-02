@@ -180,6 +180,7 @@ from src.runtime.postgres_agent_task_store import PostgresAgentTaskStore
 from src.runtime.controlled_case_settlement_recovery import ControlledCaseSettlementRecovery
 from src.runtime.controlled_case_assessment import ControlledCaseAssessments
 from src.runtime.controlled_case_settlement import ControlledCaseSettlements
+from src.runtime.controlled_case_approval_wait import ControlledCaseApprovalWaits
 from src.runtime.postgres_framework_model_calls import PostgresFrameworkModelCalls
 from src.runtime.framework_worker_capabilities import FrameworkWorkerCapabilities
 from src.application.models.framework_model_call_policy import FrameworkModelCallPolicy
@@ -740,6 +741,7 @@ async def _initialize_lifespan_resources(
         watermark=settings.orchestration.context_compaction_watermark,
         max_tail_messages=settings.orchestration.context_max_tail_messages,
     )
+    framework_approval_projection = FrameworkApprovalProjection(settings, sessions=store, jobs=tool_job_service)
     runtime_service = RuntimeService(
         graph=graph,
         model_runtime_service=model_runtime_service,
@@ -772,7 +774,7 @@ async def _initialize_lifespan_resources(
         deep_agent_governed_tools_enabled=settings.deep_agents.governed_tools_enabled,
         deep_agent_structured_output_enabled=settings.deep_agents.structured_output_enabled,
         tool_job_service=tool_job_service,
-        framework_approval_projection=FrameworkApprovalProjection(settings, sessions=store, jobs=tool_job_service),
+        framework_approval_projection=framework_approval_projection,
         framework_approval_continuation=FrameworkApprovalContinuation(settings, sessions=store, jobs=tool_job_service),
         turn_context_assembly=turn_context_assembly,
     )
@@ -918,7 +920,8 @@ async def _initialize_lifespan_resources(
     controlled_case_runtime = ControlledCaseRuntime(
         runtime_service=runtime_service, session_service=session_service,
         assessment_service=ControlledCaseAssessments(agent_task_store),
-        settlement_service=ControlledCaseSettlements(agent_task_store), executor=controlled_case_executor)
+        settlement_service=ControlledCaseSettlements(agent_task_store), executor=controlled_case_executor,
+        approval_wait_service=ControlledCaseApprovalWaits(agent_task_store, projection=framework_approval_projection))
     app.state.agent_task_dispatcher = AgentTaskDispatcher(
         settings, agent_task_store, session_service, resource_lease_manager,
         framework_capabilities=app.state.framework_worker_capabilities,
