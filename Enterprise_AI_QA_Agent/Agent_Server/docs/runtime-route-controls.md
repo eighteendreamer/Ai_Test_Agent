@@ -629,7 +629,7 @@ Redis 只携谱系引用，不复制 Prompt／业务输入／原租约 token。
 关闭写者后可核对已存在的同一回执；不兼容格式 TaskDeferred，原件／outbox／审计漂移
 则拒绝且不补造。普通 `claim` 明确拒绝 case_settle，Dispatcher 能力检查在领取前 defer。
 准入只创建 queued 后继，无 attempt／worker／执行 owner；专用领取与结算见下一节。
-未新增 DDL、公开受理 API、main 接线或生产路由，旧读者不能因 wire 主版本仍为 2
+准入本身未新增 DDL、公开受理 API 或生产路由，受限 Dispatcher 接线见下节。旧读者不能因 wire 主版本仍为 2
 就视为兼容新增 operation／引用字段；须 reader-first 或隔离消费者后才可开放写者。
 
 成功日志 `controlled_case_settlement_admitted/reused`；拒绝日志
@@ -668,14 +668,46 @@ Assessment／Session finalizer；后续合法 Session 活动不被旧回执覆�
 `controlled_case_settlement_available` 默认 false，领取／续租／结算需显式能力；
 `controlled_case_recovery_receipt_max_version` 默认支持 1，只读 ACK 不需要打开写者。
 不兼容回执字段／版本／scope defer；缺失或漂移拒绝且不补造。新字段与操作仍须
-reader-first 或隔离消费者。普通 Dispatcher／Worker 继续拒绝 case_settle，无 main、
-生产路由或 REST 开放；该内部端口通过不等于生产 Worker、领域 Runner 或 E3／E4 验收。
+reader-first 或隔离消费者。普通图执行能力继续拒绝 case_settle；专用 Dispatcher 端口
+及 main 受限装配见下节，不等于生产路由、REST 开放或领域 Runner／E3／E4 验收。
 
 成功日志 `controlled_case_recovery_settlement_claim/renew/complete/ack`；拒绝日志
 `controlled_case_recovery_settlement_rejected` 带 operation／task、错误类型及兼容原因。
 等待者取消记录 `controlled_case_recovery_settlement_unknown`、
 `recovery_reason=settlement_transaction_receipt_unknown`；这不证明后台事务已停止或回滚，
 必须查询原回执。日志均带 `automatic_replay=false`。验证范围见实施记录 §202。
+
+### 仅结算 Dispatcher／Worker 的受限接线
+
+main 显式注入 `ControlledCaseSettlementRecovery(agent_task_store)`，不打开
+`controlled_case_settlement_available`，不新增 CLI 启用参数。没有端口／能力或读者不兼容
+时保持 TaskDeferred。只有显式授予专用 writer 的隔离验收才可领取；默认生产写者仍关闭。
+
+`case_settle` 在 durable command／binding 核对后进入专用端口，不经过普通图
+capability／claim／begin／finish，不构造 RuntimeExecutionOwner，不运行 Runtime／
+模型／工具／Session finalizer。已 completed 的交付只读核对持久回执，不领取或申请资源，
+关闭 writer 仍可 ACK 兼容回执。原 Task／Attempt／RuntimeOwner 的完整物理身份保留。
+
+领取后复用原 agent 资源配额、`_monitor` 及清理逻辑。监控同时续 Redis 资源与 scoped
+Session 租约，不调用 Runtime.request_interrupt。资源不足通过新内部
+`defer(lease, reason=..., capabilities=...)` 原子结束本次 Attempt 为 waiting_resource、
+清本次 Session 租约；资源可用后新建 Attempt，不重置原终态或复用已结束 Attempt。
+续租／取消／来源漂移／提交回复丢失均不通过通用 finish/fail 改写原件。
+
+真实 `tasks.interrupt` 根据 Task 的权限范围区分停止结算与撤销图 owner：仅结算取消只写
+后继 Task／Attempt、Session 控制和审计，记录 owner_revoked=false，并保留原图 owner。
+scope／task 身份保存在 Session control，重复取消只读核验；is_resumable=false，不从
+共享 binding 反向获得图恢复资格。该历史 scope 不参与图 owner 的历史绑定查找；后来
+新排队 Turn 的取消解析自己的 binding，不撤销原生产者。取消后不重领、不自动结算或 ACK 缺失回执。
+
+Worker 仍在 handler 成功确认持久结果后才执行 `ack_owned`。提交回复丢失、ACK 返回0或
+Redis 传输失败不撤销已提交结果，后续兼容 reader 只读 ACK。取消 asyncio 等待者不代表
+to_thread 内 SQL 已停止；日志 `agent_case_settlement_receipt_unknown` 保留不确定性，
+不声称回滚或自动重放。资源清理失败沿原 `agent_task_slot_release_pending` 留待清理。
+
+实现与实际红绿／独立进程窗口见实施记录 §203。main 目前只有静态装配审计及受影响
+lifespan 回归，不把它称为完整生产启动或发布验收。通用 Worker 总截止／交付所有权变化
+与 SQL 在途的联合窗口仍须后续闭合；本步不改变通用重试／转移策略，也不据此开放 writer。
 
 ### 原路由与恢复验证
 

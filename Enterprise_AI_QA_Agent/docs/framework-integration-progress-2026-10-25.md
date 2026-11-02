@@ -9805,3 +9805,71 @@ v4 E／§12.1＋A2-3 → §202 → 六生产源码／三测试／两文档 → �
 本步仅收口内部专用结算能力。下一出口仍是原生产Dispatcher／Worker显式受限接线与resource-heartbeat／队列ACK故障窗口，再按依赖继续逐模式入口与质量、业务审批、真实供应商／领域Runner、A3完整补偿／资源清理、E3／E4制品、一致备份恢复及性能基线。没有开放生产路由、付费模型／embedding或真实业务目标测试，未执行Docker／MySQL／RustFS与全量前后端。
 
 完整v4及H01–H12范围不缩小，goal保持active；整体剩余仍粗估4–8周有效开发／验收，授权、环境及人工发布等待另计，非交付日期承诺。
+
+## 203. v4 E／§12.1＋A2-3：仅结算 Dispatcher 受限接线、资源退让与权限范围内取消（2026-11-02）
+
+基线 `dab33d746`（§202）。先取回续接测试原句柄：`e203-defer-fixed.log` 实际2 passed、34.12秒、exit0，不重启或把空日志当终止。核对四个后端未提交改动和被ignore的新测试，保留用户v3原hash；依赖迁移已由 `435d9cf7c` 完成，本步不重做、不删除历史uv.lock或升级依赖。
+
+### 依据 → 架构缺口 → 本步采用
+
+- v4 §10.1 A2-3／§11／§12.1、§202专用内部端口 → 通用Dispatcher capability／claim／begin／finish只授予图执行，不能让case_settle冒充图owner → 在原durable identity／binding核对后显式分派专用结算服务，不另造调度层。
+- 原`AgentTaskDispatcher._monitor/_execute`、Session租约核与Redis资源管理 → 原monitor仅续资源，Session续租在正常执行服务中，结算不能借它执行Runtime → 原monitor增加专用renew回调，正常路径保持原行为；抽取共用cleanup，结算同时续资源与scoped Session租约，不发Runtime interrupt。
+- 原资源不足的waiting_resource语义 → 原内部结算尚无退让，领取后资源不足会占着Session → 新内部defer在同事务fence后结束当前Attempt、记录waiting_resource并清Session租约；重领只新建Attempt，不复用已结束Attempt或重置原生产者。
+- 真实`PostgresAgentTaskStore.interrupt` → `FrameworkTaskControl`按共享binding无条件撤销RuntimeOwner，错误地把结算后继当作图执行者 → 以Task实际权限范围分派取消，仅写后继Task／Attempt和Session控制／审计，保留原图owner；记录scope／task供重复取消只读确认，不获得图恢复权。
+- 本地课程`Agent轨迹与协议鲁棒性.html`的幂等／补偿、契约与轨迹原则 → 同时核结果、完整原身份、模型／工具效果、资源和PEL，不以返回值或非空receipt代替证明；禁止调用替身另加调用计数，避免AssertionError被defer后负例假绿。
+
+### 实现与边界
+
+main只显式注入`ControlledCaseSettlementRecovery(agent_task_store)`，没有打开writer或增加CLI启用参数。默认`controlled_case_settlement_available=false`；缺端口／能力、不兼容制品或读者仍defer。原普通图能力继续拒绝case_settle，不能调用通用claim／begin／finish、构造RuntimeExecutionOwner、运行图／模型／工具／Session finalizer。已完成交付只读确认原持久回执，writer关闭时不领取、不申请资源、不重写结果。
+
+专用领取后复用现有agent配额、resource renewal与retire；资源不足原子退让，正常恢复新建后继Attempt。monitor复核scoped Session取消／失租，来源漂移、reply丢失不通过通用fail重写原生产者。真实取消覆盖queued／waiting_resource／claimed，Session控制保留is_resumable=false／last_interrupt_binding_id及专用scope／task，重复取消只读且不触碰原RuntimeOwner；取消交付无合法结算回执，保持pending，不自动结算或ACK。
+
+结算回复丢失、ack_owned返回0或Redis传输失败保留已提交结果，后续关闭writer只ACK。等待者取消保留`agent_case_settlement_receipt_unknown`，不宣称SQL线程已停止或回滚。没有DDL或公开DTO／REST变更，metadata control仍是原扩展映射；新增内部defer消费者已全局搜索核对。前端未修改。
+
+### TDD 与保留的失败
+
+续接前已保留：`e203-dispatch-red.log` 1 failed、19.12秒，构造器缺端口；`e203-dispatch-first.log` 1 failed、17.73秒；`e203-dispatch-diagnostic.log` 1 failed、20.74秒，真实wire reader拒绝Pydantic command。遵守原reader只接收wire dict的契约，以model_dump(mode="json")传入，不放宽reader；`e203-dispatch-fixed.log` 1 passed、20.88秒。`e203-defer-red.log` 1 failed、17.85秒，资源不足后后继仍claimed；新增scoped defer后续接取回上述2项通过。
+
+新取消红测`e203-interrupt-red.log` 实际1 failed、2 deselected、20.02秒，queued取消后原生产者完整物理摘要变化。根因在真实控制入口，无条件UPDATE原RuntimeOwner；不是模型、最终结果或队列重放问题。按权限范围修复后，`e203-interrupt-fixed.log` 实际3 passed、2 deselected、129.29秒，exit0，包含重复取消、禁止重领、Worker不ACK及原身份不变。
+
+扩展中间`e203-dispatch-expanded.log` 实际20 passed、194.99秒、exit0。首次全新矩阵`e203-dispatch-matrix-first.log` 实际1 failed、21 passed、261.95秒：测试错误地用dataclasses.replace处理Pydantic scoped lease，尚未运行后续进程窗口。查实际schema及既有model_copy用法，只修负例lease构造，不修改生产租约验证。
+
+共享首次`e203-shared-regression.log` 实际1 failed、16 passed、106.26秒：原`test_separate_worker_process_executes_persisted_resume`在固定15秒join后exitcode仍None，fixture随后按原清理终止该子进程，已复核该PID不存活。本次不放宽超时、不改生产队列或断言；当时三组测试并行，该环境压力是否为原因尚未证明。后续收拢并发重新运行，最终结果另记，不把重跑通过称为已查明超时根因。
+
+续接期间两个原pytest句柄消失；随后核查系统无对应pytest／multiprocessing进程，`e203-scoped-regression.log`只到72项进度、无终态，`e203-shared-regression-final.log`为空。两组均不计通过；不是仅凭日志空白认定停止。确认进程停止后重跑，并把退出码持久写入日志；不反复查询失效句柄。
+
+随后新增跨Turn取消回归。`e203-next-interrupt-red.log` 实际1 failed、27 deselected、26.15秒，夹具漏传正式project_id，正确被现有受理契约拒绝；补齐真实Session项目后，`e203-next-interrupt-identity-red.log` 实际1 failed、27 deselected、25.54秒，复现先取消仅结算、再受理新排队Turn、再次取消仍改写原owner。根因是历史last_interrupt_binding_id查找没有区分其权限scope；只排除专用结算历史scope参与图owner查找，新Turn沿原队列解析自己的binding，不整体重排原审批／图控制规则。
+
+### 最终验证
+
+实际compileall与pip check均exit0，后者No broken requirements found；ruff／mypy未安装，不擅自安装，独立backend lint／typecheck未执行。以下均已取得真实终态，不以中间20项或§202绿色替代当前验证。
+
+中间完整新两文件`e203-dispatch-matrix-fixed.log` 实际30 passed、449.30秒、exit0，包含3项真实Dispatcher／Redis Worker独立强杀；此结果早于上述跨Turn取消补充，最终31项另跑，不重复累加。原内部六文件`e203-scoped-verified.log`实际125 passed、1222.49秒、exit0、无skip／deselect，并持久记录SCOPED_VERIFIED_EXIT_CODE=0。包括35专用租约／结算、30准入、22持久ACK、5内部端口强杀及33纯协议。该组启动后仅修改TaskControl的历史scope选择与新测试；这六文件不含真实interrupt调用，不把其绿色当作最后TaskControl改动的覆盖。专用claim／renew／complete／ACK与defer源码字节从该组启动至今未变，最终控制改动由新增31项和共享控制回归独立验证。
+
+最终新两文件`e203-dispatch-verified.log` 实际 **31 passed、487.82秒、exit0，无skip／deselect**，持久记录DISPATCH_VERIFIED_EXIT_CODE=0。其中1项main静态装配、27项当前进程真实隔离PG／Redis、3项spawn独立Worker。实际覆盖默认关闭与7类能力／端口缺项、资源退让后新Attempt、资源和Session多次真实续租、3类监控失权／取消、3类提交回复／ACK故障注入、SQL在途等待者取消、4类defer负例、2类来源漂移、scope内重复取消与跨Turn取消。负例保留PEL且不走通用transfer，关闭writer的终态读者禁止领取／资源和结果写者；不把受控返回0／抛RedisError称为停Redis或网络故障演练。
+
+三个实际强杀点为真实Dispatcher专用claim返回后、正式结算SQL已写审计但未提交、handler确认提交并清理资源后即将ack_owned。确认进程kill且非0退出，原delivery仍pending、stream没有自动转移；前两项经Session失租及真实Redis逻辑资源TTL过期／reap后由新进程新Attempt结算，后一项新writer关闭进程只读ACK。最终Result／正式结算审计均只有一份，原Task／Attempt／RuntimeOwner完整物理摘要不变，HTTP仍2、工具效果仍1。此处agent资源是逻辑配额，未创建Docker／浏览器或真实目标，不把它称为完整A3外部资源清理。
+
+最终两文件opt-out实际 **1 passed、30 skipped、12.78秒、exit0**，`e203-optout-verified.log`持久记录OPTOUT_VERIFIED_EXIT_CODE=0；30真实服务未执行不计通过，纯静态1项不重复累加。最终固定Python实际compileall -q src／tests与pip check均exit0；仍未安装ruff／mypy，独立backend lint／typecheck未跑。未修改前端，未执行前端测试／typecheck／build／浏览器，也未执行全量后端、Docker／MySQL／RustFS、付费模型／embedding、真实供应商或业务目标验收。
+
+上述命令均在Agent_Server使用`E:\MiniConda3\envs\Agent\python.exe`，先执行原UV清理脚本-ProcessOnly，PYTHONIOENCODING=utf-8。服务组RUN_LIVE_POSTGRES_TESTS／REDIS=1，Docker／MySQL／PLAN_RUN_CREATION=0，QA_FRAMEWORK_WORKER_DIAGNOSTICS=1；opt-out显式将PG／Redis也置0。复用已运行服务，不启停服务，隔离表／schema／Redis前缀，stdout＋stderr保存不提交的.codex-logs。
+
+~~~powershell
+& E:\MiniConda3\envs\Agent\python.exe -u -m pytest tests/test_controlled_case_settlement_dispatch.py tests/test_controlled_case_settlement_dispatch_process.py -q -x -rs --tb=short --show-capture=no
+& E:\MiniConda3\envs\Agent\python.exe -u -m pytest tests/test_controlled_case_recovery_settlement.py tests/test_controlled_case_settlement_recovery.py tests/test_controlled_case_settlement_ack.py tests/test_controlled_case_recovery_settlement_process.py tests/test_controlled_case_settlement_recovery_process.py tests/test_controlled_case_settlement_protocol.py -q -x -rs --tb=short --show-capture=no
+& E:\MiniConda3\envs\Agent\python.exe -u -m pytest tests/test_agent_task_dispatch.py tests/test_agent_v2_worker_contract.py tests/test_framework_task_control.py tests/test_framework_projected_settlement.py tests/test_framework_approval_settlement.py tests/test_framework_worker_activity.py tests/test_lifespan_resource_cleanup.py tests/test_redis_task_worker.py tests/test_resource_lease_manager.py tests/test_framework_route_rollback.py -q -x -rs --tb=short --show-capture=no
+~~~
+
+最终共享十文件`e203-shared-verified.log`实际 **558 passed、1 skipped、1397.51秒、exit0**，持久记录SHARED_VERIFIED_EXIT_CODE=0。唯一skip是未开启RUN_LIVE_MYSQL_TESTS的MySQL SQL pool生命周期验证，不计通过，不擅自开启MySQL。原AgentTaskDispatch／v2 Worker、真实图取消／审批控制／后继、projected／approval结算、Worker活动、lifespan资源关闭、通用Redis Worker／资源租约及路由关闭均在最终控制源码下重跑。首次旧进程15秒等待失败仍保留，完整重跑通过不证明已查明那次超时根因；未放宽等待、删除断言或更改测试文件。
+
+三个最终组共 **714 passed、1 skipped**，纯协议／静态、当前进程服务与独立进程证据按上述范围区分；不宣称714项全部是真实服务。中间20／30通过、125组此前中断进度及opt-out不重复累加。新31项及共享558项以最后TaskControl改动后的源码执行；125组只作为未变的专用生命周期／原件／ACK／协议覆盖，不冒称其验证了后来补充的跨Turn控制。所有本轮原pytest句柄均已取回终态或以缺失句柄＋系统进程核对确认停止，未留后台pytest／测试Worker。
+
+最终工作区src聚合SHA256为`13b743774b366269bf726a177900bcd21eee526513952cfc678414e63b700762`（870个py），tests为`b6f2c05d467d7dc98e081d08e72ad34c2fe2726fa80a97926ac11e9e56fb36f2`（679个py），算法同§199：相对POSIX路径排序，路径UTF-8＋NUL＋原字节＋NUL。最终两个组期间仅补文档，不改变生产／测试字节。用户v3原hash保持`8a43e94160767a0de20740f2cb30782f06322cbc3467076dfcb120d4efdf1ad4`，不改写或暂存。
+
+已核对只暂存5个后端生产源码、2个新测试、2份文档，共9文件；新ignore测试精确单文件force-add。git diff --cached --check实际通过；新增行高置信度私钥／常见API凭据模式扫描0命中，不称为完整安全审计。不提交认证、环境、日志、运行制品或用户v3，不推送、不建PR。
+
+### 对应、提交与剩余出口
+
+v4 E／§12.1＋A2-3／§11 → §203 → 原Dispatcher／main受限端口、scoped defer与TaskControl权限边界、两文件新矩阵 → 真实红绿与上述最终验证 → 独立提交“【feat】接通仅结算Worker与范围内停止控制”，实际commit ID见Git与交付。仅完成此受限接线子步，不代表全系统或全部Worker故障窗口完成；默认生产writer保持关闭。
+
+总体仍包括完整v4及H01–H12。本步不改变通用Redis Worker重试／转移策略；总截止、交付所有权变化与SQL在途的联合窗口仍是下一出口，不能在该边界未闭合时开放生产writer。其余逐模式入口／质量、真实供应商／领域Runner、业务审批、A3完整补偿与清理、E3／E4、备份恢复与性能基线仍未完成。goal保持active，整体剩余仍粗估4–8周有效开发／验收，环境、授权与人工发布等待另计，不承诺日期。

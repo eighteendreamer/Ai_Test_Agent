@@ -66,7 +66,8 @@ class AgentTaskDispatcher:
     def __init__(self, settings, tasks, sessions, resources, *,
                  framework_capabilities: FrameworkWorkerCapabilities | None = None,
                  framework_model_calls=None, framework_native_reader=None,
-                 framework_submission_preparer=None, framework_submission_loader=None):
+                 framework_submission_preparer=None, framework_submission_loader=None,
+                 controlled_case_settlements=None):
         if framework_submission_preparer is not None and framework_submission_loader is not None:
             raise ValueError("Configure either a captured preparer or an async material loader, not both")
         self._settings = settings
@@ -80,6 +81,7 @@ class AgentTaskDispatcher:
         # until compatible readers and the mode's release gates are deployed.
         self._framework_submission_preparer = framework_submission_preparer
         self._framework_submission_loader = framework_submission_loader
+        self._controlled_case_settlements = controlled_case_settlements
         self._coordinator = None
         self._child_reaper_task: asyncio.Task[None] | None = None
         self._child_reaper_stop: asyncio.Event | None = None
@@ -706,6 +708,11 @@ class AgentTaskDispatcher:
                 raise ValueError("v2 task is missing its persisted runtime binding")
             if stored.runtime_binding != runtime_binding:
                 raise ValueError("Agent command runtime binding does not match the durable task")
+            if command.operation == "case_settle":
+                # A settlement lease is not graph execution authority. Never
+                # send it through ordinary capability/claim/begin/finish.
+                await self._handle_case_settlement(command, stored, capabilities, worker_id, queue)
+                return
             try:
                 capabilities.require(runtime_binding, operation=command.operation)
                 stage_version = await self._tasks.get_framework_message_stage_version(
@@ -781,6 +788,88 @@ class AgentTaskDispatcher:
                 await self._tasks.ensure_framework_message_recovery(task.id, native_reader=self._framework_native_reader)
             if task.runtime_binding is not None and task.operation in {"approval_resume", "approval_recover", "framework_reconcile"}:
                 await self._tasks.ensure_framework_reconciliation(task.id)
+
+    async def _handle_case_settlement(self, command, stored, capabilities, worker_id, queue):
+        service = self._controlled_case_settlements
+        if service is None:
+            LOGGER.warning("agent_case_settlement_port_unavailable", extra={"task_id": command.task_id,
+                "worker_id": worker_id, "automatic_replay": False})
+            raise TaskDeferred("framework_case_settlement_port_unavailable")
+        lease, monitor, execution = None, None, None
+        task, stop = stored, asyncio.Event()
+        clock, completed = monotonic(), False
+        config = self._settings.orchestration
+        try:
+            capabilities.require_runtime_artifact(command.runtime_binding)
+            delivery = command.model_dump(mode="json")
+            if stored.status == "completed":
+                await service.acknowledge(delivery, capabilities=capabilities)
+                LOGGER.info("agent_case_settlement_acknowledged", extra={"task_id": command.task_id,
+                    "worker_id": worker_id, "automatic_replay": False})
+                return
+            scoped = await service.claim(delivery, worker_id=worker_id, capabilities=capabilities)
+            # These are logging/resource-admission fields from the captured
+            # lease, not a reconstructed RuntimeExecutionOwner.
+            task = stored.model_copy(update={"attempt_id": scoped.attempt_id, "attempt_no": scoped.attempt_no,
+                "worker_id": scoped.worker_id, "lease_token": scoped.lease_token, "status": "claimed"})
+            with bind_request_context(request_id=task.request_id, trace_id=task.trace_id,
+                project_id=task.project_id, session_id=task.session_id, turn_id=task.turn_id,
+                run_id=task.run_id, run_item_id=task.run_item_id, attempt_id=task.attempt_id,
+                worker_id=worker_id, task_type="case_settle", queue=queue):
+                agent_task_wait_seconds().labels(task_type="case_settle").observe(_seconds_since(task.created_at))
+                if scoped.attempt_no > 1:
+                    agent_task_retries_total().labels(task_type="case_settle").inc()
+                try:
+                    lease = await self._resources.acquire(resource_type="agent", resource_id=f"turn:{task.id}",
+                        worker_id=worker_id, lease_seconds=config.resource_default_lease_seconds,
+                        session_id=task.session_id, project_id=task.project_id, run_id=task.run_id,
+                        run_item_id=task.run_item_id, attempt_id=task.attempt_id)
+                except ResourceUnavailable as exc:
+                    await service.defer(scoped, reason=exc.reason, capabilities=capabilities)
+                    raise TaskDeferred(exc.reason) from exc
+
+                async def renew():
+                    return await service.renew(scoped, lease_seconds=config.turn_execution_lease_seconds,
+                        capabilities=capabilities)
+
+                if not await self._resources.renew(lease, lease_seconds=config.resource_default_lease_seconds):
+                    raise ContinuationLeaseLostError("Settlement admission resource was lost before commit")
+                await renew()
+                monitor = asyncio.create_task(self._monitor(task, lease, stop, renew_settlement=renew))
+                execution = asyncio.create_task(service.complete(scoped, capabilities=capabilities))
+                done, _ = await asyncio.wait({execution, monitor}, return_when=asyncio.FIRST_COMPLETED)
+                if monitor in done:
+                    await monitor
+                receipt = await execution
+                completed = True
+                LOGGER.info("agent_case_settlement_committed", extra={"task_id": task.id,
+                    "attempt_id": task.attempt_id, "worker_id": worker_id, "result_id": receipt.result_id,
+                    "automatic_replay": False})
+        except asyncio.CancelledError:
+            LOGGER.warning("agent_case_settlement_receipt_unknown", extra={"task_id": task.id,
+                "attempt_id": task.attempt_id, "worker_id": worker_id, "automatic_replay": False})
+            raise
+        except Exception as exc:
+            LOGGER.warning("agent_case_settlement_deferred", extra={"task_id": task.id,
+                "attempt_id": task.attempt_id, "worker_id": worker_id, "error_type": type(exc).__name__,
+                "defer_reason": str(exc) if isinstance(exc, TaskDeferred) else "settlement_requires_reconciliation",
+                "automatic_replay": False})
+            if isinstance(exc, TaskDeferred):
+                raise
+            # Keep the original receipt/attempt intact. A failed reply, source
+            # drift or lost monitor is not permission to fail/reset/replay it.
+            raise TaskDeferred("framework_case_settlement_requires_reconciliation") from None
+        finally:
+            if completed:
+                agent_tasks_finished_total().labels(task_type="case_settle", status="completed").inc()
+                agent_task_execution_seconds().labels(task_type="case_settle").observe(max(0, monotonic()-clock))
+
+            async def cleanup():
+                if execution is not None:
+                    execution.cancel()
+                    await asyncio.gather(execution, return_exceptions=True)
+                await self._cleanup_execution(task, lease, monitor, stop)
+            await self._sessions._settle_execution_tasks(asyncio.create_task(cleanup()))
 
     async def _execute(self, task):
         lease, monitor = None, None
@@ -1010,47 +1099,33 @@ class AgentTaskDispatcher:
                     max(0.0, monotonic() - execution_clock)
                 )
 
-            async def cleanup():
-                stop.set()
-                if monitor is not None:
-                    result = (await asyncio.gather(monitor, return_exceptions=True))[0]
-                    if isinstance(result, BaseException):
-                        LOGGER.warning(
-                            "agent_task_monitor_stopped",
-                            extra={
-                                "task_id": task.id,
-                                "error_type": type(result).__name__,
-                            },
-                        )
-                if lease is not None:
-                    try:
-                        await self._resources.retire(lease)
-                        LOGGER.info(
-                            "agent_task_slot_released",
-                            extra={
-                                "task_id": task.id,
-                                "attempt_id": task.attempt_id,
-                                "worker_id": task.worker_id,
-                                "resource_id": lease.resource_id,
-                            },
-                        )
-                    except Exception as exc:
-                        LOGGER.error(
-                            "agent_task_slot_release_pending",
-                            extra={
-                                "task_id": task.id,
-                                "error_type": type(exc).__name__,
-                            },
-                        )
+            await self._sessions._settle_execution_tasks(asyncio.create_task(
+                self._cleanup_execution(task, lease, monitor, stop)))
 
-            await self._sessions._settle_execution_tasks(asyncio.create_task(cleanup()))
+    async def _cleanup_execution(self, task, lease, monitor, stop):
+        stop.set()
+        if monitor is not None:
+            result = (await asyncio.gather(monitor, return_exceptions=True))[0]
+            if isinstance(result, BaseException):
+                LOGGER.warning("agent_task_monitor_stopped", extra={"task_id": task.id,
+                    "error_type": type(result).__name__})
+        if lease is not None:
+            try:
+                await self._resources.retire(lease)
+                LOGGER.info("agent_task_slot_released", extra={"task_id": task.id,
+                    "attempt_id": task.attempt_id, "worker_id": task.worker_id, "resource_id": lease.resource_id})
+            except Exception as exc:
+                LOGGER.error("agent_task_slot_release_pending", extra={"task_id": task.id,
+                    "error_type": type(exc).__name__})
 
-    async def _monitor(self, task, lease, stop):
+    async def _monitor(self, task, lease, stop, *, renew_settlement=None):
         config = self._settings.orchestration
         interval = min(
             config.agent_task_control_poll_seconds,
             config.resource_default_lease_seconds / 3,
         )
+        if renew_settlement is not None:
+            interval = min(interval, config.turn_execution_lease_seconds / 3)
         interrupt_sent = False
         monitor_clock = monotonic()
         last_resource_renewal = None
@@ -1071,6 +1146,10 @@ class AgentTaskDispatcher:
                 ):
                     raise ContinuationLeaseLostError("Agent resource admission lease was lost")
                 last_resource_renewal = monotonic()
+                if renew_settlement is not None:
+                    operation, operation_clock = "settlement_renew", monotonic()
+                    await renew_settlement()
+                    continue  # Scoped renewal also checks cancellation; no graph interrupt.
                 operation, operation_clock = "interrupt_poll", monotonic()
                 if not interrupt_sent:
                     requested = await self._tasks.interrupt_requested(task.id)
@@ -1093,7 +1172,8 @@ class AgentTaskDispatcher:
             event = {"wait": "agent_task_monitor_wait_failed",
                 "resource_renew": "agent_task_resource_renew_failed",
                 "interrupt_poll": "agent_task_interrupt_poll_failed",
-                "interrupt_apply": "agent_task_interrupt_apply_failed"}[operation]
+                "interrupt_apply": "agent_task_interrupt_apply_failed",
+                "settlement_renew": "agent_case_settlement_renew_failed"}[operation]
             LOGGER.log(logging.WARNING if isinstance(exc, ContinuationLeaseLostError) else logging.ERROR,
                 event, extra={"task_id": task.id, "attempt_id": task.attempt_id, "worker_id": task.worker_id,
                     "resource_id": lease.resource_id, "monitor_operation": operation,

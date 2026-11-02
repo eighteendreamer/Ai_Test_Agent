@@ -61,6 +61,11 @@ class ControlledCaseSettlementRecovery:
 
         return await ControlledCaseRecoverySettlement(self).renew(lease, lease_seconds=lease_seconds, capabilities=capabilities)
 
+    async def defer(self, lease, *, reason, capabilities):
+        from src.runtime.controlled_case_recovery_settlement import ControlledCaseRecoverySettlement
+
+        return await ControlledCaseRecoverySettlement(self).defer(lease, reason=reason, capabilities=capabilities)
+
     async def acknowledge(self, delivery, *, capabilities):
         from src.runtime.controlled_case_recovery_settlement import ControlledCaseRecoverySettlement
 

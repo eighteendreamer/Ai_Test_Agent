@@ -177,6 +177,7 @@ from src.runtime.postgres_api_credential_store import PostgresApiCredentialStore
 from src.modes.api_testing_mode.credential_reference_service import ApiCredentialReferenceService
 from src.runtime.postgres_task_outbox import PostgresTaskOutbox
 from src.runtime.postgres_agent_task_store import PostgresAgentTaskStore
+from src.runtime.controlled_case_settlement_recovery import ControlledCaseSettlementRecovery
 from src.runtime.postgres_framework_model_calls import PostgresFrameworkModelCalls
 from src.runtime.framework_worker_capabilities import FrameworkWorkerCapabilities
 from src.application.models.framework_model_call_policy import FrameworkModelCallPolicy
@@ -905,6 +906,7 @@ async def _initialize_lifespan_resources(
         settings, agent_task_store, session_service, resource_lease_manager,
         framework_capabilities=app.state.framework_worker_capabilities,
         framework_model_calls=framework_model_calls,
+        controlled_case_settlements=ControlledCaseSettlementRecovery(agent_task_store),
         framework_native_reader=(deep_agent_bound_runtime_adapter.open_native_reader
             if deep_agent_bound_runtime_adapter is not None else None),
         framework_submission_loader=FrameworkReleaseSubmissionLoader.from_configuration(

@@ -56,6 +56,9 @@ class ControlledCaseRecoverySettlement:
     async def renew(self, lease, *, lease_seconds, capabilities):
         return await self._run("renew", lease, capabilities, lease_seconds=lease_seconds)
 
+    async def defer(self, lease, *, reason, capabilities):
+        return await self._run("defer", lease, capabilities, reason=reason)
+
     async def acknowledge(self, delivery, *, capabilities):
         return await self._run("ack", delivery, capabilities)
 
@@ -169,7 +172,7 @@ class ControlledCaseRecoverySettlement:
             raise ContinuationLeaseLostError("Controlled settlement task lease is no longer active")
         return clock["now"]
 
-    def _transaction(self, operation, value, capabilities, *, worker_id=None, lease_seconds=None):
+    def _transaction(self, operation, value, capabilities, *, worker_id=None, lease_seconds=None, reason=None):
         tasks, settings = self._tasks, self._settings
         with postgres_connect(settings) as conn, conn.cursor() as cur:
             configure_runtime_owner_transaction(cur, settings)
@@ -182,7 +185,7 @@ class ControlledCaseRecoverySettlement:
             session = self._pending(cur, source, asset, row, proof)
             if operation == "claim":
                 _require(isinstance(worker_id, str) and bool(worker_id.strip()), "Controlled settlement worker identity is required")
-                if row["status"] not in {"queued", "claimed"}:
+                if row["status"] not in {"queued", "claimed", "waiting_resource"}:
                     raise TaskDeferred("framework_case_settlement_task_terminal")
                 _require(row["status"] != "queued" or row["attempt_id"] is None,
                     "Controlled settlement queued task has a previous attempt")
@@ -195,12 +198,21 @@ class ControlledCaseRecoverySettlement:
                     tasks._end_attempt(cur, row, "interrupted", "settlement_lease_expired_before_commit")
                     tasks._event(cur, row, "agent_task.interrupted", {"status": "interrupted",
                         "reason": "settlement_lease_expired_before_commit", "scope": proof.scope})
+                elif row["status"] == "waiting_resource":
+                    attempt = self._task_attempt(cur, row)
+                    _require(attempt is not None and attempt["status"] == "waiting_resource"
+                        and attempt["finished_at"] is not None, "Controlled settlement has no settled resource wait")
                 row = tasks._claim_task_attempt(cur, row, worker_id)
                 tasks._event(cur, row, "agent_task.claimed", {"scope": proof.scope, "admission_sha256": proof.asset_sha256})
                 return ControlledCaseSettlementLease(binding=source.owner.binding, task_id=row["id"],
                     attempt_id=row["attempt_id"], attempt_no=row["attempt_no"], worker_id=row["worker_id"],
                     lease_token=row["lease_token"], reference=value.case_settlement_reference)
             now = self._fence(cur, row, value)
+            if operation == "defer":
+                _require(isinstance(reason, str) and bool(reason.strip()), "Controlled settlement deferral requires a reason")
+                tasks._update_task_status(cur, row, "waiting_resource", None, reason)
+                tasks._clear_lease(cur, row)
+                return True
             if operation == "renew":
                 _require(type(lease_seconds) is int and lease_seconds > 0, "Controlled settlement renewal requires positive seconds")
                 cur.execute(f"UPDATE {tasks._session_table} SET metadata=metadata || jsonb_build_object("
