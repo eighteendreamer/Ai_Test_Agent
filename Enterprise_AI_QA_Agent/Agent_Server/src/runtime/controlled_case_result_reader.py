@@ -81,7 +81,22 @@ class ControlledCaseResultReader:
         locked = assert_runtime_owner(cur, settings, owner)
         cur.execute(f"SELECT * FROM {tasks._tasks} WHERE id=%s FOR UPDATE", (owner.task_id,))
         task = cur.fetchone()
-        _require(task is not None and task["operation"] == "case_execute" and task["status"] == "running"
+        _require(task is not None and task["status"] == "running", "Controlled result task is not running")
+        result = self._read_originals_in_transaction(cur, owner, original, native, locked, task,
+            event_log=event_log, root_model_budget=root_model_budget)
+        # Live readers still require both live leases, including after waiting reads.
+        assert_runtime_owner(cur, settings, owner)
+        return result
+
+    def _read_originals_in_transaction(self, cur, owner, original, native, locked, task, *,
+            event_log=None, root_model_budget=None):
+        """Shared facts only, not authority. Terminal ACK calls this only AFTER
+        validating the complete atomic settlement proof and actual terminal rows.
+        No public skip-owner flag, writes, graph invocation or response import.
+        """
+        tasks, binding, settings = self._tasks, owner.binding, self._tasks._settings
+        _require(task is not None and task["operation"] == "case_execute"
+            and task["lease_token"] == owner.owner_token
             and task["attempt_id"] == owner.attempt_id and task["worker_id"] == owner.worker_id
             and task["runtime_binding"] == binding.model_dump(mode="json")
             and task["input_payload"] == {"case_execution_input": original.model_dump(mode="json")}
@@ -138,6 +153,4 @@ class ControlledCaseResultReader:
         result = project_controlled_case_result(original, native, root_model_budget, event_log, materials)
         _require(not sealed or result.state["event_log"] == read.event_log,
             "Controlled result completion differs from its frozen deterministic projection")
-        # Recheck on a fresh DB clock after any potentially waiting reads.
-        assert_runtime_owner(cur, settings, owner)
         return result

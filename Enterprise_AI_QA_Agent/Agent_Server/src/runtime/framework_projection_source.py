@@ -13,7 +13,7 @@ from src.runtime.postgres_runtime_owner import assert_runtime_owner, configure_r
 from src.schemas.controlled_case_admission import (
     ControlledCaseProjectionCheckpoint, ControlledCaseProjectionReceipts, read_result_checkpoint,
     ControlledCaseApplicationCheckpoint, ControlledCaseApplicationReceipts,
-    ControlledCaseAssessmentCheckpoint,
+    ControlledCaseAssessmentCheckpoint, ControlledCaseSettlementCheckpoint,
 )
 from src.schemas.framework_approval import approval_value_hash
 
@@ -92,6 +92,8 @@ def save_projection_manifest(cur, settings, source, manifest, *, message_version
     from src.runtime.framework_runtime_results import _require
 
     if isinstance(source, ControlledCaseProjectionSource):
+        _require(not isinstance(source.checkpoint, ControlledCaseSettlementCheckpoint),
+            "Settled controlled projection is read-only")
         values = dict(manifest)
         _require(values.pop("runtime_result_asset", None) == source.checkpoint.runtime_result_asset.model_dump(mode="json"),
             "Formal projection cannot replace its retained result")

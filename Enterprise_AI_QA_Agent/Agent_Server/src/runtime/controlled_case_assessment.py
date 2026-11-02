@@ -114,25 +114,33 @@ class ControlledCaseAssessments:
             "artifact_rows": artifact_rows, "inventory": raw_inventory}, mode="json"))
         return jobs, inventory, digest
 
+    def _require_original(self, cur, source, original):
+        """Same evidence/audit check for live load and proof-scoped terminal ACK."""
+        settings = self._tasks._settings
+        _require(isinstance(source.checkpoint, ControlledCaseAssessmentCheckpoint), "Controlled original assessment is missing")
+        asset = source.checkpoint.assessment
+        evidence_hash = self._evidence(cur, original, source.checkpoint.runtime_result_asset)[2]
+        _require(asset.evidence_sha256 == evidence_hash, "Controlled assessment original evidence changed")
+        event = assessment_event(asset)
+        cur.execute(f"SELECT * FROM {settings.database.postgres_event_table} WHERE session_id=%s AND id=%s",
+            (event.session_id, event.id))
+        row = cur.fetchone()
+        _require(row is not None, "Controlled assessment has no atomic original receipt")
+        _require_event_intent(row, event)
+        return asset
+
     def _material(self, owner, native, create):
         tasks, settings = self._tasks, self._tasks._settings
         with postgres_connect(settings) as conn, conn.cursor() as cur:
             configure_runtime_owner_transaction(cur, settings)
             source, original, proof = self._source(cur, owner, native)
-            result = source.checkpoint.runtime_result_asset
-            jobs, inventory, evidence_hash = self._evidence(cur, original, result)
             if isinstance(source.checkpoint, ControlledCaseAssessmentCheckpoint):
-                asset = source.checkpoint.assessment
-                _require(asset.evidence_sha256 == evidence_hash, "Controlled assessment original evidence changed")
-                event = assessment_event(asset)
-                cur.execute(f"SELECT * FROM {settings.database.postgres_event_table} WHERE session_id=%s AND id=%s",
-                    (event.session_id, event.id))
-                row = cur.fetchone()
-                _require(row is not None, "Controlled assessment has no atomic original receipt")
-                _require_event_intent(row, event)
+                asset = self._require_original(cur, source, original)
                 assert_runtime_owner(cur, settings, owner)
                 return asset, True
             _require(create, "Controlled original assessment is missing")
+            result = source.checkpoint.runtime_result_asset
+            jobs, inventory, evidence_hash = self._evidence(cur, original, result)
             assessor, state, context = AgentCaseAssessmentService(None), result.runtime_result.state, original.context
             response = ModelInvocationResult(text=state.get("model_response_text", ""),
                 response_summary=state.get("model_response_summary", {}))

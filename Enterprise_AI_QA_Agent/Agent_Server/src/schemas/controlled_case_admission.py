@@ -17,6 +17,7 @@ from src.schemas.framework_projection_commit import (
 )
 from src.schemas.framework_observation_projection import FrameworkObservationAsset, FrameworkObservationCommits
 from src.schemas.controlled_case_assessment import ControlledCaseAssessmentAsset
+from src.schemas.controlled_case_settlement import ControlledCaseSettlementReceipt
 
 
 CONTROLLED_CASE_ADMISSION_KEY = "controlled_case_admission"
@@ -175,11 +176,26 @@ class ControlledCaseAssessmentCheckpoint(ControlledCaseApplicationCheckpoint):
         return self
 
 
+class ControlledCaseSettlementCheckpoint(ControlledCaseAssessmentCheckpoint):
+    schema_version: Literal[6]
+    settlement: ControlledCaseSettlementReceipt
+
+    @model_validator(mode="after")
+    def require_settlement_identity(self):
+        asset, receipt = self.assessment, self.settlement
+        if (receipt.binding_fingerprint != asset.binding.fingerprint
+            or (receipt.task_id, receipt.attempt_id, receipt.owner_epoch) != (asset.task_id, asset.attempt_id, asset.owner_epoch)
+            or receipt.assessment_sha256 != asset.asset_sha256):
+            raise ValueError("Controlled settlement differs from its original assessment")
+        return self
+
+
 def read_result_checkpoint(attempt) -> ControlledCaseResultCheckpoint | None:
     if attempt.checkpoint_version == 1:
         return None
     reader = {2: ControlledCaseResultCheckpoint, 3: ControlledCaseProjectionCheckpoint,
-        4: ControlledCaseApplicationCheckpoint, 5: ControlledCaseAssessmentCheckpoint}.get(attempt.checkpoint_version)
+        4: ControlledCaseApplicationCheckpoint, 5: ControlledCaseAssessmentCheckpoint,
+        6: ControlledCaseSettlementCheckpoint}.get(attempt.checkpoint_version)
     if reader is None:
         raise ValueError("RunItem has no supported controlled result checkpoint")
     return reader.model_validate(attempt.checkpoint_payload)
@@ -187,7 +203,7 @@ def read_result_checkpoint(attempt) -> ControlledCaseResultCheckpoint | None:
 
 def read_admission_checkpoint(attempt) -> ControlledCaseAdmissionCheckpoint:
     """Read the original reservation only; inherited attempts need reconciliation."""
-    if attempt.checkpoint_key != CONTROLLED_CASE_ADMISSION_KEY or attempt.checkpoint_version not in {1, 2, 3, 4, 5}:
+    if attempt.checkpoint_key != CONTROLLED_CASE_ADMISSION_KEY or attempt.checkpoint_version not in {1, 2, 3, 4, 5, 6}:
         raise ValueError("RunItem has no supported original controlled case admission checkpoint")
     result = read_result_checkpoint(attempt)
     checkpoint = result.admission if result is not None else ControlledCaseAdmissionCheckpoint.model_validate(attempt.checkpoint_payload)

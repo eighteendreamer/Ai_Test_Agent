@@ -458,9 +458,40 @@ lease 校验及上述保留检查。原结果／item／attempt／时长／run to
 它不是可供 Worker／HTTP 调用的结算端口，不自行创建连接、commit、重试或发起执行。
 
 这一步只封闭两个完成入口的半提交旁路并准备原事务核，不补造既存半结果的结算证明，
-也不代表所有历史异常或领取／回收路径已验收。正式双 owner 结算、原子证明、终态只读 ACK、
-业务审批继续及失租恢复仍待实现；不以 Session completed 或原 Assessment 资产替代它们。
-main／CLI／生产 Worker 装配、checkpoint 版本与默认能力开关均未改变。证据见实施记录 §195。
+也不代表所有历史异常或领取／回收路径已验收。正式双 owner 结算、原子证明和终态只读 ACK
+由下面的独立端口承担；业务审批继续及失租恢复仍待实现，不以 Session completed 或原 Assessment
+资产替代。该前置修复本身未改变 main／CLI／生产 Worker 装配、checkpoint 版本或默认能力开关。
+事务核证据见实施记录 §195。
+
+### 正式 case 原子结算与终态 ACK（v4 E／§12.1；内部显式接线）
+
+`ControlledCaseSettlements.complete` 在同一 PG 短事务锁原 Session、plan、RunItem／attempt、
+runtime owner、AgentTask／attempt 与 run；核原输入、原生终态、模型／ToolJob、原结果资产、
+应用 proof 和原 Assessment／证据后，按新 DB clock 再核双租约。
+复用唯一 `_complete_locked_item_in_transaction` 写 result／item／attempt／时长／run totals，
+复用原 task 状态、attempt 结束、owner 结束及 Session lease 清除算法，不串联两个独立提交。
+原 failed／blocked 结论不被 Session completed 或模型自报通过覆盖。
+
+原 attempt 的 checkpoint6 追加严格 `ControlledCaseSettlementReceipt` 与稳定
+`test_run.case_settled` 审计，保留 admission、原结果、应用提交、Assessment 和派生计划原件。
+证明关联原 Assessment 与完整 result／item／attempt／task／task attempt／owner／完成事件行摘要；
+attempt 摘要仅归一化自引用的 receipt 外壳，不丢弃原 schema5 内容或物理未知字段。
+Worker checkpoint 读者上限5→6，input仍4，默认 `controlled_case_available=false` 不变。
+旧读者／未来字段或版本沿原协议 defer，不创建新领取权或降级重写。
+
+`load` 只确认已存在的完整结算；`complete` 重入已有 checkpoint6 也只读 ACK。
+它先核真实终态行和完整证明，再复用原输入／原生／应用／评估原件校验。
+此窄端口不以过期 owner 冒充 live owner，不重建 Assessment、finalizer、图、模型、工具或 Memory。
+缺原件、裸半结果、漂移或未知结算均不自动修复／重跑；取消等待者或提交后 ACK 丢失记录
+`settlement_write_receipt_unknown`、`automatic_replay=false`，不声称后台 SQL 已停止。
+普通原结果读者、Assessment、分项写者和 generic finish 仍拒绝已终态 owner。
+
+`ControlledCaseRuntime` 仅在显式同时装配 Session、Assessment、settlement 服务时结算；
+先等原 executor 的事件 sink 排空关闭，再使用捕获身份调用结算端口，并由该端口重核 DB 权限。
+不在仍可写事件的 graph callback 中清 lease，不添加第二套调度或循环。
+`settlement_receipt` 是可选内部结果字段；只配置原 Session／Assessment 的已有调用保持原语义。
+main／CLI／生产 Dispatcher 未装配；业务审批继续、正式失租恢复与独立 case Worker 强杀仍待验收。
+本步真实测试与剩余出口见实施记录 §196；不能等同全系统切换。
 
 ### 原路由与恢复验证
 

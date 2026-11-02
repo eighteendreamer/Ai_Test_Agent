@@ -99,6 +99,9 @@ async def assessment_case(formal_case, tmp_path, monkeypatch, request):
                 kwargs = {"session_service": s.h.sessions} if options.get("finalize", True) else {}
                 if options.get("auto"):
                     kwargs["assessment_service"] = implementation(s.h.tasks)
+                if options.get("settle"):
+                    from src.runtime.controlled_case_settlement import ControlledCaseSettlements
+                    kwargs["settlement_service"] = ControlledCaseSettlements(s.h.tasks)
                 result = await runtime_implementation().ControlledCaseRuntime(runtime_service=bridge.runtime,
                     **kwargs).execute(h.task, executor=executor(s, h),
                         resource_id="isolated-formal-assessment", fencing_token=1)

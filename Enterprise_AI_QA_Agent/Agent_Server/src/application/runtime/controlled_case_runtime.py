@@ -12,7 +12,7 @@ from src.application.runtime.controlled_case_adapter import ControlledCaseGraphR
 from src.application.runtime.framework_graph_invocation import FrameworkGraphOutcome
 from src.application.test_runs.agent_case_context import build_agent_case_context
 from src.application.test_runs.controlled_case_preparation import prepare_controlled_case_input
-from src.runtime.execution_context import current_framework_owner, graph_event_scope
+from src.runtime.execution_context import current_framework_owner, framework_owner_scope, graph_event_scope
 from src.runtime.execution_logging import (
     append_graph_event_durable, append_graph_event_intent_durable, prepare_graph_event_log,
     complete_graph_event_log,
@@ -28,6 +28,7 @@ from src.schemas.framework_transcript import CONTROLLED_CASE_CONTEXT_VERSION_KEY
 from src.schemas.session import ExecutionEvent, ConversationResponse
 from src.schemas.framework_runtime_result import ControlledCaseRuntimeResultAsset
 from src.schemas.controlled_case_assessment import ControlledCaseAssessmentAsset
+from src.schemas.controlled_case_settlement import ControlledCaseSettlementReceipt
 
 
 logger = logging.getLogger(__name__)
@@ -35,7 +36,7 @@ logger = logging.getLogger(__name__)
 
 @dataclass(frozen=True)
 class ControlledCaseRuntimeOutcome:
-    """Optional original assessment preparation; never a completed RunItem."""
+    """Original preparations; only an explicit atomic receipt proves settlement."""
     graph_outcome: FrameworkGraphOutcome
     state: dict[str, Any]
     tool_records: list[dict[str, Any]]
@@ -43,6 +44,7 @@ class ControlledCaseRuntimeOutcome:
     result_asset: ControlledCaseRuntimeResultAsset | None = None
     conversation_response: ConversationResponse | None = None
     assessment_asset: ControlledCaseAssessmentAsset | None = None
+    settlement_receipt: ControlledCaseSettlementReceipt | None = None
 
 
 class ControlledCaseRuntime:
@@ -54,12 +56,15 @@ class ControlledCaseRuntime:
     Neither port is installed in main/Worker or grants recovery authority.
     """
 
-    def __init__(self, *, runtime_service, session_service=None, assessment_service=None):
+    def __init__(self, *, runtime_service, session_service=None, assessment_service=None, settlement_service=None):
         if assessment_service is not None and session_service is None:
             raise ValueError("Controlled assessment requires explicit Session finalization assembly")
+        if settlement_service is not None and assessment_service is None:
+            raise ValueError("Controlled settlement requires explicit original assessment assembly")
         self._runtime = runtime_service
         self._sessions = session_service
         self._assessments = assessment_service
+        self._settlements = settlement_service
 
     async def prepare_input(self, session, request, *, detail, item, version, attempt_id, projection_identity):
         # Capture all mutable inputs before retrieval/configuration awaits.
@@ -167,6 +172,7 @@ class ControlledCaseRuntime:
         result_asset = None
         conversation_response = None
         assessment_asset = None
+        settlement_owner = deepcopy(task.runtime_owner)
 
         async def build(prepared):
             nonlocal state
@@ -214,6 +220,14 @@ class ControlledCaseRuntime:
 
         outcome = await executor.execute(task, build_business_tools=build,
             resource_id=resource_id, fencing_token=fencing_token, project_outcome=project)
+        settlement_receipt = None
+        if self._settlements is not None and assessment_asset is not None:
+            # The executor has drained/closed its original event sink. Do not
+            # clear the Session lease inside project(), while that sink can
+            # still be writing. Re-enter only the captured identity; the atomic
+            # service rechecks actual authority, never this ContextVar alone.
+            with framework_owner_scope(settlement_owner):
+                settlement_receipt = await self._settlements.complete(settlement_owner, native=outcome.native_terminal)
         return ControlledCaseRuntimeOutcome(graph_outcome=outcome, state=state, tool_records=records,
             runtime_result=runtime_result, result_asset=result_asset, conversation_response=conversation_response,
-            assessment_asset=assessment_asset)
+            assessment_asset=assessment_asset, settlement_receipt=settlement_receipt)
