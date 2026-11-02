@@ -81,7 +81,8 @@ class ControlledCaseResultReader:
         locked = assert_runtime_owner(cur, settings, owner)
         cur.execute(f"SELECT * FROM {tasks._tasks} WHERE id=%s FOR UPDATE", (owner.task_id,))
         task = cur.fetchone()
-        _require(task is not None and task["status"] == "running", "Controlled result task is not running")
+        _require(task is not None and task["status"] == "running" and task["lease_token"] == owner.owner_token,
+            "Controlled result task is not running or its captured lease changed")
         result = self._read_originals_in_transaction(cur, owner, original, native, locked, task,
             event_log=event_log, root_model_budget=root_model_budget)
         # Live readers still require both live leases, including after waiting reads.
@@ -96,7 +97,6 @@ class ControlledCaseResultReader:
         """
         tasks, binding, settings = self._tasks, owner.binding, self._tasks._settings
         _require(task is not None and task["operation"] == "case_execute"
-            and task["lease_token"] == owner.owner_token
             and task["attempt_id"] == owner.attempt_id and task["worker_id"] == owner.worker_id
             and task["runtime_binding"] == binding.model_dump(mode="json")
             and task["input_payload"] == {"case_execution_input": original.model_dump(mode="json")}

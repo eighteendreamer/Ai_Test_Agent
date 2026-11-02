@@ -89,6 +89,22 @@ def require_native_terminal_original(cur, settings, source, native, preparation)
     reader namespace mapping, v4 §8.1/§9.4): SDK reads do not bind application
     admission locks. The caller owns those locks, not this read material.
     """
+    from src.application.deep_agents.checkpoint_provider import checkpoint_serializer
+
+    original = read_native_terminal_original(cur, settings, source, native.proof, preparation)
+    _require(_native_hash(checkpoint_serializer(), native.values) == native.proof.state_sha256
+        and original.checkpoint_timestamp == native.checkpoint_timestamp
+        and original.checkpoint_event_prefix == native.checkpoint_event_prefix,
+        "Original native checkpoint, native state or bound prefix changed before admission sealing")
+
+
+def read_native_terminal_original(cur, settings, source, proof, preparation):
+    """Materialize only the exact proven original, on the caller's connection.
+
+    No upstream counterpart (checked: original native recheck, BoundPostgresReader,
+    v4 §9/§12.1): a lost process cannot supply its old Python state object. This
+    same source-only SDK read grants neither execution nor application authority.
+    """
     from psycopg import sql
     from psycopg.rows import dict_row
     from src.application.deep_agents.fenced_postgres_saver import BoundPostgresReader
@@ -96,8 +112,9 @@ def require_native_terminal_original(cur, settings, source, native, preparation)
     from src.application.deep_agents.checkpoint_provider import checkpoint_serializer
     from src.runtime.framework_event_completion import CHECKPOINT_PREFIX_KEY
 
-    _require(native.proof.binding_fingerprint == source.binding.fingerprint
-        and native.proof.thread_id == source.binding.thread_id and native.proof.checkpoint_namespace == "",
+    proof = NativeTerminalProof.model_validate(proof)
+    _require(proof.binding_fingerprint == source.binding.fingerprint
+        and proof.thread_id == source.binding.thread_id and proof.checkpoint_namespace == "",
         "Original native proof differs from its bound source")
     frozen_input = None
     if source.binding.runtime_kind == "langgraph":
@@ -116,7 +133,7 @@ def require_native_terminal_original(cur, settings, source, native, preparation)
             (sql.Identifier(settings.deep_agents.checkpoint_schema).as_string(connection),))
         reader = BoundPostgresReader(connection, source=source, serde=checkpoint_serializer())
         config = {"configurable": {"thread_id": source.binding.thread_id,
-            "checkpoint_id": native.proof.checkpoint_id}}
+            "checkpoint_id": proof.checkpoint_id}}
         graph = native_graph_schema(preparation, source=source, saver=reader)
         checkpoint = reader.get_tuple(config)
         snapshot = graph.get_state(config, subgraphs=True)
@@ -127,18 +144,19 @@ def require_native_terminal_original(cur, settings, source, native, preparation)
         except ValueError as exc:
             raise FrameworkMessageStageRecoveryRequired("Original native checkpoint differs from its frozen input") from exc
     _require(checkpoint is not None and not checkpoint.pending_writes
-        and native.proof.serializer == type(reader.serde).__module__ + "." + type(reader.serde).__qualname__
-        and _native_hash(reader.serde, checkpoint.checkpoint) == native.proof.checkpoint_sha256
-        and _native_hash(reader.serde, native.values) == native.proof.state_sha256
-        and _native_hash(reader.serde, snapshot.values) == native.proof.state_sha256
-        and snapshot.config["configurable"]["checkpoint_id"] == native.proof.checkpoint_id
+        and proof.serializer == type(reader.serde).__module__ + "." + type(reader.serde).__qualname__
+        and _native_hash(reader.serde, checkpoint.checkpoint) == proof.checkpoint_sha256
+        and _native_hash(reader.serde, snapshot.values) == proof.state_sha256
+        and snapshot.config["configurable"]["checkpoint_id"] == proof.checkpoint_id
         and not snapshot.next and not snapshot.tasks and not snapshot.interrupts
         and snapshot.metadata.get("source") == "loop"
         and tuple(sorted(key for key, channel in graph.channels.items()
-            if isinstance(channel, UntrackedValue))) == native.proof.uncheckpointed_channels
-        and checkpoint.checkpoint.get("ts") == native.checkpoint_timestamp
-        and checkpoint.metadata.get(CHECKPOINT_PREFIX_KEY) == native.checkpoint_event_prefix,
+            if isinstance(channel, UntrackedValue))) == proof.uncheckpointed_channels,
         "Original native checkpoint, native state or bound prefix changed before admission sealing")
+    require_closed_native_messages(snapshot.values.get("messages"))
+    return NativeTerminalRead(proof=proof, values=snapshot.values,
+        checkpoint_timestamp=checkpoint.checkpoint.get("ts"),
+        checkpoint_event_prefix=deepcopy(checkpoint.metadata.get(CHECKPOINT_PREFIX_KEY)))
 
 
 async def collect_native_terminal(agent, saver, config, *, returned_values=None) -> NativeTerminalRead:

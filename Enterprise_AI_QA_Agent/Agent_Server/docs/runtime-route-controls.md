@@ -493,6 +493,39 @@ Worker checkpoint 读者上限5→6，input仍4，默认 `controlled_case_availa
 main／CLI／生产 Dispatcher 未装配；业务审批继续、正式失租恢复与独立 case Worker 强杀仍待验收。
 本步真实测试与剩余出口见实施记录 §196；不能等同全系统切换。
 
+### 正式 case 持久交付终态只读确认（v4 E／§12.1；内部端口）
+
+`ControlledCaseSettlements.acknowledge_delivery(delivery, capabilities=...)` 只消费原
+reference-only outbox 交付，不需要旧进程的 owner／native Python 对象。
+先用原严格 command／binding／input／checkpoint 读者核精确交付身份与制品兼容性，
+再锁原 Session、plan／item／attempt、owner／task／attempt、run，并核 checkpoint6、
+完整物理终态行摘要与唯一结算审计。没有完整原子结算即拒绝，不能从 Session completed、
+schema5 Assessment、单独 result 或原生终态推断结算已成功。
+
+身份读取仅构造不含执行 token 的 `RuntimeCheckpointSource`；通过摘要校验后，使用同连接
+`BoundPostgresReader` 精确读取证明指向的原生 checkpoint／完整消息，复用原 native、
+冻结输入、账本、ToolJob／artifact、结果资产、application proof 和 Assessment 校验。
+原 `require_native_terminal_original` 与新 source-only 读取共享同一物化算法；
+普通 live reader 仍前后核双租约，不新增公开 skip-owner 或重建 `RuntimeExecutionOwner`。
+
+制品／运行时／状态版本检查从原 `require` 抽为 `require_runtime_artifact`，
+正常 claim 的检查顺序和语义保持；ACK 不需要开启新执行开关，
+`controlled_case_available=false`／`deepagents_available=false` 的兼容只读进程也可确认原件。
+不兼容版本、未来字段和 reader5 仍 defer，不降级写回；本轮不新增持久格式或 DDL。
+
+该端口不 claim／begin／续租／修复／重新裁决，不补 Memory，不执行图、模型或工具；
+缺失、漂移、裸半结果和取消均保留原结果，日志 `settlement_read_unsettled`、
+`automatic_replay=false`。调用者取消不证明后台只读 SQL 已停止，更不产生可重跑资格。
+已有普通 claim 对 completed task 只返回终态原记录，不授予新 owner。
+
+独立进程验收涵盖原 Assessment 后、结算事务内审计已写但未提交、提交后 ACK 前强杀：
+前两者保留 schema5、无 result／结算审计，新的只读进程拒绝补结算；后者保留 schema6，
+新进程只凭 settings＋交付重复确认原 receipt，原件摘要不变。本地模型返回空 checks，
+正式结论仍 blocked，没有 ToolJob／artifact／工具效果，仅一次本地 HTTP；
+这是显式受控服务端口的真实进程／PG／Redis 验收，不是生产 Dispatcher／资源 heartbeat
+接入、正式失租后的恢复资格、实际领域 Runner 或真实供应商验收。
+main／CLI／生产开关不变；详细红绿与剩余出口见实施记录 §197。
+
 ### 原路由与恢复验证
 
 关闭新选路时记录 `deep_agent_new_turn_route_disabled`，带 `session_id`、`turn_id` 和 `recovery_reason=new_turn_admission_disabled`；这是路由决定，不是取消/停止回执。

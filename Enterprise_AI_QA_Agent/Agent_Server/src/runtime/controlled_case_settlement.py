@@ -15,7 +15,7 @@ from pydantic import TypeAdapter
 
 from src.infrastructure.postgres_runtime import postgres_connect
 from src.runtime.controlled_case_assessment import ControlledCaseAssessments
-from src.runtime.controlled_case_execution import lock_case_execution
+from src.runtime.controlled_case_execution import lock_case_execution, lock_case_delivery
 from src.runtime.controlled_case_result_reader import ControlledCaseResultReader
 from src.runtime.controlled_case_results import require_retained_case_asset
 from src.runtime.execution_context import current_framework_owner, current_graph_event_sink
@@ -60,6 +60,41 @@ class ControlledCaseSettlements:
         """Read only an already proven atomic settlement; never create/repair it."""
         return await self._run(owner, native, create=False)
 
+    async def acknowledge_delivery(self, delivery, *, capabilities):
+        """ACK persisted originals, without acquiring/reconstructing a live owner."""
+        scope = {"operation": "terminal_delivery_ack"}
+        try:
+            command = deepcopy(capabilities.require_command_format(delivery))
+            scope["task_id"] = command.task_id
+            capabilities.require_runtime_artifact(command.runtime_binding)
+            receipt = await asyncio.to_thread(self._delivery_original, command, capabilities)
+        except (Exception, asyncio.CancelledError) as exc:
+            logger.warning("controlled_case_settlement_unsettled", extra={**scope, "error_type": type(exc).__name__,
+                "recovery_reason": "settlement_read_unsettled", "automatic_replay": False})
+            raise
+        logger.info("controlled_case_settlement_acknowledged", extra={**scope,
+            "result_id": receipt.result_id, "settlement_sha256": receipt.receipt_sha256, "automatic_replay": False})
+        return receipt
+
+    def _delivery_original(self, command, capabilities):
+        from src.runtime.framework_event_completion import original_checkpoint_source
+        from src.runtime.postgres_framework_model_calls import PostgresFrameworkModelCalls
+
+        tasks, settings = self._tasks, self._tasks._settings
+        with postgres_connect(settings) as conn, conn.cursor() as cur:
+            configure_runtime_owner_transaction(cur, settings)
+            session = tasks._lock_session(cur, command.session_id)
+            case, row = lock_case_delivery(cur, tasks, command, capabilities)
+            checkpoint = read_result_checkpoint(case.attempt)
+            _require(isinstance(checkpoint, ControlledCaseSettlementCheckpoint), "Controlled atomic settlement is missing")
+            source = original_checkpoint_source(cur, settings, command.runtime_binding, row, checkpoint.settlement.owner_epoch)
+            task, attempt, saved_owner = self._lock_identity_rows(cur, source)
+            case.store._lock_run(cur, case.item.run_id)
+            PostgresFrameworkModelCalls(settings).require_worker_compatibility(cur, command.runtime_binding,
+                capabilities, require_budget=False)
+            return self._ack(cur, source, None, case, session, task, checkpoint,
+                (case, session, task, attempt, saved_owner))
+
     async def _run(self, owner, native, *, create):
         scope = {"task_id": getattr(owner, "task_id", None), "operation": "complete" if create else "load"}
         try:
@@ -85,19 +120,8 @@ class ControlledCaseSettlements:
         session = tasks._lock_session(cur, owner.binding.session_id)
         case = lock_case_execution(cur, settings, owner.controlled_case_lease,
             task_id=owner.task_id, binding=owner.binding, require_active=False)
-        saved_owner = lock_owner_row(cur, settings, owner.binding)
-        cur.execute(f"SELECT * FROM {tasks._tasks} WHERE id=%s FOR UPDATE", (owner.task_id,))
-        task = cur.fetchone()
-        cur.execute(f"SELECT * FROM {tasks._attempts} WHERE id=%s FOR UPDATE", (owner.attempt_id,))
-        attempt = cur.fetchone()
-        _require(task is not None and attempt is not None, "Controlled settlement original task/attempt is missing")
-        _require((task["attempt_id"], task["worker_id"], task["lease_token"], task["operation"])
-            == (owner.attempt_id, owner.worker_id, owner.owner_token, "case_execute")
-            and (attempt["task_id"], attempt["worker_id"], attempt["lease_token"], attempt["attempt_no"])
-            == (owner.task_id, owner.worker_id, owner.owner_token, task["attempt_no"])
-            and (saved_owner["task_id"], saved_owner["attempt_id"], saved_owner["worker_id"],
-                saved_owner["owner_token"], saved_owner["owner_epoch"])
-            == (owner.task_id, owner.attempt_id, owner.worker_id, owner.owner_token, owner.owner_epoch)
+        task, attempt, saved_owner = self._lock_identity_rows(cur, owner)
+        _require(task["lease_token"] == owner.owner_token
             and (case.item.lease_token, case.attempt.lease_token, case.item.lease_owner, case.attempt.worker_id,
                 case.item.attempt_no, case.attempt.attempt_no, case.attempt.recovered_from_attempt_id)
             == (owner.controlled_case_lease.lease_token, owner.controlled_case_lease.lease_token,
@@ -107,15 +131,34 @@ class ControlledCaseSettlements:
         case.store._lock_run(cur, case.item.run_id)
         return case, session, task, attempt, saved_owner
 
-    def _terminal_materials(self, cur, owner, case, result_id):
+    def _lock_identity_rows(self, cur, owner):
+        """Producer identity is not execution authority; terminal hashes follow."""
         tasks, settings = self._tasks, self._tasks._settings
-        case, session, task, attempt, saved_owner = self._lock(cur, owner)
+        saved_owner = lock_owner_row(cur, settings, owner.binding)
+        cur.execute(f"SELECT * FROM {tasks._tasks} WHERE id=%s FOR UPDATE", (owner.task_id,))
+        task = cur.fetchone()
+        cur.execute(f"SELECT * FROM {tasks._attempts} WHERE id=%s FOR UPDATE", (owner.attempt_id,))
+        attempt = cur.fetchone()
+        _require(task is not None and attempt is not None, "Controlled settlement original task/attempt is missing")
+        _require((task["attempt_id"], task["worker_id"], task["operation"])
+            == (owner.attempt_id, owner.worker_id, "case_execute")
+            and (attempt["task_id"], attempt["worker_id"], attempt["lease_token"], attempt["attempt_no"])
+            == (owner.task_id, owner.worker_id, task["lease_token"], task["attempt_no"])
+            and (saved_owner["task_id"], saved_owner["attempt_id"], saved_owner["worker_id"],
+                saved_owner["owner_token"], saved_owner["owner_epoch"])
+            == (owner.task_id, owner.attempt_id, owner.worker_id, task["lease_token"], owner.owner_epoch),
+            "Controlled settlement differs from its original dual execution identity")
+        return task, attempt, saved_owner
+
+    def _terminal_materials(self, cur, owner, locked, result_id):
+        tasks, settings = self._tasks, self._tasks._settings
+        case, session, task, attempt, saved_owner = locked
         checkpoint = read_result_checkpoint(case.attempt)
         asset = checkpoint.assessment
         _require(task["status"] == attempt["status"] == saved_owner["execution_state"] == "completed"
             and task["result_status"] == "completed" and not task["interrupt_requested"]
             and attempt["finished_at"] is not None and attempt["error_code"] is None and task["error_code"] is None
-            and session["metadata"].get("turn_lease_token") != owner.owner_token
+            and session["metadata"].get("turn_lease_token") != task["lease_token"]
             and session["metadata"].get("turn_lease_turn_id") != owner.binding.turn_id
             and case.item.result_id == result_id
             and case.item.status == case.attempt.status == asset.completion.status,
@@ -161,14 +204,19 @@ class ControlledCaseSettlements:
             "result": dict(result_row), "item": item_row, "attempt": attempt_row,
             "task": dict(task), "task_attempt": dict(attempt), "owner": dict(saved_owner), "task_event": dict(events[0])}.items()}
 
-    def _ack(self, cur, owner, native, case, session, task, checkpoint):
+    def _ack(self, cur, owner, native, case, session, task, checkpoint, locked):
         receipt = checkpoint.settlement
-        hashes = self._terminal_materials(cur, owner, case, receipt.result_id)
+        hashes = self._terminal_materials(cur, owner, locked, receipt.result_id)
         _require(all(getattr(receipt, key) == value for key, value in hashes.items()),
             "Controlled settlement original terminal rows changed")
         original = parse_controlled_case_task_input(task["input_payload"]["case_execution_input"])
         _require(isinstance(original, ControlledCaseFinalizationTaskInputAsset),
             "Controlled settlement has no original finalization input")
+        if native is None:
+            from src.application.deep_agents.native_terminal import read_native_terminal_original
+
+            proof = checkpoint.runtime_result_asset.runtime_result.state["model_response_summary"]["native_terminal"]
+            native = read_native_terminal_original(cur, self._tasks._settings, owner, proof, original.graph_input)
         # Only this proof-scoped ACK reaches the common facts without live
         # authority. Ordinary readers/writers still reject completed owners.
         result = ControlledCaseResultReader(self._tasks)._read_originals_in_transaction(
@@ -189,10 +237,11 @@ class ControlledCaseSettlements:
         tasks, settings = self._tasks, self._tasks._settings
         with postgres_connect(settings) as conn, conn.cursor() as cur:
             configure_runtime_owner_transaction(cur, settings)
-            case, session, task, attempt, saved_owner = self._lock(cur, owner)
+            locked_rows = self._lock(cur, owner)
+            case, session, task, attempt, saved_owner = locked_rows
             checkpoint = read_result_checkpoint(case.attempt)
             if isinstance(checkpoint, ControlledCaseSettlementCheckpoint):
-                return self._ack(cur, owner, native, case, session, task, checkpoint), True
+                return self._ack(cur, owner, native, case, session, task, checkpoint, locked_rows), True
             _require(create, "Controlled atomic settlement is missing")
             _require(task["status"] == attempt["status"] == "running" and not task["interrupt_requested"]
                 and session["status"] == "completed", "Controlled case is not ready for its atomic settlement")
@@ -206,7 +255,7 @@ class ControlledCaseSettlements:
             result = locked.store._complete_locked_item_in_transaction(cur, locked.item, locked.attempt, asset.completion, now)
             tasks._update_status(cur, task, "completed", "completed", None, execution_returned=True)
             tasks._clear_lease(cur, task)
-            hashes = self._terminal_materials(cur, owner, case, result.id)
+            hashes = self._terminal_materials(cur, owner, self._lock(cur, owner), result.id)
             values = TypeAdapter(Any).dump_python(dict(schema_version=1, scope="controlled_case_atomic_settlement_only",
                 binding_fingerprint=owner.binding.fingerprint, task_id=owner.task_id, attempt_id=owner.attempt_id,
                 owner_epoch=owner.owner_epoch, assessment_sha256=asset.asset_sha256,

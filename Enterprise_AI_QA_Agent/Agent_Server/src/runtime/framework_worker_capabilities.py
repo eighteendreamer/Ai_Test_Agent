@@ -97,6 +97,19 @@ class FrameworkWorkerCapabilities:
         Other graph workflows and resume operations
         require their own execution contracts before they can be admitted.
         """
+        self.require_runtime_artifact(binding)
+        if (binding.runtime_kind == "langgraph" and operation == "case_execute"
+            and self.controlled_case_available):
+            return
+        if binding.runtime_kind != "deepagents":
+            raise TaskDeferred("framework_runtime_kind_unavailable")
+        if not self.deepagents_available:
+            raise TaskDeferred("framework_deepagents_unavailable")
+        if operation not in {"message", "approval_resume", "framework_reconcile", "approval_recover", "message_recover"}:
+            raise TaskDeferred("framework_operation_unavailable")
+
+    def require_runtime_artifact(self, binding: RuntimeBinding) -> None:
+        """Shared code/format compatibility, without enabling new execution."""
         self.require_release(binding)
         versions = {self.runtime_version}
         if self.context_transcript_enabled and self.runtime_version == FRAMEWORK_RUNTIME_VERSION:
@@ -115,15 +128,6 @@ class FrameworkWorkerCapabilities:
             raise TaskDeferred("framework_state_schema_unavailable")
         if binding.dependency_lock_sha256.lower() != self.dependency_lock_sha256.lower():
             raise TaskDeferred("framework_dependency_artifact_unavailable")
-        if (binding.runtime_kind == "langgraph" and operation == "case_execute"
-            and self.controlled_case_available):
-            return
-        if binding.runtime_kind != "deepagents":
-            raise TaskDeferred("framework_runtime_kind_unavailable")
-        if not self.deepagents_available:
-            raise TaskDeferred("framework_deepagents_unavailable")
-        if operation not in {"message", "approval_resume", "framework_reconcile", "approval_recover", "message_recover"}:
-            raise TaskDeferred("framework_operation_unavailable")
 
     def require_message_stage(self, schema_version: int | None) -> None:
         if schema_version is not None and (type(schema_version) is not int

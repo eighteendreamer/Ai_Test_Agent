@@ -80,6 +80,17 @@ def prepare_case_claim(cur, tasks, command, capabilities):
     if command.operation != "case_execute" or command.case_execution_reference is None:
         raise ValueError("Controlled case claim requires its reference-only delivery")
     capabilities.require(command.runtime_binding, operation=command.operation)
+    return lock_case_delivery(cur, tasks, command, capabilities)[0]
+
+
+def lock_case_delivery(cur, tasks, command, capabilities):
+    """Original delivery facts/locks only; execution admission stays with claim.
+
+    A compatible terminal reader need not be enabled for new case execution.
+    No task/owner/lease is created, renewed or changed by this shared read.
+    """
+    if command.operation != "case_execute" or command.case_execution_reference is None:
+        raise ValueError("Controlled case claim requires its reference-only delivery")
     cur.execute(f"SELECT * FROM {tasks._tasks} WHERE id=%s", (command.task_id,))
     row = cur.fetchone()
     if row is None:
@@ -112,7 +123,7 @@ def prepare_case_claim(cur, tasks, command, capabilities):
         or locked.checkpoint.project_id != command.project_id or locked.item.case_version_id != command.reference_id
         or locked.checkpoint.plan_snapshot_identity != asset.plan_snapshot_identity):
         raise ValueError("Controlled case task differs from its original admission checkpoint")
-    return locked
+    return locked, row
 
 
 def require_case_submission(cur, tasks, row, locked, now):

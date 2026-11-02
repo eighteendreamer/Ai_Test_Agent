@@ -9445,3 +9445,64 @@ v4 E／§12.1 → §196 → 8生产＋2测试＋2文档 → 首条红绿／callb
 本步仅补正式原owner仍合法时的一次原子结算，以及已原子结算之后的只读ACK；不将未结算失租task／attempt改为completed，不建立正式case恢复资格或重置RunItem。业务审批继续、正式失租后原结果／Assessment／Memory的只读对账与受限恢复、独立case Worker关键窗口强杀、main与逐模式实际入口／质量、真实供应商／领域Runner、E3/E4制品／一致备份恢复和性能基线仍未完成。未执行Docker、实际MySQL／RustFS、付费供应商／embedding、生产路由切换或全量前后端验收。
 
 §181四项及§159／160／166等历史异常不因本组绿色自动撤销；完整v4 A2/A3/B/C/D/E/F和H01–H12范围未缩小，goal保持active，不标complete／paused／blocked。整体仍粗估 **4–8周有效开发／验收**，外部环境、授权与人工发布等待另计，非承诺；本子步不等于全系统完成。
+
+## 197. E／§12.1：持久交付只读结算 ACK 与独立进程强杀窗口（2026-11-02）
+
+### 续接、根因与依据
+
+续接 §196／5a5c08f55，核 v4 §8–10／§12.1、§52／53 及最新实施事实，审阅原未提交源码和首条红测，不以草稿代替已提交能力。§196 的 load 仍要求原 Worker 进程内捕获的 owner 与 native 对象，进程死亡后不能只凭原 outbox 交付确认已提交结算；这是持久交付与原件读取边界缺失，不是重新执行的理由。用户 v3 文档保留，原 SHA256 为 8a43e94160767a0de20740f2cb30782f06322cbc3467076dfcb120d4efdf1ad4；不纳入本提交。435d9cf7c 已完成 Conda／pip 迁移，不重复安装或删除历史 uv.lock 制品身份依据。
+
+原 prepare_case_claim 的 reference-only 身份／冻结输入核验 → 抽同一 lock_case_delivery 原件锁定；原 RuntimeCheckpointSource／original_checkpoint_source → 不构造 RuntimeExecutionOwner、不向只读调用者交付 token；原 require_native_terminal_original／BoundPostgresReader／native_graph_schema → 同连接精确原生物化算法，不复制原生恢复器；原完整结算摘要／原 reader／asset／application proof／Assessment → 先核已结算事实，再重读完整原件。原 require 的制品兼容检查 → 抽 require_runtime_artifact，与新执行 feature gate 分开，不把关闭新执行误作拒绝既有终态读者。课程 Agent轨迹与协议鲁棒性.html 的轨迹／幂等／超时要求及既有 test_framework_terminal_gap 独立 spawn／Redis gate／kill 范例 → 本轮真实进程窗口，不以线程取消代替进程强杀。
+
+范围为5个生产文件（native_terminal、controlled_case_execution、controlled_case_result_reader、controlled_case_settlement、framework_worker_capabilities）、3个测试文件（原 business_bridge helper 显式隔离表名、新 settlement_ack、新 settlement_process）、2份文档（本记录、runtime-route-controls），共10文件。没有改 main／CLI／生产 Dispatcher、DDL、依赖、公开 REST／前端 DTO、真实 .env 或默认 controlled_case_available=false。
+
+### 交付只读 ACK 与兼容边界
+
+新 acknowledge_delivery 只解析并深拷贝原交付，核原 command／binding／input／checkpoint 格式、runtime／state／依赖／release 制品兼容；按原锁序核 Session、plan／RunItem／attempt、owner／AgentTask／attempt、run 与模型账本格式。lock_case_delivery 只重用原身份校验，不创建／续租任务或 owner；普通 prepare_case_claim 仍先 require 新执行权限。内部为原 RunItem 锁定位读取 durable case lease，不生成执行 owner、不执行 assert_runtime_owner 取得新执行权。
+
+必须已有严格 checkpoint6，完整物理 result／item／case attempt／task／task attempt／owner／完成事件摘要与原结算 receipt 相符后，才从被摘要覆盖的原 result asset 取得精确 native proof。使用无 token 的 RuntimeCheckpointSource，在同一事务的 BoundPostgresReader 重读原 checkpoint／完整 state／messages／serializer／namespace／pending 状态及冻结输入，再复用原 reader、ToolJob／artifact、账本／事件、结果资产、应用 proof、Assessment／证据和原结算审计校验。read_native_terminal_original 与原 require_native_terminal_original 共享同一 SDK 物化，后者继续比较调用者原 native state／时间／prefix；普通 live reader 仍前后核双租约，token 比较留在 live 端口；captured-owner 结算端口也继续单独核原 token，不增加公开 skip-owner。
+
+require_runtime_artifact 不包含新的执行 gate。已有 require 复用此方法之后仍按原顺序检查 kind／operation／enabled；用 HEAD 原方法和本轮拆分方法做 AST 合并比较，实际 CAPABILITY_SPLIT_AST_EQUIVALENT。关闭 controlled_case_available／deepagents_available 的兼容只读进程仍能 ACK；runtime／依赖不符、reader5、未来字段或版本仍 defer，不降级写回。本轮不新增持久 schema，不授予正式 case 恢复资格。
+
+未结算、schema5 Assessment、旧半结果、原件漂移或未知状态只拒绝，不重建评估／finalizer／Memory、图、模型或工具。原 load／complete 重入复用相同终态事实核；新交付 ACK 不需要原进程内 native／owner。取消等待者保留 CancelledError，记录 settlement_read_unsettled／automatic_replay=false；后台只读线程仍可能完成，不把取消视为 SQL 已停止或可重跑凭据。普通 claim 对 completed task 沿原协议只返回终态原记录且 runtime_owner=None，不重领或重置原条目。
+
+### TDD 与真实失败
+
+首条真实 PG 红测实际 **1 failed，16.80秒**：缺 acknowledge_delivery；初次实现实际 **1 passed，16.18秒**，e197-terminal-ack-red.log／e197-terminal-ack-first.log，原运行 handle 已取得终态。增加 incompatible reader 红测实际 **1 failed、1 deselected，16.68秒**，DID NOT RAISE TaskDeferred（依赖制品不符仍被 ACK）；抽原制品兼容核，不开启执行能力来绕过。扩大组首次实际 **1 failed、20 passed，182.21秒**：half_result 测试夹具误用不存在的 _get_item 私有方法；先查原 _get_item_sync／item codec，改为同 cursor SELECT FOR UPDATE＋原 codec，保留真实半结果拒绝断言。也按原 claim 的真实终态返回协议断言无 owner，而非错误假设它必须抛异常。
+
+独立进程 harness 首次实际 **1 failed，15.46秒**：复用的 harness Redis 客户端 socket_timeout 小于阻塞 gate 等待，不是结算死锁。采用原 terminal_gap 的独立长等待客户端，不改服务／生产超时；后续实际 **1 failed、1 passed，81.63秒**，after_assessment 窗口已通过，但事务审计测试 hook 漏接 append_event_in_transaction 的原可选位置参数，子进程 TypeError（3参数／8参数）。按原方法转发 *args／**kwargs，不改生产事件签名，不降低断言；完整子进程 stderr 在 e197-process-second.log 保留。三轮为不同已定位的夹具问题，没有在同一失败路线循环微调或把它们算成生产功能红测。
+
+修正后完整三窗口实际 **3 passed，112.03秒，exit0，无skip／deselect**，e197-process-third.log；原 handle 已取回终态。子执行进程自行 claim／begin，消费父进程用原正式服务冻结受理的输入，运行固定官方 SDK／LangGraph／PostgresSaver、Session finalizer、原 Assessment／原子结算。父进程实际 kill 并 join，核进程已退出且 exitcode 非0；不是 asyncio 取消。测试只用唯一命名 checkpoint schema、ToolJob／artifact 表与原隔离 PG 表和 Redis prefix，finally 清本轮原件；未触碰共享业务数据或 Windows 文件目录。
+
+三个窗口分别为原 Assessment 后、结算事务内原 audit 插入后但提交前、真实 connection context 已提交但 complete 收到 ACK 前。前两者 kill 后仍是原 schema5、AgentTask／RunItem running，无 result／结算审计；新独立只读解释器明确拒绝，不补结算。后者为 schema6／AgentTask completed／RunItem blocked，新解释器只收到 settings＋reference delivery（不收到 config／owner／native），禁止构造 RuntimeExecutionOwner、claim／begin／状态写者，连续两次只读 ACK 原 receipt，再由父进程重复核对，完整业务／模型账本／ToolJob／artifact／native 表摘要不变。
+
+本地模型只回复一次含空 checks 的合成 receipt；原 evaluator 仍得 blocked，不把模型自报 passed 当正式通过。每窗口实际仅1次本地 HTTP，Job／artifact 表为空、无工具 handler 效果。该 harness 是显式受控服务端口的真实进程／PG／Redis 验收，**不是生产 RedisTaskWorker／Dispatcher／资源 heartbeat 或实际领域 Runner 接入验收**，也未实现未结算失租后的恢复资格。普通消息／审批的独立 Worker 回归另按其原证据范围报告。
+
+### 最终回归与证据范围
+
+持久 ACK＋原结算两个专项实际 **81 passed，967.81秒，exit0，无skip／deselect**，e197-ack-settlement-final.log，原 handle 已取得终态。22项新 ACK 覆盖不捕获 owner／native 且禁止 RuntimeExecutionOwner 构造、claim／begin／写者，制品不符、精确交付／reference／binding／input、reader5／未来格式、terminal／Assessment／artifact／native／audit 漂移、未结算三阶段及旧半结果、四并发重复 ACK、取消只读等待者和终态不重领；59项原结算完整重跑，不沿用 §196 历史结果。81与前述3项独立进程分别报告，不与中间20项或单项红绿重复累加。
+
+正式来源／执行／投影11文件实际 **404 passed，2142.43秒，exit0，无skip／deselect**，e197-formal-final.log；原串行 handle 已返回 FORMAL_PYTEST_EXIT_CODE=0，随后才进入共享原生读取／Worker组。覆盖原正式受理、双租约、冻结输入、单次执行、原件结果／资产、原分项／唯一 finalizer／Assessment 与旧完成旁路，不能等同正式失租恢复或真实业务目标验收。
+
+共享原生读取／Worker16文件实际 **788 passed，2032.22秒，exit0，无skip／deselect**，e197-native-worker-final.log；原串行 handle 已取得最终 NATIVE_WORKER_PYTEST_EXIT_CODE=0。覆盖 source-only native／冻结图输入／受控图、普通 Deep Agents native／未封口结果重建／真实独立进程空窗、checkpoint fence／native interrupt、普通应用 proof／部分恢复／审批与消息恢复，以及 Worker／路由／调度／绑定兼容。它们证明共享抽取没有破坏这些已验证路径，不把普通消息／审批的恢复资格转授正式 case，也不是双制品滚动部署或全系统生产验收。81／3／404／788分别报告，不与中间红绿或 opt-out 重复累加；四组均为当前源码的实际运行结果。
+
+~~~powershell
+& E:\MiniConda3\envs\Agent\python.exe -u -m pytest tests/test_controlled_case_settlement_ack.py tests/test_controlled_case_settlement.py -q -x -rs --tb=short --show-capture=no --log-level=INFO
+& E:\MiniConda3\envs\Agent\python.exe -u -m pytest tests/test_controlled_case_settlement_process.py -s -q -x -rs --tb=short --log-level=INFO
+& E:\MiniConda3\envs\Agent\python.exe -u -m pytest tests/test_controlled_case_assessment.py tests/test_controlled_case_finalization.py tests/test_controlled_case_projection_parts.py tests/test_controlled_case_result_asset.py tests/test_controlled_case_result.py tests/test_controlled_case_runtime.py tests/test_controlled_case_executor.py tests/test_controlled_case_task_input.py tests/test_controlled_case_admission.py tests/test_controlled_case_execution_lease.py tests/test_controlled_case_completion_boundary.py -q -x -rs --tb=short --show-capture=no --log-level=INFO
+& E:\MiniConda3\envs\Agent\python.exe -u -m pytest tests/test_controlled_case_native_reader.py tests/test_controlled_case_graph_input.py tests/test_controlled_case_graph.py tests/test_framework_native_terminal.py tests/test_framework_unsealed_result_reconstruction.py tests/test_framework_terminal_gap.py tests/test_framework_checkpoint_fencing.py tests/test_framework_native_interrupts.py tests/test_framework_application_projection.py tests/test_framework_partial_projection_recovery.py tests/test_framework_approval_recovery.py tests/test_framework_message_recovery.py tests/test_agent_v2_worker_contract.py tests/test_framework_route_rollback.py tests/test_agent_task_dispatch.py tests/test_runtime_binding_persistence.py -q -x -rs --tb=short --show-capture=no --log-level=INFO
+~~~
+
+固定 E:\MiniConda3\envs\Agent\python.exe；backend 工作目录 Agent_Server。真实组每次先运行 scripts/clear_uv_environment.ps1 -ProcessOnly，设置 PYTHONIOENCODING=utf-8、RUN_LIVE_POSTGRES_TESTS=1、RUN_LIVE_REDIS_TESTS=1、RUN_LIVE_DOCKER_TESTS=0、RUN_LIVE_MYSQL_TESTS=0、RUN_LIVE_PLAN_RUN_CREATION=0、QA_FRAMEWORK_WORKER_DIAGNOSTICS=1。PG／Redis 复用已运行服务，不启动／重启；完整 stdout＋stderr 留在不提交的 .codex-logs。重定向未即时刷新时保留原 handle，不重启测试或猜测死锁。
+
+四个 RUN_LIVE 开关及 RUN_LIVE_PLAN_RUN_CREATION 全0，运行 test_controlled_case_settlement_ack.py、test_controlled_case_settlement.py、test_controlled_case_settlement_process.py，实际 **2 passed、82 skipped，16.48秒，exit0**，e197-optout-final.log；2项只证明原无DB装配约束，82项真实服务用例明确未执行，不计通过。
+
+固定 Python 的 compileall -q Agent_Server/src Agent_Server/tests 和 pip check 实际exit0，后者 No broken requirements found；ruff／mypy 实际未安装，未新增依赖，独立 backend lint／typecheck 未执行。agent_web 的 npm.cmd run typecheck 实际exit0；npm.cmd run test -- src/components/chat/ExecutionTrace.eventCompletion.test.ts src/stores/sessionEventRefresh.test.ts src/features/flow/useFlowSession.lifecycle.test.ts 实际 **18 passed，4.43秒，exit0**。无前端源码／公开契约修改，此组只验证原完成事件／刷新／flow 消费；未执行前端 build、全量前端或浏览器验收。
+
+最终 src 聚合 SHA256 为 e612602bc48d5f0959fb53ecdceb872cb0aab3c67d0979ccb25ac68d132c9dab（867个py），tests 为 9493fecfb15a8d6e68a166dfa4e6afc5acc56b72d2839034d8132bfc7a4dafee（669个py）。算法为工作区相对 POSIX 路径排序，UTF-8路径＋NUL＋原字节＋NUL。五个生产文件及每组实际入口／依赖 fixture 在各组运行内保持不变；81组早段仅修正尚未被该组导入的新独立进程 harness 的审计 hook 转发，未动81组入口或夹具，不把最终全集 tests 摘要反推为该组启动时整个测试树已相同。三窗口最终3项、404、788及opt-out均在完整测试树固定后执行；404／788运行期间只更新文档。所有 pytest handle 已取回终态，固定 Python 的 pytest 进程数为0；结束后实际重核上述相同摘要、compileall／pip check（均exit0）和用户 v3 原 hash，不以等待中的进度当完成。
+
+### 对应、提交与剩余出口
+
+v4 E／§12.1 → §197 → 5生产＋3测试＋2文档 → 持久 ACK／兼容制品红绿、三窗口真实强杀、只读新进程／反例／受影响链路回归 → 独立提交“【feat】支持持久交付只读确认正式结算”，实际ID见Git与交付。提交前核完整status／diff／精确暂存、新增行敏感模式和用户v3原hash；新2测试精确单文件force-add，不扩大ignore或force范围。日志、认证、环境、对象制品不提交，不推送、不建PR；模式扫描不是完整安全审计。
+
+本步只增加已原子结算之后的持久交付确认，并验证三个隔离进程窗口；不把未结算／失租 task 改为 completed，不建立新正式恢复资格、不重置原 RunItem 或覆盖失败。业务审批继续、正式失租后原结果／Assessment／Memory 的只读对账与受限恢复、其他关键窗口、main 与逐模式实际入口／质量、真实供应商／领域 Runner、E3/E4制品／一致备份恢复、性能基线仍未完成。未执行 Docker、实际 MySQL／RustFS、付费模型／embedding、生产切换或全量前后端验收。完整v4与H01–H12范围不缩小，goal保持active；整体仍粗估 **4–8周有效开发／验收**，外部环境、授权及人工发布等待另计，非承诺，不把当前子步当整体完成。

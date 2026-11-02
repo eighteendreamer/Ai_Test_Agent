@@ -62,7 +62,7 @@ def wrapped_tools(h, effects, *, fail=False, entered=None, block=None):
 
 
 @asynccontextmanager
-async def business_bridge(h, effects, *, approval_required):
+async def business_bridge(h, effects, *, approval_required, table_names=None):
     # Same original application services as test_framework_tool_bridge; only
     # the registered handler is synthetic. No external target or real command.
     from src.application.permissions.permission_service import PermissionService
@@ -77,8 +77,9 @@ async def business_bridge(h, effects, *, approval_required):
     from tests.test_live_postgres_concurrency import _drop_tables
 
     suffix = uuid4().hex
-    h.settings.database.postgres_tool_job_table = f"controlled_job_{suffix}"
-    h.settings.database.postgres_tool_artifact_table = f"controlled_artifact_{suffix}"
+    job_table, artifact_table = table_names or (f"controlled_job_{suffix}", f"controlled_artifact_{suffix}")
+    h.settings.database.postgres_tool_job_table = job_table
+    h.settings.database.postgres_tool_artifact_table = artifact_table
     job_store = PostgresToolJobStore(h.settings)
     await job_store.initialize()
     jobs = ToolJobService(job_store)
