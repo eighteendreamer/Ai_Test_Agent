@@ -7,6 +7,9 @@ from dataclasses import dataclass
 import logging
 from typing import Any
 
+from pydantic import TypeAdapter
+
+from src.application.deep_agents.framework_transcript import serialize_messages
 from src.application.models.framework_model_call_policy import model_config_fingerprint
 from src.application.runtime.controlled_case_adapter import ControlledCaseGraphRequest
 from src.application.runtime.framework_graph_invocation import FrameworkGraphOutcome
@@ -30,6 +33,7 @@ from src.schemas.framework_runtime_result import ControlledCaseRuntimeResultAsse
 from src.schemas.controlled_case_assessment import ControlledCaseAssessmentAsset
 from src.schemas.controlled_case_settlement import ControlledCaseSettlementReceipt
 from src.schemas.controlled_case_approval_wait import ControlledCaseApprovalWaitReceipt
+from src.schemas.framework_tool_projection import FrameworkRuntimeToolProjection
 
 
 logger = logging.getLogger(__name__)
@@ -47,6 +51,7 @@ class ControlledCaseRuntimeOutcome:
     assessment_asset: ControlledCaseAssessmentAsset | None = None
     settlement_receipt: ControlledCaseSettlementReceipt | None = None
     approval_wait_receipt: ControlledCaseApprovalWaitReceipt | None = None
+    approval_tool_projection: FrameworkRuntimeToolProjection | None = None
 
 
 class ControlledCaseRuntime:
@@ -202,12 +207,23 @@ class ControlledCaseRuntime:
         return asset
 
     async def execute(self, task, *, executor=None, resource_id, fencing_token):
+        task = task.model_copy(deep=True)
         executor = executor if executor is not None else self._executor
         if executor is None:
             raise ValueError("Controlled runtime requires its explicit original executor")
-        # This application port cannot silently upgrade historical schema 1.
+        # Read the dedicated successor's original state before begin; never
+        # fake a first-input Task or upgrade a historical wait without slots.
+        approval = task.operation == "case_approval"
+        wait_asset = None
+        continuation = getattr(executor, "_approval_continuations", None) if approval else None
+        capabilities = getattr(executor, "_framework_capabilities", None)
         try:
-            original = parse_controlled_case_task_input(task.input.get("case_execution_input"))
+            if approval:
+                if continuation is None:
+                    raise ValueError("Controlled approval runtime requires its dedicated continuation port")
+                original, wait_asset = await continuation.prepare_runtime(task, capabilities=capabilities)
+            else:
+                original = parse_controlled_case_task_input(task.input.get("case_execution_input"))
             if not isinstance(original, ControlledCasePreparedTaskInputAsset):
                 raise ValueError("Controlled runtime requires its frozen full application preparation")
         except (TypeError, ValueError) as exc:
@@ -221,28 +237,80 @@ class ControlledCaseRuntime:
         result_asset = None
         conversation_response = None
         assessment_asset = None
+        approval_tool_projection = None
+        original_materials = list(wait_asset.tool_materials) if wait_asset is not None else []
         settlement_owner = deepcopy(task.runtime_owner)
 
         async def build(prepared):
             nonlocal state
             if not isinstance(prepared, ControlledCasePreparedTaskInputAsset) or prepared.asset_sha256 != original.asset_sha256:
                 raise ValueError("Controlled runtime preparation changed before execution")
-            state = deepcopy(prepared.runtime_preparation.initial_state)
-            intents, state["event_log"] = state["event_log"], []
-            for event in intents:
-                await append_graph_event_intent_durable(state, ExecutionEvent(session_id=state["session_id"], **event))
-            prepare_graph_event_log(state)
-            await append_graph_event_durable(state, "runtime.turn_started", "runtime",
-                "Controlled formal case execution started for the current turn.", harness="langgraph",
-                mode_key=state["mode_key"])
+            if wait_asset is not None:
+                state = deepcopy(wait_asset.state)
+                records[:] = deepcopy(state["tool_results"])
+                state.update(pending_turn={}, termination_reason="", control_state="resuming", continue_loop=True)
+                prepare_graph_event_log(state)
+                await append_graph_event_durable(state, "turn.resumed", "langgraph.hitl",
+                    "Owned formal approval continuation started from its original application state.",
+                    approval_id=task.reference_id, decision_id=task.input["controlled_case_approval_admission"]["decision_id"])
+            else:
+                state = deepcopy(prepared.runtime_preparation.initial_state)
+                intents, state["event_log"] = state["event_log"], []
+                for event in intents:
+                    await append_graph_event_intent_durable(state, ExecutionEvent(session_id=state["session_id"], **event))
+                prepare_graph_event_log(state)
+                await append_graph_event_durable(state, "runtime.turn_started", "runtime",
+                    "Controlled formal case execution started for the current turn.", harness="langgraph",
+                    mode_key=state["mode_key"])
             if state["model_visible_tool_keys"] and (not self._runtime._deep_agent_governed_tools_enabled
                     or self._runtime._tool_governance_service is None):
                 raise RuntimeError("Controlled assembled business tool governance is unavailable")
-            tools, _ = await self._runtime._build_deep_agent_business_tools(state=state, tool_records=records)
+            tools, _ = await self._runtime._build_deep_agent_business_tools(state=state, tool_records=records,
+                original_materials=original_materials)
             return tools
 
         async def project(prepared, outcome):
-            nonlocal state, runtime_result, result_asset, conversation_response, assessment_asset
+            nonlocal state, runtime_result, result_asset, conversation_response, assessment_asset, approval_tool_projection
+            if wait_asset is not None:
+                from src.application.runtime.tool_messages import build_runtime_tool_messages, rejection_projector_from_original_slot
+                from src.schemas.framework_approval import framework_approval_id, framework_tool_call_id
+
+                native, = [n for n in wait_asset.natives if framework_approval_id(task.runtime_binding, n) == task.reference_id]
+                projector = rejection_projector_from_original_slot(binding=task.runtime_binding, source=native,
+                    approval_id=task.reference_id, call_id=framework_tool_call_id(task.runtime_binding, native),
+                    tool_records=wait_asset.state["tool_results"], hygiene_metadata=wait_asset.hygiene_metadata,
+                    include_runtime_message=True)
+                await continuation.apply_decision(task, capabilities=capabilities, rejection_projector=projector)
+                approval_tool_projection = await continuation.read_tool_projection(task, capabilities=capabilities)
+                original_materials.append(approval_tool_projection)
+                self._runtime._merge_tool_records(records, [approval_tool_projection.record.model_dump(mode="python")])
+                state["tool_messages"] = build_runtime_tool_messages(state["turn_id"], records,
+                    binding_id=task.runtime_binding.binding_id, previous_records=wait_asset.state["tool_results"],
+                    previous_messages=wait_asset.state["tool_messages"], original_materials=original_materials,
+                    require_original=True)
+                records[:] = TypeAdapter(Any).dump_python(records, mode="json")
+                state["tool_results"] = deepcopy(records)
+                state["framework_messages"] = serialize_messages(outcome.values.get("messages", []))
+                pending = {framework_approval_id(task.runtime_binding, n) for n in outcome.native_interrupts}
+                if not pending.issubset({a["id"] for a in wait_asset.state["pending_approvals"]}):
+                    from src.runtime.framework_approval_journal import FrameworkApprovalRecoveryRequired
+
+                    logger.warning("controlled_case_approval_successor_parking_required", extra={"task_id": task.id,
+                        "session_id": task.session_id, "approval_id": task.reference_id,
+                        "native_interrupt_count": len(pending), "automatic_replay": False})
+                    raise FrameworkApprovalRecoveryRequired("Controlled new native approval batch requires successor parking")
+                state["pending_approvals"] = [a for a in wait_asset.state["pending_approvals"] if a["id"] in pending]
+                state["context_bundle"]["deep_agent_approval_batch"] = deepcopy(state["pending_approvals"])
+                state["model_response_summary"] = {**state["model_response_summary"],
+                    "root_model_budget": deepcopy(outcome.root_model_budget)}
+                await append_graph_event_durable(state, "runtime.case_approval_applied", "langgraph.hitl",
+                    "Formal tool result applied; atomic re-park or finalization remains separate.",
+                    approval_id=task.reference_id, tool_job_id=approval_tool_projection.record.job_id,
+                    status=approval_tool_projection.record.status, material_sha256=approval_tool_projection.sha256)
+                # Do not pass a successor to the FIRST-execution finalizer or
+                # initial park writer. The exact tool application is durable;
+                # this returned state is only the pre-repark application step.
+                return
             if not isinstance(prepared, ControlledCaseResultTaskInputAsset) or outcome.native_interrupts:
                 # Historical preparation is not silently upgraded. Native wait
                 # is parked only by the explicit post-drain composition below.
@@ -271,7 +339,7 @@ class ControlledCaseRuntime:
             resource_id=resource_id, fencing_token=fencing_token, project_outcome=project)
         settlement_receipt = None
         approval_wait_receipt = None
-        if self._approval_waits is not None and outcome.native_interrupts:
+        if not approval and self._approval_waits is not None and outcome.native_interrupts:
             if outcome.native_terminal is not None or outcome.subagent_events:
                 raise ValueError("Controlled wait requires its original direct pending outcome")
             # Same post-drain boundary as settlement: no live sink can race
@@ -304,4 +372,4 @@ class ControlledCaseRuntime:
         return ControlledCaseRuntimeOutcome(graph_outcome=outcome, state=state, tool_records=records,
             runtime_result=runtime_result, result_asset=result_asset, conversation_response=conversation_response,
             assessment_asset=assessment_asset, settlement_receipt=settlement_receipt,
-            approval_wait_receipt=approval_wait_receipt)
+            approval_wait_receipt=approval_wait_receipt, approval_tool_projection=approval_tool_projection)

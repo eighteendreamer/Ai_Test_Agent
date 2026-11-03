@@ -10793,3 +10793,89 @@ ValueError: Controlled case requires its dedicated approval continuation
 `e216-static-final.log` 在四文件终态后实际运行全src／tests `compileall -q` 和 `pip check`，均exit0，后者为 No broken requirements found。ruff／mypy 均缺失，未安装或执行独立lint／typecheck。`e216-source-verified.log` 的879个src与693个tests完全匹配上述修订后摘要；除旧admission测试函数外，生产与测试字节未再改变。全部测试句柄终态已取回，pytest／multiprocessing残留数为0；用户v3的SHA256仍为原 `8a43e94160767a0de20740f2cb30782f06322cbc3467076dfcb120d4efdf1ad4`，不修改或暂存。
 
 本地交付限定19文件，检查完整相关diff、暂存清单、cached diff --check及敏感新增行，新专项仅单文件force-add。提交使用“【feat】留存正式审批等待状态与原工具槽位”，实际ID见Git／交付，不推送／建PR；不含用户v3、原测试日志、缓存、锁或环境制品。新writer仍默认关闭，完整后继Runtime、再次停车、兄弟运行中受理、后继结果／唯一结算及前述环境验收仍为下一出口。整体goal保持active，仍估计4–8周有效开发／验收，外部等待另计。
+
+## §217 正式审批后继复用原等待状态的单项 Runtime 应用
+
+### 续接、根因与采用依据
+
+续接 §216／`a9c4d409b3df8eda17b136e6e79753261139ba21`，对应 v4 §7.3／§9.2／§12.1。核 active goal、实际代码、Git 和原等待材料后推进本子步，不重复 §184 环境迁移、不调用 UV、不升级依赖。用户 v3 保留原 SHA256 `8a43e94160767a0de20740f2cb30782f06322cbc3467076dfcb120d4efdf1ad4`，不修改／提交。§215 首次扩大组两项 `Controlled wait original settled model ledger changed` 仍为根因未确认风险，未放宽历史账本核验。
+
+本轮补的是应用 Runtime 与既有正式审批 Executor 的契约缺口，不是新增调度层或恢复 fallback：后继 Task 本来只有专用 admission，不能按首次 case_execution_input 解析，也不能从当前 Session 或重新检索的配置猜原状态。
+
+依据 → 采用方式：
+
+- §216 原 checkpoint 7／receipt 2 和完整 state reader → 新 `prepare_runtime` 在同一只读事务核 claimed 双 owner、捕获的后继字段与完整原件，返回原 preparation／state；事务末再核 DB-clock 租约。历史格式无完整 state 明确拒绝，不升级。读取不授予执行权，原 begin／prepare_delivery 仍在之后分别重核。
+- 原 `ControlledCaseExecutor` 的一次图调用与 ACK SessionEventSink → Runtime 在原 callback 内加载冻结 records／materials，复用原工具治理；不重发首次 prepared／turn_started，不再组装上下文，只追加 durable resumed／单项应用事件。没有第二套 claim、循环、心跳或重试。
+- 普通 `RuntimeService` 审批拒绝与 `build_rejected_tool_projection` → 提取纯 `rejection_projector_from_original_slot`，普通／正式均使用唯一原 ordinal；正式使用原 hygiene，原工具结果与 exact runtime message 走同一投影链路。普通版本2／3是否附 runtime_message 的规则保留。
+- 本地《Agent轨迹与协议鲁棒性.html》04／04.5 的权限、幂等与半成功链路，以及现有真实 PG 故障夹具 → 验证轨迹、调用次数、原结果保留、各租约跨期、取消等待者与已提交但回执未知；不把答案文本当执行证明。
+
+### 实现与明确边界
+
+改动4个生产文件：`application/runtime/controlled_case_runtime.py`、`runtime/controlled_case_approval_continuation.py`、`application/runtime/tool_messages.py` 与普通 `runtime_service.py`。新增 `tests/test_controlled_case_approval_runtime.py`；原 pending_formal 夹具增加显式单工具选项，默认原两项行为不变。路由说明同步，未改 main／CLI／Dispatcher 装配、公共 HTTP、DDL、依赖、checkpoint／receipt 版本或新 writer 默认值。
+
+Runtime 先深拷贝捕获 Task；审批路径从原 waiting state 开始，保留全部原 events 前缀和 slots，复用正式单项 apply／read_tool_projection 后合入原工具记录。已完成字符串不重新渲染，选 B 仍是第二槽位，未决定 A 的身份／内容保持原值；完成槽位与 pending 交错的两种真实图返回次序均验证。模型轮次仍由官方图控制，原批次未闭合前不新增模型请求；当前授权撤销仍由原治理拒绝，不执行 handler。
+
+内部 outcome 增加可选 `approval_tool_projection`，只表示单项工具应用材料。成功返回仍为 **pre-repark 应用步骤**：control_state=resuming、pending_turn为空、Task仍running，原正式 Attempt／producer／初次停车材料未改；无正式 Result、Session finalization、Assessment 或 settlement。即使最后一项决定令原生图终态，也绝不误用首次结果 finalizer 或初次停车 writer。
+
+扩展真实图测试发现新批次被原 pending 过滤器静默丢弃：新增红测真实产生 C 项 interrupt 后才修复。当前子步没有后继停车权限，遇新原生审批批次明确报 `Controlled new native approval batch requires successor parking`，记录结构化事件并保留已应用的原决定，不返回假完成状态、不重发旧决定。这是声明未实现出口，不是声称新批次已持久停车。后继完整资产持久化／重新停车、运行中兄弟受理、后继结果谱系和唯一正式结算仍待后续。
+
+### TDD 与专项实际结果
+
+固定 `E:\MiniConda3\envs\Agent\python.exe`，cwd=Agent_Server；每条 pytest 前运行 `scripts/clear_uv_environment.ps1 -ProcessOnly`，RUN_LIVE_POSTGRES_TESTS=1、其他实际 RUN_LIVE_* 开关=0，QA_FRAMEWORK_WORKER_DIAGNOSTICS=1、PYTHONIOENCODING=utf-8。只使用已运行的 UUID 隔离 PG／Redis、固定官方图／SDK、本机合成 HTTP 与受控工具，不启停服务、不付费调用或测试真实目标。
+
+1. `e217-runtime-red.log` **2 failed、21.34秒、exit1**：正式后继被误按首次 input 解析 None，确认目标缺口。
+2. 接线后 `e217-runtime-first-green.log` 名称不代表绿色，实际 **2 failed、24.83秒**：批准／拒绝和原slot断言均已通过，最后重复调用的测试误预期 ValueError；实际原 owner fence 精确抛 `ContinuationLeaseLostError`。只修新测试异常预期，不替换生产异常；`e217-runtime-slots-green.log` **3 passed、30.98秒**，含旧 no-port 拒绝路径。
+3. `e217-runtime-expanded.log` **2 failed、29 passed、223.86秒**：两项测试对夹具中不存在的 context assembly 设置 prepare，尚未执行目标路径。显式安装只会失败的装配替身，保留“不能重新装配／首次finalize／park”的严格断言，不改生产路径迎合夹具。
+4. `e217-new-batch-red.log` **2 failed、2 passed、29 deselected、37.28秒**：最后一项批准／拒绝后真实生成新 C 批次，Runtime没有按未支持出口报告异常。补上述显式边界后，`e217-runtime-boundaries.log` **43 passed、253.94秒**。
+5. 增加3项无服务纯投影器协议测试后，`e217-runtime-verified.log` **46 passed、253.03秒、exit0，无skip／deselect**。3项纯协议／替身，43项真实隔离服务／官方框架／合成HTTP混合，不是46个真实目标。含原状态只读、原slot与字符串、单项批准／拒绝、末项原生终态、不静默丢新批次、旧格式／能力／漂移拒绝、各租约在读前／读末／读后到begin前过期、取消读取者、授权撤销、apply丢回执／读失败／取消后原已应用材料保留和禁止重跑。重复运行不累加覆盖。
+
+### 冻结、扩大回归与待收终态
+
+专项后冻结全部 src／tests 字节，不在回归中修改。`e217-source-frozen.log` 按相对 Agent_Server 的 POSIX 路径排序，路径UTF8＋NUL＋原字节＋NUL聚合：src **879个py，678771fffeb98612bbf5f3c5d0b14e74b1a9a55e68d507efb27c96df684f5f38**；tests **694个py，d869eee69006ecbb42de9cefc62e1852bbae8e3a0700e52d10725964d892543b**。全src／tests compileall与pip check均exit0（No broken requirements found），ruff／mypy缺失，未安装或执行独立lint／typecheck。
+
+在 §216 原56文件组增加本专项、普通 DeepAgent Runtime adapter、tool message evidence／budget，共60文件；完整清单 `e217-affected-files.txt`，日志 `e217-affected-final.log`。该组含原 §215 账本失败路径，不用本步专项绿色代替消费者结果。实际命令：
+
+~~~powershell
+# cwd: Agent_Server；先 clear_uv_environment.ps1 -ProcessOnly；固定解释器和环境如上。
+$files = Get-Content ../.codex-logs/e217-affected-files.txt
+& E:\MiniConda3\envs\Agent\python.exe -u -m pytest @files -q -rs --tb=short
+~~~
+
+另以所有实际 live 开关=0／diagnostics=0，运行同字节新专项，保存 `e217-optout-final.log`，skip不算通过。两组原句柄终态、源码复核与本地commit取得后追加，不把旧轮次结果当本轮通过。
+
+未运行全量后端、前端build／typecheck／浏览器、新格式独立进程强杀、真实供应商／领域Runner、Docker／MySQL／RustFS、完整main lifespan、双制品部署／一致备份恢复、E3／E4或性能基线。已有 process 回归不替代本步新格式后继强杀验收。§215 未确认根因的风险继续保留。
+
+对应关系：v4 §7.3／§9.2／§12.1 → §217 → 专用原状态读取、原Executor单项Runtime应用、普通／正式共享纯拒绝策略 → 真实红绿／46项专项／冻结60文件消费者回归 → 正式后继持久化与重新停车、兄弟受理、结果谱系／唯一结算、正式恢复和环境验收仍待完成。只拟提交本轮8文件，新专项单文件force-add，用户v3／日志／缓存／锁／环境制品排除，不推送／建PR。整体goal保持active；完整v4与H01–H12／E3／E4范围不缩减，剩余仍粗估 **4–8周有效开发／验收**，外部等待另计。
+
+### 60文件首组终态与共享投影器消费方同步
+
+`e217-affected-final.log` 原句柄实际 **7 failed、2352 passed、1 skipped、10230.20秒（2:50:30）、exit1**，不能称60文件全绿。唯一skip为 `test_tool_message_evidence.py` 的实际PG／MySQL／RustFS组合验证，RUN_LIVE_PLAN_RUN_CREATION未启用；同文件无服务本机HTTP用例不受影响。原日志保留，未为获得绿色开启其他环境或移除用例。
+
+7项失败全部停在普通 `test_framework_approval_runtime.py` 的旧 monkeypatch 路径：2项拒绝提交后回执未知、5项原材料漂移拒绝。共享纯投影器已移到 tool_messages，测试仍尝试在 runtime_service 的旧导入符号安装“禁止重新投影”钩子，报 AttributeError，尚未触及该钩子的恢复断言。扩大组期间保持全部源码／测试字节不变；另 `e217-shared-projector-consumer-red.log` 在同字节定点真实复现 **1 failed、10.19秒**，精确为旧符号不存在。
+
+原组终态后，只把该测试文件两处 monkeypatch 目标改为 `src.application.runtime.tool_messages.build_rejected_tool_projection`。保留禁止重新投影／不修补原件／回执与事件不变／效果次数断言，未添加未调用别名或关闭钩子，生产字节完全未变。最终提交范围因此为**9文件**（4生产、3测试、2文档）。`e217-source-after-consumer.log` 的src仍879个及同一 `678771fffeb98612bbf5f3c5d0b14e74b1a9a55e68d507efb27c96df684f5f38`；tests仍694个，仅两处消费方路径变化，摘要 `9fc183fd7716493b48e2381f8abb606ff2325a2a88d895d72f0e202592596c3b`。
+
+修订后运行完整5文件消费者组，日志 `e217-projector-consumer-regression.log`：
+
+~~~powershell
+# cwd: Agent_Server；先 clear_uv_environment.ps1 -ProcessOnly；固定解释器和环境同上。
+& E:\MiniConda3\envs\Agent\python.exe -u -m pytest tests/test_framework_approval_runtime.py tests/test_framework_tool_projection.py tests/test_framework_approval_projection.py tests/test_deep_agent_runtime_adapter.py tests/test_controlled_case_approval_runtime.py -q -rs --tb=short
+~~~
+
+不盲重跑2小时50分的60文件整组：生产字节未变，唯一测试变更是两处已确定失效的注入路径；五文件结果取得后单独追加，不能合写为当前60文件2359通过。原 §215 两项账本拒绝本组未再现，仍未确认根因，不据此关闭。
+
+同字节新专项opt-out已取原句柄终态：`e217-optout-final.log` **3 passed、43 skipped、7.92秒、exit0**，全部skip因缺真实PG／Redis；这是3项纯协议通过，不是46通过，也不能证明后来修订的普通消费方测试通过。全部未验出口保持上述边界，整体goal保持active。
+
+### 修订后五文件终态与交付核对
+
+`e217-projector-consumer-regression.log` 原句柄实际 **273 passed、631.50秒（0:10:31）、exit0，无skip／deselect**。包含全部46项本步专项和普通审批Runtime／tool projection／approval projection／原DeepAgent Runtime adapter的完整5文件，7项原失效钩子现指向真实纯投影器，原防重放与原件不变断言均通过。该结果与60文件首组7 failed分开报告，不抹除原失败、不累加重复用例，也不声称已重跑修订后的60文件全组。
+
+证据仍是无服务协议／替身、UUID隔离PG／Redis、固定官方图／SDK、本机合成HTTP与受控工具的混合，不是273个真实业务目标；不替代新格式独立强杀、正式后继完整继续与重新停车、真实供应商／领域Runner或完整E3／E4。§215 未定位的账本拒绝继续保留，不因本轮未复现而关闭。
+
+五文件终态后 `e217-static-final.log` 实际运行全src／tests compileall与pip check，均exit0；ruff／mypy仍缺失，未安装或执行独立lint／typecheck。`e217-source-verified.log` 的src879／tests694数量及聚合摘要完全匹配上述修订后值；生产源码在60文件首组和修订后五文件之间未变，测试仅两处monkeypatch路径变动。全部pytest句柄终态已取回，pytest／multiprocessing残留数为0。用户v3仍为原SHA256，未改／暂存。
+
+本地交付只含9文件：4生产、3测试、2文档；新专项仅单文件force-add，不改ignore。提交前核status、完整相关diff、暂存范围、cached diff --check与高置信度敏感新增行，排除用户v3／原日志／缓存／锁／环境制品。提交使用“【feat】衔接正式审批后继原状态与单项应用”，实际ID见Git／交付，不推送／建PR。下一出口是后继状态谱系与专用重新停车／最终结果结算，main／CLI／Dispatcher仍未安装本步审批Runtime路径，新writer仍默认关闭；本子步不是全系统完成。整体goal保持active，剩余仍粗估4–8周有效开发／验收，外部等待另计。
+
+最终暂存 `diff --cached --check` 发现新专项末尾多一空行（exit2），只清理该EOF空行后复核exit0；没有改测试逻辑或生产字节。聚合校验确认给当前新专项加回这一LF即可精确复现五文件运行时的tests摘要 `9fc183fd7716493b48e2381f8abb606ff2325a2a88d895d72f0e202592596c3b`。格式修订后 `e217-runtime-final-format.log` 再次实际 **46 passed、251.64秒、exit0，无skip／deselect**；不是将此前273项或60文件整组重跑一遍。
+
+最终交付字节见 `e217-source-delivery.log`：src879个、摘要仍 `678771fffeb98612bbf5f3c5d0b14e74b1a9a55e68d507efb27c96df684f5f38`；tests694个、摘要 `56eb81268d5f852d03dc10e0277f12097cbff4066bd9ff8cf339436054a01cd5`。`e217-static-delivery.log` 的全src／tests compileall和pip check均exit0；测试／multiprocessing残留为0。最终只提交上述9文件，原失败与skip不抹除，不把独立lint／typecheck缺失说成已通过。

@@ -37,7 +37,7 @@ from src.application.runtime.tool_child_wait import park_tool_wait, waiting_tool
 from src.application.runtime.tool_runtime_service import ToolExecutionContext, ToolRuntimeService
 from src.application.runtime.tool_job_service import ToolJobService
 from src.application.runtime.tool_messages import (
-    build_tool_message, build_chat_tool_messages, build_rejected_tool_projection, build_runtime_tool_messages,
+    build_tool_message, build_chat_tool_messages, rejection_projector_from_original_slot, build_runtime_tool_messages,
 )
 from src.application.runtime.turn_projection import (
     RuntimeTurnResult, completed_deep_agent_state, project_completed_turn, project_runtime_snapshot,
@@ -645,16 +645,11 @@ class RuntimeService:
             version = state["context_bundle"].get(TOOL_PROJECTION_VERSION_KEY)
             settlement = {}
             if version in {2, 3} and continuation_plan.receipt.decision["type"] == "reject":
-                call_id = continuation_plan.job.call_id
-                ordinal = next((index for index, item in enumerate(tool_records, start=1)
-                    if item["call_id"] == call_id), None)
-                if ordinal is None:
-                    raise FrameworkApprovalRecoveryRequired("Original rejection has no application tool slot")
-                hygiene = self._transcript_hygiene_service.tool_message_metadata()
-                settlement["rejection_projector"] = lambda job, native: build_rejected_tool_projection(
-                    binding=request.runtime_binding, source=continuation_plan.link, job=job,
-                    approval_id=continuation_plan.approval.id, ordinal=ordinal, hygiene_metadata=hygiene,
-                    model_content=native.content, include_runtime_message=version == 3)
+                settlement["rejection_projector"] = rejection_projector_from_original_slot(
+                    binding=request.runtime_binding, source=continuation_plan.link,
+                    approval_id=continuation_plan.approval.id, call_id=continuation_plan.job.call_id,
+                    tool_records=tool_records, hygiene_metadata=self._transcript_hygiene_service.tool_message_metadata(),
+                    include_runtime_message=version == 3)
             settled = await self._framework_approval_continuation.settle(
                 current_framework_owner(), continuation_plan.approval.id, continuation_plan.receipt.decision_id, **settlement)
             if version in {2, 3} or (version == 1 and settled.receipt.decision["type"] == "approve"):

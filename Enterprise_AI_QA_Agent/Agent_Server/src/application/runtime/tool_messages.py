@@ -26,6 +26,18 @@ def waiting_tool_record(approval, job):
             "instruction": "Do not retry this tool call while human approval is pending."})
 
 
+def rejection_projector_from_original_slot(*, binding, source, approval_id, call_id, tool_records,
+                                         hygiene_metadata, include_runtime_message):
+    """Share the ordinary approval policy without inventing a recovered ordinal."""
+    slots = [index for index, item in enumerate(tool_records, start=1) if item["call_id"] == call_id]
+    if len(slots) != 1:
+        raise FrameworkApprovalRecoveryRequired("Original rejection has no application tool slot")
+    ordinal, hygiene = slots[0], deepcopy(hygiene_metadata)
+    return lambda job, native: build_rejected_tool_projection(binding=binding, source=source, job=job,
+        approval_id=approval_id, ordinal=ordinal, hygiene_metadata=hygiene,
+        model_content=native.content, include_runtime_message=include_runtime_message)
+
+
 def build_rejected_tool_projection(*, binding, source, job, approval_id, ordinal, hygiene_metadata, model_content,
                                   include_runtime_message=False):
     """Project a human refusal, not executed-tool output or artifact evidence.

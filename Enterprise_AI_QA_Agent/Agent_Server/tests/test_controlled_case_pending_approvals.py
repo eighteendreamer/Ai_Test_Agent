@@ -43,7 +43,8 @@ async def pending_formal(formal_case, tmp_path, request):
     calls[0]["id"], calls[0]["function"]["arguments"] = "A", '{"path":"a.py"}'
     other = deepcopy(calls[0])
     other["id"], other["function"]["arguments"] = "B", '{"path":"b.py"}'
-    calls.append(other)
+    if not options.get("single_tool"):
+        calls.append(other)
     with _provider("openai_chat_completions", first_reply=reply) as (url, requests):
         async def prepare_input(models):
             p = assembly(s, tmp_path / "assembly", models)
@@ -65,7 +66,7 @@ async def pending_formal(formal_case, tmp_path, request):
                     outcome = await ControlledCaseRuntime(runtime_service=bridge.runtime, **ports).execute(
                         h.task, executor=executor(s, h), resource_id="isolated-pending-originals", fencing_token=1)
                     assert outcome.graph_outcome.native_terminal is None
-                    assert len(outcome.graph_outcome.native_interrupts) == 2 and len(requests) == 1 and effects == []
+                    assert len(outcome.graph_outcome.native_interrupts) == len(calls) and len(requests) == 1 and effects == []
                     source = RuntimeCheckpointSource.model_validate(h.task.runtime_owner.model_dump(exclude={"owner_token"}))
                 yield SimpleNamespace(s=s, h=h, bridge=bridge, outcome=outcome,
                     source=source, requests=requests, effects=effects, config=config)

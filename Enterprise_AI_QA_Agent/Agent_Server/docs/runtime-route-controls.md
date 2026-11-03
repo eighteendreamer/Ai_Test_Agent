@@ -1049,6 +1049,29 @@ LangGraph 最新状态自动合入 pending writes 的便捷投影当作不可变
 没有新格式独立进程强杀、真实供应商／领域 Runner、E3／E4 或生产开放验收。§215 首次
 扩大回归两项账本拒绝仍保留为未确认根因的稳定性风险。命令与真实结果见实施记录 §216。
 
+### 正式审批后继的单项 Runtime 应用（§217；重新停车前）
+
+显式组合的 `ControlledCaseRuntime.execute` 现在识别 `case_approval`，通过既有
+`ControlledCaseApprovalContinuations.prepare_runtime` 只读核验 claimed 双 owner、原完整
+停车材料和捕获的后继身份，加载原应用 state／slots／已结算工具材料。它不伪造首次
+`case_execution_input`，不重新组装上下文，不给历史 receipt 1 补造 state。
+此读取不是 begin／resume 许可；原 Executor 仍分别提交专用 begin、核单项 delivery，
+然后调用原官方图一次，期间重新检查实际租约和治理权限。
+
+单项决定返回后复用原 apply／工具材料 reader 和普通审批的纯拒绝投影器，保留原 ordinal、
+已完成展示字符串及其他 pending 身份；拒绝使用原冻结 hygiene，而非恢复时的新配置。
+新增可选内部 `approval_tool_projection` 只表示工具应用材料，不是正式结果或完成证明。
+原 `runtime.turn_started` 不重发，沿现有 ACK 事件链追加 `turn.resumed` 和单项应用事件。
+批准后授权失效仍可被原治理拒绝，回执未知或等待者取消不自动重跑。
+
+返回值仍是 **pre-repark**：state 为 resuming、无 pending_turn，Task 保持 running，
+无新正式 Result／Assessment／settlement。即使原生图已终态，也不调用首次 finalizer
+或初次 park；若图产生新审批批次，明确报告需要后继停车，保留原已应用决定，不静默
+过滤新批次或伪报等待完成。后继完整状态持久化、重新停车、兄弟运行中受理、后继结果
+谱系与唯一正式结算仍待实现；本端口未安装到 main／CLI／Dispatcher／默认生产路由。
+无公开 HTTP／DDL／依赖或格式版本变更，checkpoint 7／receipt 2 及新 writer 默认值不变。
+实际红绿、冻结后回归与证据限制见实施记录 §217；§215 未定位的账本风险仍保留。
+
 ### 原路由与恢复验证
 
 关闭新选路时记录 `deep_agent_new_turn_route_disabled`，带 `session_id`、`turn_id` 和 `recovery_reason=new_turn_admission_disabled`；这是路由决定，不是取消/停止回执。

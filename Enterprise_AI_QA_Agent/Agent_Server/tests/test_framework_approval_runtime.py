@@ -363,7 +363,7 @@ async def test_rejection_material_and_applied_share_one_transaction_and_replay_o
         def forbidden(*args, **kwargs):
             pytest.fail("an applied rejection must read its original material, not project again")
 
-        monkeypatch.setattr("src.application.runtime.runtime_service.build_rejected_tool_projection", forbidden)
+        monkeypatch.setattr("src.application.runtime.tool_messages.build_rejected_tool_projection", forbidden)
     result = await resume(h, task)
     assert h.adapter_requests[-1].continue_from_checkpoint and h.adapter_requests[-1].resume is None
     material = parse_tool_projection(receipt(h).proof["application"][TOOL_PROJECTION_KEY])
@@ -418,7 +418,7 @@ async def test_applied_rejection_material_cannot_be_substituted_or_regenerated(r
     def forbidden(*args, **kwargs):
         pytest.fail("missing/corrupt original material is not authority to regenerate")
 
-    monkeypatch.setattr("src.application.runtime.runtime_service.build_rejected_tool_projection", forbidden)
+    monkeypatch.setattr("src.application.runtime.tool_messages.build_rejected_tool_projection", forbidden)
     with pytest.raises(FrameworkApprovalRecoveryRequired, match="projection|native tool result|native result"):
         await resume(h, task)
     assert receipt(h) == before and await h.store.list_events(h.session_id) == events and h.effects == []

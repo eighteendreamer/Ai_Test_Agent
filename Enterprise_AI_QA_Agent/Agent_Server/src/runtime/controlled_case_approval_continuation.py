@@ -141,20 +141,49 @@ class ControlledCaseApprovalContinuations:
         return await self._run("read_tool_projection", self._read_tool_projection, task.id, task.runtime_binding,
             task, capabilities)
 
-    def _delivery_originals(self, cur, task, capabilities):
-        assert_runtime_owner(cur, self._settings, task.runtime_owner)
+    async def prepare_runtime(self, task, *, capabilities):
+        """Read claimed original application material, before committing running.
+
+        This is not begin/resume authority. The existing dedicated begin and
+        prepare_delivery must still recheck the same captured identities.
+        """
+        task = self._capture_delivery(task, capabilities)
+        return await self._run("prepare_runtime", self._prepare_runtime, task.id, task.runtime_binding,
+            task, capabilities)
+
+    def _prepare_runtime(self, task, capabilities):
+        from src.schemas.controlled_case_admission import ControlledCaseApprovalStateCheckpoint
+
+        with postgres_connect(self._settings) as conn, conn.cursor() as cur:
+            configure_runtime_owner_transaction(cur, self._settings)
+            saved = self._captured_originals(cur, task, capabilities, states=("claimed",), session_state="waiting_approval")
+            _require(saved.wait.schema_version == 2 and saved.case.attempt.checkpoint_version == 7,
+                "Controlled runtime requires its frozen full application preparation and waiting slots")
+            # _locked already verified this exact state/receipt and every
+            # historical original on this connection, holding their row locks.
+            asset = ControlledCaseApprovalStateCheckpoint.model_validate(saved.case.attempt.checkpoint_payload).state_asset
+            prepared = capabilities.require_case_input_format(saved.origin["input_payload"]["case_execution_input"])
+            assert_runtime_owner(cur, self._settings, task.runtime_owner, states=("claimed",))
+            return prepared, asset
+
+    def _captured_originals(self, cur, task, capabilities, *, states=("running",), session_state="running"):
+        assert_runtime_owner(cur, self._settings, task.runtime_owner, states=states)
         saved = self._locked(cur, self._wire(cur, task.id, capabilities), capabilities)
         row = saved.task
         _require(task.operation == row["operation"] == "case_approval"
             and task.input == row["input_payload"]
             and all(row[name] == getattr(task, name) for name in (*ENVELOPE, "parent_task_id", "reference_id", "priority"))
             and row["runtime_binding"] == task.runtime_binding.model_dump(mode="json")
-            and (row["status"], row["attempt_id"], row["lease_token"], row["worker_id"])
-                == ("running", task.attempt_id, task.lease_token, task.worker_id)
-            and saved.session["status"] == "running" and saved.session["lease_active"]
+            and row["status"] in states
+            and (row["attempt_id"], row["lease_token"], row["worker_id"])
+                == (task.attempt_id, task.lease_token, task.worker_id)
+            and saved.session["status"] == session_state and saved.session["lease_active"]
             and saved.session["project_id"] == row["project_id"],
             "Formal decision delivery differs from its captured running task")
         return saved
+
+    def _delivery_originals(self, cur, task, capabilities):
+        return self._captured_originals(cur, task, capabilities)
 
     def _decision_reader(self):
         return FrameworkApprovalContinuation(self._settings, sessions=self._tasks._sessions,
