@@ -23,6 +23,7 @@ from src.runtime.postgres_runtime_owner import assert_runtime_owner, configure_r
 from src.runtime.task_deferred import TaskDeferred
 from src.schemas.controlled_case_approval_submission import ControlledCaseApprovalAdmission
 from src.schemas.framework_approval import approval_value_hash
+from src.schemas.framework_tool_projection import TOOL_PROJECTION_KEY
 from src.schemas.runtime_binding import ControlledCaseExecutionLease
 from src.schemas.session import ApprovalDecisionRequest
 
@@ -123,6 +124,23 @@ class ControlledCaseApprovalContinuations:
         task = self._capture_delivery(task, capabilities)
         return await self._run("reconcile_delivery", self._reconcile_delivery, task.id, task.runtime_binding, task, capabilities)
 
+    async def apply_decision(self, task, *, capabilities, rejection_projector=None):
+        """Apply one known native tool outcome, not the formal case result.
+
+        A refusal projector is pure synchronous application policy, as in the
+        ordinary approval port; it cannot execute, do I/O or authorize replay.
+        Full waiting-state/ordinal persistence remains a separate admission.
+        """
+        task = self._capture_delivery(task, capabilities)
+        return await self._run("apply_decision", self._apply_decision, task.id, task.runtime_binding,
+            task, capabilities, rejection_projector)
+
+    async def read_tool_projection(self, task, *, capabilities):
+        """Read exact applied material; neither regenerate it nor grant replay."""
+        task = self._capture_delivery(task, capabilities)
+        return await self._run("read_tool_projection", self._read_tool_projection, task.id, task.runtime_binding,
+            task, capabilities)
+
     def _delivery_originals(self, cur, task, capabilities):
         assert_runtime_owner(cur, self._settings, task.runtime_owner)
         saved = self._locked(cur, self._wire(cur, task.id, capabilities), capabilities)
@@ -159,6 +177,36 @@ class ControlledCaseApprovalContinuations:
             # current complete pending nor the old budget grants replay rights.
             assert_runtime_owner(cur, self._settings, task.runtime_owner)
             return plan.model_copy(update={"receipt": receipt})
+
+    def _apply_decision(self, task, capabilities, rejection_projector):
+        with postgres_connect(self._settings) as conn, conn.cursor() as cur:
+            configure_runtime_owner_transaction(cur, self._settings)
+            saved = self._delivery_originals(cur, task, capabilities)
+            shared = self._decision_reader()
+            plan, consumed = self._inspect_decision(cur, task, saved, shared)
+            _require(consumed, "Formal decision is not durably consumed; application remains unknown")
+            if plan.approval.status.value == "denied":
+                material = (plan.receipt.proof or {}).get("application", {}).get(TOOL_PROJECTION_KEY)
+                _require(rejection_projector is not None or (plan.receipt.applied_at is not None and material is not None),
+                    "Formal refusal requires its explicit pure application projector or original applied material")
+            receipt = shared.reconcile_delivery_in_transaction(cur, task.runtime_owner, plan, saved.task)
+            result = shared.apply_decision_in_transaction(cur, task.runtime_owner,
+                plan.model_copy(update={"receipt": receipt}), rejection_projector=rejection_projector)
+            # Formal application must retain readable original material before
+            # committing; the ordinary historical path keeps its compatibility.
+            shared._applied_tool_projection_in_transaction(cur, task.runtime_binding, result, consumed)
+            assert_runtime_owner(cur, self._settings, task.runtime_owner)
+            return result
+
+    def _read_tool_projection(self, task, capabilities):
+        with postgres_connect(self._settings) as conn, conn.cursor() as cur:
+            configure_runtime_owner_transaction(cur, self._settings)
+            saved = self._delivery_originals(cur, task, capabilities)
+            shared = self._decision_reader()
+            plan, consumed = self._inspect_decision(cur, task, saved, shared)
+            material = shared._applied_tool_projection_in_transaction(cur, task.runtime_binding, plan, consumed)
+            assert_runtime_owner(cur, self._settings, task.runtime_owner)
+            return material
 
     def _prepare_delivery(self, task, capabilities):
         tasks = self._tasks

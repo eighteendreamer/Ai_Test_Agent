@@ -993,6 +993,31 @@ sending／回执未知不能再次 prepare 或重跑。显式 `reconcile_deliver
 生命周期和恢复出口；不能据此开启生产。独立进程交付强杀、真实供应商／领域 Runner、
 E3／E4 仍待验收。无公共 API／DTO、DDL、依赖或生产选路变化，实测结果见实施记录 §214。
 
+### 正式后继的单项工具结果应用（§215）
+
+内部 `ControlledCaseApprovalContinuations.apply_decision`／`read_tool_projection` 复用现有
+delivery＋claim 能力组合，两项仍默认关闭；没有接入默认 Dispatcher、main、公共 HTTP
+或首次正式 Runtime 的结果 finalizer。它们不调用图、模型或工具，不完成后继 Task／
+RunItem，不授予 replay／继续许可；applied 仅表示这一项已知工具结果的应用事实。
+
+先在同一连接核原正式 admission／停车／outbox、完整捕获身份与当前双租约，再核原
+decision／native 消费及已知安全 ToolJob。普通审批的原 `_settle` 结果应用体提取为共享
+同事务内核，正式路径调用该核而非伪装普通 approval_resume Task。交付对账、人工拒绝
+Job、application proof 与幂等 `approval.decision_applied` 审计在同一事务；最后严格读回
+原投影材料，再用 DB 时钟核双租约。原材料缺失、漂移或最终读取期间失租均整体回滚。
+普通历史审批保留原有兼容语义，不因正式新路径要求而补造材料。
+
+人工拒绝首次应用须显式提供既有纯同步投影策略；该策略只处理锁内已知事实，不得 I/O、
+执行或授权重跑。重复只读原 applied 材料，不重新运行投影器。批准从原 native artifact
+读取材料；治理拒绝仍是未执行事实而非成功效果。已过根期限可以核已知历史结果，但不
+延长预算或获得执行权。取消等待者／提交后丢回执不证明事务回滚，不自动重跑。
+
+初始正式停车尚未持久化完整应用 waiting state／tool slots；批次排序不是原 UI ordinal。
+本步拒绝正例采用单材料夹具显式显示策略，不能作为生产顺序或完整 Runtime 状态恢复
+证明。等待 state／slot 原件、正式继续与重新停车、后继结果谱系／唯一正式结算、运行中
+受理兄弟决定、独立强杀及 E3／E4 仍待实现或验收。无公共契约、DDL、依赖或生产选路变更，
+实际红绿与受影响回归见实施记录 §215。
+
 ### 原路由与恢复验证
 
 关闭新选路时记录 `deep_agent_new_turn_route_disabled`，带 `session_id`、`turn_id` 和 `recovery_reason=new_turn_admission_disabled`；这是路由决定，不是取消/停止回执。

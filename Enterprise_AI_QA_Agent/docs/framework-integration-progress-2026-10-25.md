@@ -10625,3 +10625,82 @@ v4 §7.3／§12.1 → §214 → 专用单项 prepare／显式已消费 reconcile
 最终组后 `e214-static-final.log` 重新 compileall 与 pip check 均exit0；ruff／mypy 仍未安装，独立 lint／typecheck 未跑。`e214-source-verified.log` 复核 src／tests 数量和摘要与冻结值完全一致；全部测试句柄终态已取，系统核对 pytest／multiprocessing 残留为0。用户v3仍为原SHA256，未修改或暂存。没有启停服务、调用付费模型或测试未授权目标。
 
 仅暂存本步7文件，新专项单文件 force-add，不修改ignore；提交前检查完整相关diff、暂存清单、diff --cached --check及高置信度敏感新增行。排除原日志、缓存、锁、环境制品和用户v3。本地提交使用“【feat】交付正式审批单项决定并复用原生事实对账”，实际ID见Git／交付；不推送／建PR。整体goal仍active，下一出口为应用事实与后继重新停车／继续生命周期，不把单项交付完成等同审批闭环或整系统完成。
+
+## §215 正式后继的单项工具结果应用与原材料读回
+
+### 续接、依据与范围
+
+基线 `740284253`／§214；核对 active goal、v4 §7.2–7.4／§12.1、当前共享审批调用链及未提交草稿。上一轮1684项不代表本轮字节。用户v3仍为 SHA256 `8a43e94160767a0de20740f2cb30782f06322cbc3467076dfcb120d4efdf1ad4`，不改、不暂存。Conda＋pip迁移已在§184完成，不再迁移、不调用UV、不升级依赖。
+
+本步对应E正式AgentCase逐项审批的应用事实边界，以及C的所有权／未知效果纪律，不是正式用例结算或完整Runtime继续。依据 → 采用方式：
+
+- `FrameworkApprovalContinuation._settle` 原有 native工具结果、拒绝Job、application proof及审计 → 原样提取同连接 `apply_decision_in_transaction`，普通／正式调用方分别核自己真实admission，不造普通Task、不复制恢复分支或新调度器。AST对照确认原结果应用体与提取体等价，仅增加局部approval／decision身份。
+- 原严格 `_applied_tool_projection_in_transaction`／纯 `build_rejected_tool_projection` → 正式新路径提交前读回原材料，读者与写者复用同一规则；拒绝由显式纯应用策略提供一次材料，重复只读原件，不从Job或当前时钟重建。
+- v4 §7.2 三组事实、§7.3 逐项继续、本地《Agent轨迹与协议鲁棒性.html》04／04.5 → 检查全表事实、单项工具效果、模型次数、兄弟pending、回执及原native，补重复、回滚、取消、失租、权限撤销与根期限负例，不只比较返回值。
+
+范围5文件：2个生产Python（正式／普通continuation）、1个新专项、路由说明和本记录。未改公共API／DTO、数据库schema、依赖、生产选路、原冻结输入／预算及正式Attempt。新方法仅供显式内部组合，未安装到默认Dispatcher、main、公共审批路由或正式结果finalizer。
+
+### 实现及明确保留的架构出口
+
+`apply_decision` 深复制捕获Task，复用原delivery＋claim能力、原admission／停车／outbox核，要求完整envelope、input、parent／reference／priority、当前running owner与正式第二租约一致。原decision／receipt／native消费及ToolJob身份、安全终态由共享读核判定。只有真实消费不等于工具结果已知；缺原messages、native错误或已启动但效果未知均拒绝。
+
+同一SQL事务先复用交付对账，再调用共享结果应用体：人工拒绝保留未started并写原拒绝Job／完成时间、application材料与幂等 `approval.decision_applied`；批准保留原ToolJob结果。首次人工拒绝必须有显式纯同步projector；已有applied只读持久原材料，不重新执行projector。批准后的实时治理拒绝写的是governance_denied／未执行事实，不伪造成功效果。最后在同连接严格读回材料，再用fresh DB clock核当前双租约。任何错误回滚Job、交付投影、application和审计，不修补冲突原件。
+
+`read_tool_projection` 在相同正式admission／捕获身份／双租约核后，复用原严格材料读核；读取期间跨租约同样失败。原native／预算、生产Task、后继Task／正式Attempt和RunItem保持原状态，后继仍running。已过根期限可观察／应用已知历史结果，但不延长预算、执行图或授予继续权限；plan中的checkpoint派生属性不是本服务授予的执行许可。取消to_thread等待者不证明SQL回滚；提交后回执未知仅允许显式核同一事实，不自动重跑图／工具或重投影。
+
+查证发现初始正式停车尚未持久化完整应用waiting state／tool slots：`ControlledCaseRuntime`初始pending返回的tool_records实际为空，wait.batch按approval身份排序不是UI原ordinal。最初新拒绝测试误从该空列表找原record，真实StopIteration保留在日志；更正为单材料夹具显式纯显示策略ordinal=1，明确不把它当原完整顺序或生产恢复证据。本步不猜UUID／物理行顺序、不伪造原state。完整等待state／slot持久化、正式继续与重新停车、运行中受理兄弟决定、后继结果谱系／唯一正式结算仍是后续架构出口，不能称已恢复完整应用Runtime或完成审批闭环。
+
+### TDD、专项与缺材料根因
+
+固定 `E:\MiniConda3\envs\Agent\python.exe`，cwd为Agent_Server，每条pytest命令前执行 `scripts/clear_uv_environment.ps1 -ProcessOnly`；PG／Redis=1，其他RUN_LIVE_*均0，QA_FRAMEWORK_WORKER_DIAGNOSTICS=1，PYTHONIOENCODING=utf-8。只用UUID隔离PG／Redis、固定官方图／SDK、本机合成HTTP和受控handler，没有启停服务、真实领域目标、付费模型或Docker操作。
+
+1. `e215-first-red.log`：4 failed、35.23秒、exit1；3项缺apply_decision，另1项是上述新测试误设空tool_records引发StopIteration，不能当目标红测。修正夹具策略后 `e215-contract-red.log` 为4 failed、32.79秒、exit1，全部缺apply_decision，目标红测成立。
+2. 最小提取／正式应用实现后 `e215-first-green.log`：4 passed、32.36秒、exit0。随后 `e215-expanded.log` 原句柄收取终态：64 passed、407.69秒、exit0，无skip／deselect；启动后新追加2项不在这64项内。
+3. 新增严格材料读回及同连接反例 `e215-material-red.log`：1 failed、1 passed、21.57秒、exit1。真实批准并执行后，仅在隔离原native消息移除artifact，apply仍写applied，报 `DID NOT RAISE FrameworkApprovalRecoveryRequired`。根因是共享旧 `_application_evidence` 为普通历史兼容允许无artifact；正式新路径不能把这种结果称为原材料已可读。没有改变普通兼容或另造材料校验，而是在共享应用后／提交前调用既有严格reader，失败让整事务回滚。
+4. 修复后并补最后材料读跨session／owner／formal租约，`e215-application-verified.log`：**72 passed、446.63秒、exit0，无skip／deselect**。含批准／拒绝、幂等及并发应用、纯projector调用次数、冲突material字段、各写入回滚、审计与最后读核跨租约、失租／epoch／关闭、捕获身份、已消费缺结果、原件漂移、治理权限撤销、根期限后已知事实、提交丢回执／取消，以及正式admission与共享应用的pg_backend_pid相同、普通settle拒绝正式Task。
+
+以上72项均经过真实隔离服务／官方框架与本机合成HTTP链路，不是72个真实业务目标，不替代正式后继独立进程强杀、真实供应商／领域Runner或完整E3／E4。重复执行不累加覆盖。
+
+### 冻结后回归、命令与待收终态
+
+72项通过后冻结src／tests，扩大回归期间不再改这些字节。`e215-source-frozen.log` 按相对Agent_Server的POSIX路径排序，路径UTF8＋NUL＋原字节＋NUL聚合：src **876个py、b917778ed82203f6e5066eca0c9e366116635c6e590325506cdff4772f851f37**；tests **692个py、4025fd35cd9edd4a2ca6acd66de46db4b8bd8bab489268dea64fa06b3aa41dd4**。
+
+`e215-static.log` 的compileall（2个生产文件及新专项）与pip check均exit0，No broken requirements found；find_spec确认ruff／mypy未安装，独立lint／typecheck未跑，不擅自安装。
+
+扩大组在§214已列42文件基础上增加本步application、framework_tool_projection和framework_approval_projection，共45文件，包含普通 `_settle` 的 `test_framework_approval_results.py` 消费者（核对原§214命令已经包含它，不误称上轮漏跑）。完整清单保留在 `e215-affected-files.txt`；固定环境如上，实际执行：
+
+~~~powershell
+# cwd: Agent_Server，先 clear_uv_environment.ps1 -ProcessOnly
+$files = Get-Content ../.codex-logs/e215-affected-files.txt
+& E:\MiniConda3\envs\Agent\python.exe -u -m pytest @files -q -rs --tb=short
+~~~
+
+`e215-affected-final.log` 等待原句柄终态；不能用72项专项、64项中间组或上轮1684项代替当前消费者结果。全live=0／diagnostics=0的新专项opt-out单独保存 `e215-optout-final.log`，不把服务跳过算通过；结果在终态后追加。
+
+未跑全量后端、前端build／typecheck／浏览器、本步正式后继独立进程强杀、真实供应商／领域Runner、Docker／MySQL／RustFS、完整main lifespan、双制品部署／备份恢复、E3／E4或性能基线。当前测试不是生产路由开放许可。
+
+### 对应、下一出口与提交边界
+
+v4 §7.2–7.4／§12.1 → §215 → 同连接共享工具结果应用、正式双归属核与原材料读回 → 真实目标红绿、72项专项及冻结后45文件回归 → 完整waiting state／slot、正式后继继续／重新停车、谱系与唯一结算、兄弟运行中受理及独立强杀仍待后续子步。
+
+完整v4／H01–H12与E3／E4范围不缩减，整体goal保持active，当前子步不等于全系统完成。剩余仍粗估 **4–8周有效开发／验收**，外部环境、授权和人工发布等待另计，不承诺日期。仅提交本轮5文件，新测试单文件force-add、不改ignore；排除用户v3、原日志、缓存、锁与环境制品。取得所有句柄终态、字节复核与敏感新增行检查后创建中文本地commit，不推送／建PR；实际最终结果与commit见后续追加／交付。
+
+### 首次扩大组真实失败与进一步取证
+
+`e215-affected-final.log` 已收原45文件句柄终态：**2 failed、1822 passed、7871.63秒、exit1，无skip／deselect**，不能称整组全绿。两项分别为 `test_each_dual_owner_write_boundary_rolls_back_all_facts[begin-item]` 和 `test_existing_admission_never_repairs_missing_or_conflicting_originals[audit]`。实际均在各自故障注入／原件修改之前的 `admitted → submit → wait._historical_ledger` 抛 `FrameworkApprovalRecoveryRequired: Controlled wait original settled model ledger changed`，尚未调用本步apply。仅凭堆栈不能证明是时钟、异步写入或无关偶发失败，未放宽原核，也不虚报根因。
+
+`e215-observed-failures-reproduction.log` 同字节定点复现为2 passed、18.58秒、exit0。随后增加仅在临时诊断runner中的同连接取证：保存停车时snapshot，失败时输出submission匹配、完整／历史call数、完整／历史摘要匹配、变化字段路径以及created／settled／parked时间；不输出Prompt、请求、凭据或完整模型记录，不改变生产规则。两项各15次的有界诊断 `e215-ledger-diagnostic.log` 为30 passed、212.46秒、exit0，2条pytest插件预导入重写warning；这是2项重复观察，不算30个新用例，未重现也不能据此关闭原失败。随后以同一45文件清单、原字节和该失败取证器执行 `e215-affected-observed-final.log`，不再重复轮询重启、不覆盖首次失败；其终态与实际证据后续追加。
+
+同字节opt-out `e215-optout-final.log` 为 **72 skipped、10.78秒、exit0**，原因均缺真实PG／Redis；没有通过项，不能当72通过。所有src／tests字节自冻结后保持不变。
+
+### 同字节观察组终态、遗留风险与交付复核
+
+`e215-affected-observed-final.log` 原45文件观察组句柄已取终态：**1824 passed、2 warnings、8907.11秒（2:28:27）、exit0，无失败／skip／deselect**。清单和生产／测试字节与首次扩大组相同，额外临时取证器只保存原snapshot并在原核抛错时同连接读诊断，不更改生产规则、异常或断言。2条warning为runner预导入anyio／langsmith后的pytest断言重写警告，不是业务测试跳过。
+
+诊断仅记录2条有意漂移反例：`test_wait_ack_rejects_changed_or_missing_originals_without_repair[budget]` 修改policy.max_calls、[ledger]修改call.outcome_code，与现有测试的真实SQL一致，均被原核拒绝且测试通过。这些不是首次两项随机失败的根因证据。两项原失败本轮未再现，**根因未确认、未声称修复**，首次2 failed保留为待定位稳定性风险；观察组绿色不能抹除原失败，也不能证明无时间敏感问题。未为获得绿色放宽时间／摘要／材料校验或删除用例。临时runner和诊断原日志不提交。
+
+本步证据混合无服务协议／替身、真实UUID隔离PG／Redis、固定官方框架／SDK、本机合成HTTP及已有普通恢复进程夹具；不是1824个真实目标，不替代本步正式后继的独立强杀、真实供应商／领域Runner、完整E3／E4。新专项72项已含在1824内，不另行累加覆盖。没有启停服务、付费调用或未授权目标测试。
+
+观察组后 `e215-static-final.log` 全src／tests compileall与pip check均exit0；ruff／mypy仍缺失，独立lint／typecheck未安装或执行。`e215-source-verified.log` 的src876／tests692数量及摘要与冻结值完全一致。全部pytest／诊断／静态句柄已收终态，系统核对pytest／multiprocessing／本步诊断Python残留为0。用户v3仍为原SHA256，未改或暂存。
+
+仅暂存本轮5文件（2生产、1新专项、2文档），新专项单文件force-add，不改ignore；提交前核完整diff、暂存范围、diff --cached --check和高置信度敏感新增行。原v3、日志、缓存、锁和环境制品排除。本地提交使用“【feat】复用审批工具结果内核并核验正式应用原件”，实际ID见Git／交付，不推送／建PR。整体goal保持active；后续仍须定位首次账本拒绝的稳定性问题，并推进完整waiting state／slots、正式继续／重新停车及结果结算，不能称本轮已完成正式审批闭环或全系统接入。
