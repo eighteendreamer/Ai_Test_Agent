@@ -54,3 +54,16 @@ class ControlledCaseApprovalWaitReceipt(BaseModel):
             or self.receipt_sha256 != approval_value_hash(self.model_dump(mode="json", exclude={"receipt_sha256"}))):
             raise ValueError("Controlled wait differs from its complete original receipt")
         return self
+
+
+class ControlledCaseApprovalStateWaitReceipt(ControlledCaseApprovalWaitReceipt):
+    """Public summary only; full state remains on the private formal Attempt."""
+    schema_version: Literal[2]
+    state_asset_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+
+
+def parse_controlled_case_approval_wait(value):
+    if isinstance(value, ControlledCaseApprovalWaitReceipt):
+        value = value.model_dump(mode="json")
+    reader = ControlledCaseApprovalStateWaitReceipt if isinstance(value, dict) and value.get("schema_version") == 2 else ControlledCaseApprovalWaitReceipt
+    return reader.model_validate(value)

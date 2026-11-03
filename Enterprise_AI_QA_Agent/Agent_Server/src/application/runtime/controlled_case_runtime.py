@@ -79,6 +79,13 @@ class ControlledCaseRuntime:
             from src.runtime.task_deferred import TaskDeferred
 
             raise TaskDeferred("framework_case_approval_wait_format_unavailable")
+        if self._approval_waits is not None and capabilities.controlled_case_approval_state_available:
+            from src.runtime.task_deferred import TaskDeferred
+
+            if capabilities.controlled_case_checkpoint_max_version < 7:
+                raise TaskDeferred("framework_case_checkpoint_format_unavailable")
+            if capabilities.controlled_case_approval_wait_max_version < 2:
+                raise TaskDeferred("framework_case_approval_wait_format_unavailable")
         self._executor.require_execution_available()
         if set(task.input) != {"case_execution_input"}:
             raise ValueError("Controlled dispatch requires its single frozen formal input")
@@ -277,7 +284,16 @@ class ControlledCaseRuntime:
                 context = self._runtime._deep_agent_governance_context(state)
                 proposals = [governance.prepare_framework_approval(settlement_owner.binding, item, context)
                     for item in outcome.native_interrupts]
-                approval_wait_receipt = await self._approval_waits.park(settlement_owner, proposals=proposals)
+                capabilities = executor._framework_capabilities
+                if capabilities is not None and capabilities.controlled_case_approval_state_available:
+                    approval_wait_receipt = await self._approval_waits.park(settlement_owner, proposals=proposals,
+                        event_log=state["event_log"], capabilities=capabilities,
+                        hygiene_metadata=self._runtime._transcript_hygiene_service.tool_message_metadata())
+                    asset = await self._approval_waits.read_state_for_task(task.id, capabilities=capabilities)
+                    state = deepcopy(asset.state)
+                    records = deepcopy(state["tool_results"])
+                else:
+                    approval_wait_receipt = await self._approval_waits.park(settlement_owner, proposals=proposals)
         if self._settlements is not None and assessment_asset is not None:
             # The executor has drained/closed its original event sink. Do not
             # clear the Session lease inside project(), while that sink can

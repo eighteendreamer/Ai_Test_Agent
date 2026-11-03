@@ -72,9 +72,15 @@ def require_historical_tool_interrupts_original(cur, settings, source, graph_inp
     logger.info("framework_historical_wait_originals_read", extra={"task_id": source.task_id,
         "binding_id": source.binding.binding_id, "interrupt_count": len(identities),
         "scope": "historical_native_wait_only", "automatic_replay": False})
+    return snapshots
 
 
 def require_pending_tool_interrupts_original(cur, settings, source, graph_input, expected):
+    """Compatible identity-only view of the same complete native reader."""
+    return read_pending_tool_snapshot_original(cur, settings, source, graph_input, expected)[0]
+
+
+def read_pending_tool_snapshot_original(cur, settings, source, graph_input, expected):
     """Read the LATEST root, not an arbitrary historical candidate checkpoint.
 
     Keep BoundPostgresReader.get_interrupt_task closed: the explicit journal
@@ -124,6 +130,12 @@ def require_pending_tool_interrupts_original(cur, settings, source, graph_input,
             phase = "complete_pending_batch_comparison"
             if approval_value_hash(found) != approval_value_hash(candidates):
                 raise FrameworkApprovalRecoveryRequired("Proposed approvals differ from the complete pending native batch")
+            # Pinned Pregel.get_state applies pending writes only when the
+            # caller omits checkpoint_id (main.py:1433). Persist the exact
+            # checkpoint's base values plus explicit task-result material,
+            # not the latest convenience projection as if it were immutable.
+            original_snapshot = graph.get_state({"configurable": {"thread_id": source.binding.thread_id,
+                "checkpoint_ns": "", "checkpoint_id": checkpoint.checkpoint["id"]}}, subgraphs=True)
             native_cur.execute("SELECT set_config('search_path', %s, true)", (path,))
     except Exception as exc:
         logger.warning("framework_pending_approval_originals_rejected", extra={**scope,
@@ -134,4 +146,4 @@ def require_pending_tool_interrupts_original(cur, settings, source, graph_input,
     logger.info("framework_pending_approval_originals_read", extra={**scope,
         "checkpoint_id": checkpoint.checkpoint["id"], "interrupt_count": len(identities),
         "scope": "native_pending_identities_only", "automatic_replay": False})
-    return identities
+    return identities, original_snapshot

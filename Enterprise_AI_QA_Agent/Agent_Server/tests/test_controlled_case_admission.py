@@ -624,7 +624,19 @@ async def test_expired_original_receipt_stays_readable_but_new_run_attempt_canno
     claims = await s.d.runs.claim_items(run_id=s.detail.run.id, worker_id="legacy-successor-worker",
         limit=20, lease_seconds=120, now=future)
     item, attempt = next((item, attempt) for item, attempt in claims if item.id == s.item.id)
-    await s.d.runs.start_item(item.id, item.lease_token, future)
+    before = database_digest(s)
+    with pytest.raises(ValueError, match="dedicated approval continuation"):
+        await s.d.runs.start_item(item.id, item.lease_token, future)
+    assert database_digest(s) == before
+    # Current generic start also rejects the inherited reservation. Persist
+    # the old running-successor sample explicitly, just like the old reaper
+    # sample above; do not weaken production admission to construct history.
+    with postgres_connect(s.h.settings) as conn, conn.cursor() as cur:
+        s.d.runs._lock_plan_projection(cur, item.run_id)
+        item = s.d.runs._lock_item(cur, item.id)
+        attempt = s.d.runs._lock_attempt(cur, item.id, item.lease_token)
+        item, attempt = s.d.runs._start_claimed_item_in_transaction(cur, item, attempt, future)
+    assert item.status == attempt.status == "running"
     assert attempt.recovered_from_attempt_id == s.attempt.id
     raw = s.command.model_dump(mode="json")
     turn = str(uuid5(NAMESPACE_URL, f"case-run:{item.run_id}:{item.id}:{attempt.id}"))

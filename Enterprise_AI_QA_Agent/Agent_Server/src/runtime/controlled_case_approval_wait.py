@@ -23,7 +23,7 @@ from src.runtime.framework_application_projection import _require_event_intent
 from src.runtime.postgres_framework_model_calls import PostgresFrameworkModelCalls
 from src.runtime.postgres_runtime_owner import assert_runtime_owner, configure_runtime_owner_transaction, lock_owner_row
 from src.runtime.store import ContinuationLeaseLostError
-from src.schemas.controlled_case_approval_wait import ControlledCaseApprovalWaitReceipt
+from src.schemas.controlled_case_approval_wait import ControlledCaseApprovalWaitReceipt, ControlledCaseApprovalStateWaitReceipt
 from src.schemas.framework_approval import NativeToolInterrupt, approval_value_hash
 from src.schemas.framework_model_call import FrameworkModelBudgetSnapshot
 from src.schemas.session import ExecutionEvent
@@ -84,12 +84,39 @@ class ControlledCaseApprovalWaits:
                 "error_type": type(exc).__name__})
             raise
 
-    def _read_delivery_original(self, command, capabilities, scope):
+    async def read_state(self, delivery, *, capabilities):
+        """Private historical material only, never a new execution owner."""
+        command = deepcopy(capabilities.require_command_format(delivery))
+        capabilities.require_runtime_artifact(command.runtime_binding)
+        scope = {"task_id": command.task_id, "operation": "historical_approval_wait_state_read"}
+        try:
+            asset = await asyncio.to_thread(self._read_delivery_original, command, capabilities, scope, state_only=True)
+        except (Exception, asyncio.CancelledError) as exc:
+            logger.warning("controlled_case_approval_wait_state_rejected", extra={**scope,
+                "error_type": type(exc).__name__, "automatic_replay": False})
+            raise
+        logger.info("controlled_case_approval_wait_state_read", extra={**scope,
+            "state_asset_sha256": asset.asset_sha256, "automatic_replay": False})
+        return asset
+
+    async def read_state_for_task(self, task_id, *, capabilities):
+        """Load the exact original outbox, then use the same historical reader."""
+        def wire():
+            with postgres_connect(self._tasks._settings) as conn, conn.cursor() as cur:
+                cur.execute(f"SELECT payload FROM {self._tasks._settings.database.postgres_task_outbox_table} WHERE event_key=%s",
+                    ("agent_turn:" + task_id,))
+                row = cur.fetchone()
+                _require(row is not None, "Controlled wait state has no original outbox")
+                return row["payload"]
+
+        return await self.read_state(await asyncio.to_thread(wire), capabilities=capabilities)
+
+    def _read_delivery_original(self, command, capabilities, scope, *, state_only=False):
         with postgres_connect(self._tasks._settings) as conn, conn.cursor() as cur:
             configure_runtime_owner_transaction(cur, self._tasks._settings)
-            return self.require_original_in_transaction(cur, command, capabilities, scope)
+            return self.require_original_in_transaction(cur, command, capabilities, scope, state_only=state_only)
 
-    def require_original_in_transaction(self, cur, command, capabilities, scope):
+    def require_original_in_transaction(self, cur, command, capabilities, scope, *, state_only=False):
         """Historical facts only, reusable by a caller's separate admission.
 
         The caller must still establish current formal eligibility. Keeping the
@@ -140,7 +167,17 @@ class ControlledCaseApprovalWaits:
         natives = self._batch_original(cur, binding, receipt, capabilities, project_id=command.project_id)
         scope["original_stage"] = "historical_native_interrupts"
         original = parse_controlled_case_task_input(task["input_payload"]["case_execution_input"])
-        require_historical_tool_interrupts_original(cur, settings, source, original.graph_input, natives)
+        snapshots = require_historical_tool_interrupts_original(cur, settings, source, original.graph_input, natives)
+        asset = None
+        if receipt.schema_version == 2 or state_only:
+            from src.runtime.controlled_case_approval_state import require_wait_state_in_transaction
+
+            scope["original_stage"] = "retained_application_wait_state"
+            asset = require_wait_state_in_transaction(cur, settings, case, task, receipt, original, snapshots, natives)
+        _require(receipt.schema_version == 2 or case.attempt.checkpoint_version != 7,
+            "Controlled wait state checkpoint has no matching original receipt")
+        if state_only:
+            return asset
         return receipt
 
     def _historical_ledger(self, cur, binding, task, receipt, capabilities):
@@ -207,16 +244,34 @@ class ControlledCaseApprovalWaits:
             natives.append(native)
         return natives
 
-    async def park(self, owner, *, proposals):
+    async def park(self, owner, *, proposals, event_log=None, capabilities=None, hygiene_metadata=None):
         scope = {"task_id": getattr(owner, "task_id", None), "operation": "approval_wait",
             "binding_id": getattr(getattr(owner, "binding", None), "binding_id", None)}
         try:
             _require(owner is not None and owner.controlled_case_lease is not None
                 and owner == current_framework_owner() and current_graph_event_sink() is None,
                 "Controlled wait requires its captured dual owner after graph event drain")
-            owner, proposals = deepcopy((owner, proposals))
+            owner, proposals, event_log, hygiene_metadata = deepcopy((owner, proposals, event_log, hygiene_metadata))
             _require(bool(proposals), "Controlled wait requires a nonempty complete native batch")
-            receipt = await asyncio.to_thread(self._park, owner, proposals)
+            write_state = capabilities is not None and capabilities.controlled_case_approval_state_available
+            if write_state or event_log is not None:
+                from src.runtime.task_deferred import TaskDeferred
+                from src.application.context.transcript_hygiene_service import TranscriptHygieneService
+
+                if not write_state:
+                    raise TaskDeferred("framework_case_approval_state_writer_unavailable")
+                capabilities.require_runtime_artifact(owner.binding)
+                if capabilities.controlled_case_checkpoint_max_version < 7:
+                    raise TaskDeferred("framework_case_checkpoint_format_unavailable")
+                if capabilities.controlled_case_approval_wait_max_version < 2:
+                    raise TaskDeferred("framework_case_approval_wait_format_unavailable")
+                _require(isinstance(event_log, list) and bool(event_log), "Controlled wait state requires its acknowledged event log")
+                if hygiene_metadata is None:
+                    hygiene_metadata = TranscriptHygieneService().tool_message_metadata()
+                receipt = await asyncio.to_thread(self._park, owner, proposals,
+                    event_log=event_log, hygiene_metadata=hygiene_metadata)
+            else:
+                receipt = await asyncio.to_thread(self._park, owner, proposals)
         except (Exception, asyncio.CancelledError) as exc:
             logger.warning("controlled_case_approval_wait_unsettled", extra={**scope,
                 "error_type": type(exc).__name__, "recovery_reason": "approval_wait_write_receipt_unknown",
@@ -309,7 +364,7 @@ class ControlledCaseApprovalWaits:
             journal.activity_intervals()
         return _event_hash(matches[0])
 
-    def _park(self, owner, proposals):
+    def _park(self, owner, proposals, *, event_log=None, hygiene_metadata=None):
         tasks, settings, binding = self._tasks, self._tasks._settings, owner.binding
         with postgres_connect(settings) as conn, conn.cursor() as cur:
             configure_runtime_owner_transaction(cur, settings)
@@ -332,6 +387,12 @@ class ControlledCaseApprovalWaits:
             deadlines = (session["metadata"]["turn_lease_expires_at"], saved_owner["expires_at"], case.item.lease_expires_at)
             cur.execute("SELECT clock_timestamp() AS now")
             now = cur.fetchone()["now"]
+            asset = None
+            if event_log is not None:
+                from src.runtime.controlled_case_approval_state import build_wait_state_in_transaction
+
+                asset = build_wait_state_in_transaction(cur, settings, owner, case, task, projected,
+                    snapshot, event_log, now, hygiene_metadata)
             first = projected[0]  # Existing display fields only; receipt retains ALL siblings.
             case.store._mark_waiting_approval_in_transaction(cur, case.item.id, case.lease.lease_token,
                 first.approval.id, first.job.id, now)
@@ -353,7 +414,11 @@ class ControlledCaseApprovalWaits:
                     native_sha256=approval_value_hash(item.link.model_dump(mode="json", include=set(NativeToolInterrupt.model_fields))))
                     for item in sorted(projected, key=lambda item: item.approval.id)])
             values = TypeAdapter(Any).dump_python(values, mode="json")
-            receipt = ControlledCaseApprovalWaitReceipt(**values, receipt_sha256=approval_value_hash(values))
+            receipt_type = ControlledCaseApprovalWaitReceipt
+            if asset is not None:
+                values.update(schema_version=2, state_asset_sha256=asset.asset_sha256)
+                receipt_type = ControlledCaseApprovalStateWaitReceipt
+            receipt = receipt_type(**values, receipt_sha256=approval_value_hash(values))
             cur.execute(f"UPDATE {tasks._tasks} SET result_payload=%s::jsonb WHERE id=%s AND result_payload IS NULL",
                 (json.dumps({WAIT_KEY: receipt.model_dump(mode="json")}), owner.task_id))
             _require(cur.rowcount == 1, "Controlled wait original task receipt already exists")

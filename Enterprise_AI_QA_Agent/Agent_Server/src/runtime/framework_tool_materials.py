@@ -15,6 +15,24 @@ def _require(condition, message):
         raise FrameworkMessageStageRecoveryRequired(message)
 
 
+def read_projected_job_outputs(cur, settings, jobs):
+    """Original artifacts and the existing enrichment rule on this connection."""
+    from src.application.runtime.tool_runtime_service import ToolRuntimeService
+    from src.runtime.postgres_tool_job_store import _artifact_from_row
+
+    outputs = {}
+    for job in jobs:
+        cur.execute(f"SELECT * FROM {settings.database.postgres_tool_artifact_table} WHERE tool_job_id=%s "
+            "ORDER BY created_at ASC FOR SHARE", (job.id,))
+        artifacts = [_artifact_from_row(row) for row in cur.fetchall()]
+        _require(len(artifacts) == job.artifact_count and all((a.session_id, a.turn_id, a.tool_key)
+            == (job.session_id, job.turn_id, job.tool_key) for a in artifacts),
+            "Controlled original artifacts differ from their ToolJob")
+        outputs[job.id] = ToolRuntimeService.project_record_output(tool_key=job.tool_key,
+            result=job.output_payload, session_id=job.session_id, artifacts=artifacts, metadata=job.metadata)
+    return outputs
+
+
 def read_unapproved_tool_materials(original, binding, messages, jobs, *, event_log=None, projected_outputs=None):
     # Application ordinals are completion order, not native task-path order.
     by_job, materials = {job.id: job for job in jobs}, {}

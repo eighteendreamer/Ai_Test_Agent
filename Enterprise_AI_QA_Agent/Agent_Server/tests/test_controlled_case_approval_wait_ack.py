@@ -433,7 +433,7 @@ async def test_incompatible_or_drifted_wait_receipt_remains_redis_pending(pendin
     if change != "codec":
         value = receipt.model_dump(mode="json")
         if change == "version":
-            value["schema_version"] = 2
+            value["schema_version"] = 3
         elif change == "scope":
             value["scope"] = "controlled_case_atomic_settlement_only"
         elif change == "extra":

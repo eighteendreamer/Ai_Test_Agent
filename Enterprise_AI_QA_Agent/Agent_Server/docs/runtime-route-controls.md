@@ -1018,6 +1018,37 @@ Job、application proof 与幂等 `approval.decision_applied` 审计在同一事
 受理兄弟决定、独立强杀及 E3／E4 仍待实现或验收。无公共契约、DDL、依赖或生产选路变更，
 实际红绿与受影响回归见实施记录 §215。
 
+### 正式初次停车的原应用等待材料（§216）
+
+兼容读者现在理解原 RunItem Attempt checkpoint **7** 和停车 receipt **2**；
+`controlled_case_approval_state_available` 独立控制新写入，默认 false，main／CLI／
+Dispatcher 未启用它。旧 checkpoint 1／receipt 1 保持原格式，读取时绝不补造历史 state。
+旧读者 max checkpoint 6 或 max wait 1 遇到新格式，在取得后继双 owner 前延期。
+checkpoint 7 是等待分支，不是 result checkpoint，不授予完成／结算或重跑权限。
+
+显式 Runtime 组合在原事件 sink 已排空后，将原完整 application waiting state、工具槽位、
+原生身份／消息、已结算工具材料、根模型账本材料、审批实际行头和 ACK 事件引用保留到
+**原正式 Attempt**，不新建表、不重置 Attempt。停车、材料、RunItem／Task 转换及审计同事务，
+全部写入后仍核原三项租约截止。公开 Task.result_payload 只保存 receipt 和 state 摘要，
+不把完整 state 放进 Task 回执；现有 RunItem checkpoint 的访问边界不在此改变。
+
+复用普通审批的 waiting record、原 ToolJob／artifact 输出读核和 runtime tool message 投影器。
+已完成槽位保留捕获时的 completion ordinal／原字符串；**首次新建** waiting 槽位显式按
+source-AI tool_calls 顺序追加并持久化。这不是从 UUID、时间戳或 SQL 行序猜历史 UI 顺序。
+原始基础消息来自指定 checkpoint，已完成 pending task 的结果单独读取和核验；不将
+LangGraph 最新状态自动合入 pending writes 的便捷投影当作不可变历史原件。
+
+历史 `read_state`／receipt ACK 同连接重核生产者、admission、原 Worker 边界、完整批次、
+原模型账本、历史 native 和确定性应用投影；不依赖当前可变 pending 清单重建旧 state。
+后续单项拒绝／领取或新 task error 不把旧材料改成新结果，也不授权继续执行。材料丢失／
+漂移、ACK 事件缺失、重算 envelope 摘要但改了来源／槽位，均拒绝且不自动修复。
+
+本步仅补齐**初次停车材料**：专项实际覆盖混合已完成＋待审批、真实 B 项拒绝使用原
+第二槽位、Runtime 显式返回同一材料、原子回滚、失租、取消等待者与丢回执。未实现正式
+后继 Runtime 完整继续／重新停车、运行中兄弟决定受理、后继结果谱系和唯一正式结算；
+没有新格式独立进程强杀、真实供应商／领域 Runner、E3／E4 或生产开放验收。§215 首次
+扩大回归两项账本拒绝仍保留为未确认根因的稳定性风险。命令与真实结果见实施记录 §216。
+
 ### 原路由与恢复验证
 
 关闭新选路时记录 `deep_agent_new_turn_route_disabled`，带 `session_id`、`turn_id` 和 `recovery_reason=new_turn_admission_disabled`；这是路由决定，不是取消/停止回执。

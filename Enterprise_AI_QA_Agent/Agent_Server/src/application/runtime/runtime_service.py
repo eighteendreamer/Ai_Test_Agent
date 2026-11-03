@@ -1886,11 +1886,9 @@ class RuntimeService:
                 record = await self._tool_runtime_service.record_from_job(job)
                 record.approval_id = approval.id
             elif job.status.value == "waiting_approval":
-                record = ToolExecutionRecord(call_id=job.call_id, job_id=job.id, tool_key=job.tool_key,
-                    tool_name=job.tool_name, status="waiting_approval", summary=approval.reason,
-                    trace_id=job.trace_id, input=job.input_payload, approval_id=approval.id,
-                    output={"status": "waiting_approval", "approval_id": approval.id,
-                        "instruction": "Do not retry this tool call while human approval is pending."})
+                from src.application.runtime.tool_messages import waiting_tool_record
+
+                record = waiting_tool_record(approval, job)
             else:
                 raise FrameworkApprovalRecoveryRequired("Native approval ToolJob has an unresolved execution")
             records.append(record.model_dump(mode="python"))

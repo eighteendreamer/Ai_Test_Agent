@@ -17,6 +17,15 @@ from src.schemas.tool_runtime import ToolExecutionRecord
 logger = logging.getLogger(__name__)
 
 
+def waiting_tool_record(approval, job):
+    """One pure rule for ordinary and formal native approval waiting slots."""
+    return ToolExecutionRecord(call_id=job.call_id, job_id=job.id, tool_key=job.tool_key,
+        tool_name=job.tool_name, status="waiting_approval", summary=approval.reason,
+        trace_id=job.trace_id, input=job.input_payload, approval_id=approval.id,
+        output={"status": "waiting_approval", "approval_id": approval.id,
+            "instruction": "Do not retry this tool call while human approval is pending."})
+
+
 def build_rejected_tool_projection(*, binding, source, job, approval_id, ordinal, hygiene_metadata, model_content,
                                   include_runtime_message=False):
     """Project a human refusal, not executed-tool output or artifact evidence.

@@ -297,7 +297,7 @@ class ControlledCaseApprovalContinuations:
                 or saved.owner["execution_state"] in {"claimed", "running"}:
                 raise TaskDeferred("Formal approval continuation already owned or requires reconciliation")
             _require(row["result_payload"] is row["attempt_id"] is row["error_code"] is None
-                and not row["interrupt_requested"] and case.attempt.checkpoint_version == 1
+                and not row["interrupt_requested"] and case.attempt.checkpoint_version in {1, 7}
                 and saved.receipt.state == "queued" and saved.receipt.proof is None
                 and saved.receipt.delivered_at is saved.receipt.applied_at is None,
                 "Formal approval has prior execution or native delivery requiring reconciliation")

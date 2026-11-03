@@ -10704,3 +10704,92 @@ v4 §7.2–7.4／§12.1 → §215 → 同连接共享工具结果应用、正式
 观察组后 `e215-static-final.log` 全src／tests compileall与pip check均exit0；ruff／mypy仍缺失，独立lint／typecheck未安装或执行。`e215-source-verified.log` 的src876／tests692数量及摘要与冻结值完全一致。全部pytest／诊断／静态句柄已收终态，系统核对pytest／multiprocessing／本步诊断Python残留为0。用户v3仍为原SHA256，未改或暂存。
 
 仅暂存本轮5文件（2生产、1新专项、2文档），新专项单文件force-add，不改ignore；提交前核完整diff、暂存范围、diff --cached --check和高置信度敏感新增行。原v3、日志、缓存、锁和环境制品排除。本地提交使用“【feat】复用审批工具结果内核并核验正式应用原件”，实际ID见Git／交付，不推送／建PR。整体goal保持active；后续仍须定位首次账本拒绝的稳定性问题，并推进完整waiting state／slots、正式继续／重新停车及结果结算，不能称本轮已完成正式审批闭环或全系统接入。
+
+## §216 正式初次停车的完整应用等待材料与原槽位留存
+
+### 续接、根因与采用依据
+
+续接 §215／`fc20c435c2f71c6680cd018c0b7b887f2a9562cf`，核 active goal、v4 §7.3／§9.2／§12.1、当前代码和已有红测。用户 v3 原 SHA256 `8a43e94160767a0de20740f2cb30782f06322cbc3467076dfcb120d4efdf1ad4` 未改，不暂存。§184 的 Conda＋pip 依赖迁移不重复、不调用 UV、不改依赖或锁。§215 首次扩大组两项 `Controlled wait original settled model ledger changed` 仍是**根因未确认**的风险，未因之后绿色而关闭，也未放宽原账本核验。
+
+这不是再加一个恢复 fallback：原正式初次停车只保留 receipt，Runtime 的 pending 返回尚无完整 application waiting state／tool slots；receipt.batch 的 approval 身份排序不能冒充 UI 原 ordinal。补的是可靠落点和确定性材料，而不是从当前 Job／Session 或历史时间顺序猜状态。
+
+依据 → 采用方式：
+
+- 原 `ControlledCaseAdmissionCheckpoint`／RunItem Attempt 与 result checkpoint 分支 → 新建 checkpoint 7 **等待分支**，不继承 result，不新表，不重置原 Attempt／admission／checkpoint_at；receipt 2 只增加 state 摘要。v1 严格 class／原 wire 保留，专用 parser 读两种格式。兼容读者 max checkpoint 7／wait 2 先行；新 writer capability 默认 false。
+- 普通 `_record_framework_interrupts` 的 waiting record、`build_pending_turn`／`build_runtime_tool_messages`、原 Job／artifact 输出富化读核 → 提取并共享纯 waiting record 和同连接输出 reader；不复制普通恢复分支。既有完成记录按捕获 completion ordinal／原字符串保留，新 waiting 记录首次显式按 source-AI 调用顺序追加后冻结，不声称恢复历史顺序。
+- 固定安装的 LangGraph 1.2.12 `pregel/main.py:1433`／`BoundPostgresReader`／原 native batch 读者 → 最新 pending 的完整身份核验与指定 checkpoint 的基础状态读核共用原连接／官方图 schema。SDK 最新读取会 apply pending writes，显式 checkpoint_id 不会；分开保存不可变基础消息及已验证 task-result 材料，避免把便捷视图当历史原件。不执行图、模型、工具、saver.setup 或第二套调度。
+- 本地《Agent轨迹与协议鲁棒性.html》04／04.5 与既有 PG 故障夹具 → 不仅断言答案；核原始材料、批次、消息槽位、模型次数、真实 ToolJob、回滚／租约、幂等、取消等待者和回执丢失。原失败日志不覆盖。
+
+### 实现与边界
+
+新内部材料模型／纯等待投影器／同连接原件 reader 分别位于 `schemas/controlled_case_approval_state.py`、`application/runtime/controlled_case_wait_projection.py`、`runtime/controlled_case_approval_state.py`。原 `controlled_case_approval_wait` 在同一停车事务保留完整状态、原 native 身份／基础消息、已完成工具材料、根预算材料、审批**实际数据库行头**、hygiene metadata 及已 ACK 事件引用。最后所有写入后仍用 DB 时钟核原 Session／runtime owner／正式 RunItem 截止；整事务取消／异常回滚与提交后回执未知明确区分。
+
+新增 `read_state`／原 outbox 引用 reader，沿完整停车原件核检查 producer、admission、Worker claim／return、历史 model ledger、批次 links、历史 native、原已完成 ToolJob／artifacts 和确定性应用投影。事件必须是原完整且有序 ACK 集合，不接受省略尾部；重算 asset／receipt／audit 摘要仍不能用改过的来源、槽位或 pending 内容替换原投影。后继单项决定／领取和后来 task error 不把旧 state 改成新结果；历史观察不要求旧 wait 仍 pending，也不授予任何执行许可。
+
+显式初次 Runtime 组合可在原 sink 排空后写 receipt 2 并返回相同原 state／tool_records；公开 Task.result_payload 只有停车回执和摘要，不塞完整 state。原 RunItem checkpoint 现有读取权限未在此改变，不把“材料 scope 私有”说成新增访问控制。旧格式不迁移／补造；新读者遇未来未知格式延期，旧 max checkpoint 6／wait 1 在新后继双领取前延期。正式 claim 只在完整新材料已通过原核后允许 checkpoint 7；仍不重领原 Task、不另起 Attempt。
+
+当前不等于正式后继 Runtime 闭环：原应用 Runtime 仍不接受无 case_execution_input 的 case_approval；本步真实拒绝测试显式加载原状态并经统一 Executor／原工具治理／共享 apply 使用原 B 的第二槽位，后继仍 running。重新停车、运行中受理兄弟决定、后继结果资产谱系／唯一正式结算、完整 E3／E4、真实供应商／领域 Runner 和新格式独立进程强杀仍待后续子步。main／CLI／Dispatcher／生产路由没有启用新 writer。
+
+### TDD 与实际专项结果
+
+固定 `E:\MiniConda3\envs\Agent\python.exe`，cwd=Agent_Server；每条 pytest 前清 `scripts/clear_uv_environment.ps1 -ProcessOnly`，PG／Redis=1，其他 RUN_LIVE_* 开关=0，QA_FRAMEWORK_WORKER_DIAGNOSTICS=1，PYTHONIOENCODING=utf-8。仅已运行的 UUID 隔离 PG／Redis、固定官方图／SDK、本机合成 HTTP 与受控 handler；未启停服务、付费调用、真实目标、Docker、依赖升级或生产选路。
+
+1. 已保存 `e216-first-red.log`：**3 failed、32.60秒、exit1**，均缺 `controlled_case_approval_state_available`，确认目标红测。续接核实上一轮失败 patch 未生效，未把不存在实现当已完成。
+2. `e216-first-green.log` 实为2 failed／1 passed、23.36秒：新测试误拿 admission 前夹具空 checkpoint 比原 reservation；生产材料也误把 naive 审批创建意图当 PostgreSQL TIMESTAMPTZ 实际行头。前者改成停车前真实读回，后者在原事务冻结实际审批行，不弱化比较。`e216-original-state-green.log` 仍2 failed／1 passed、23.55秒，实际为待比较纯投影含 datetime 未走 JSON codec；用与写入相同 TypeAdapter JSON 序列化后严格比较，`e216-slots-green.log` 3 passed、22.04秒。
+3. 扩展 `e216-expanded.log` 为2 failed／12 passed／2 errors、78.76秒；两次丢回执／取消后的重试实际抛原 `ContinuationLeaseLostError` 而非新测试猜的审批异常，精确更正断言。混合工具夹具修改了已被 assembly 闭包捕获的 registry 的替身副本，且未进入请求工具列表；先核真正冻结列表，再直接修改夹具原 descriptor，不改生产 permission／schema 迎合测试。`e216-state-boundaries.log` 29 passed／2 errors、168.54秒，保留这次夹具准备失败。
+4. 修正夹具后 `e216-mixed-green.log` 名称不代表绿色：实际 **2 failed、29 deselected、19.46秒**，生产已能停车但原件读回报 `Controlled waiting state changed its original native messages`。沿固定 SDK 查明最新状态与显式 checkpoint 对 pending writes 的不同物化行为；改为上述同连接精确基础状态＋任务结果材料，不忽略 messages、不重新渲染终态字符串。另 `e216-historical-red.log` 为1 failed／33 deselected、13.13秒，证实新历史 reader 错将后来 task error 当旧材料不可读；历史只选原保留材料，新写入仍严格拒绝任何当前 task error，未放开执行权。
+5. 修复后 `e216-materials-green.log` **34 passed、178.42秒、exit0**；增加显式 Runtime 接线和竞争停车后，最终专项 `e216-state-verified.log` **36 passed、183.01秒、exit0，无skip／deselect**。1项无服务默认能力／非结果格式协议，35项真实隔离服务／官方框架／合成 HTTP 混合；包括两个方向的已完成＋待审批、真实 B 拒绝 ordinal=2、历史决定／领取／结果后原件保留、重算 envelope 漂移、ACK 尾部缺失、新旧读者、全部三租约末写跨期、原子写入故障、并发、提交丢回执及取消等待者。不是36个真实业务目标，重复运行不累加覆盖。
+
+### 冻结后回归与待收终态
+
+专项36通过后冻结 src／tests，最终回归期间不再改这些字节。`e216-source-frozen.log` 按相对 Agent_Server 的 POSIX 路径排序，路径 UTF8＋NUL＋原字节＋NUL 聚合：src **879个py、e47a4ad3ad1c7a2d2145b9b187e63dd5666971aa3884c91f86310d0c6e9ab69e**；tests **693个py、18cfaebacac393e22e0a535a3b2349e781c4e63c35ea1c96190b1792a90930a4**。全 src／tests compileall 与 pip check 实际 exit0（No broken requirements found）；ruff／mypy 缺失，未安装或执行独立 lint／typecheck。
+
+在 §215 的45文件清单上增加本步专项、admission／execution lease、正式 result／asset／projection parts／finalization／assessment／settlement／ACK 和原停车 process，共56文件。完整清单 `e216-affected-files.txt`，实际命令：
+
+~~~powershell
+# cwd: Agent_Server；先 clear_uv_environment.ps1 -ProcessOnly；固定解释器及环境如上。
+$files = Get-Content ../.codex-logs/e216-affected-files.txt
+& E:\MiniConda3\envs\Agent\python.exe -u -m pytest @files -q -rs --tb=short
+~~~
+
+`e216-affected-final.log` 等待原句柄终态；不拿36项专项或上轮1824项代替本轮消费者结果。全 live=0／diagnostics=0 的同字节新专项另存 `e216-optout-final.log`，跳过不算通过。所有句柄结果、字节复核及实际本地 commit 在取得终态后追加。
+
+未运行全量后端、前端 build／typecheck／浏览器、新格式独立进程强杀、真实供应商／领域 Runner、Docker／MySQL／RustFS、完整 main lifespan、双制品部署／备份恢复、E3／E4 和性能基线。本轮历史任务错误为隔离 native 写入故障夹具，不冒充新的真实后继强杀验收。§215 两项未再现账本失败未因本步专项绿色而宣称已修。
+
+### 对应、下一出口与提交范围
+
+v4 §7.3／§9.2／§12.1 → §216 → 正式初次停车材料／原 slot＋兼容读者与默认关闭新 writer → 目标红绿、36项专项、冻结后56文件回归 → 正式后继 Runtime 继续／重新停车、运行中兄弟受理、结果谱系／唯一结算、新格式独立强杀与稳定性定位仍待完成。
+
+只提交本轮相关生产／测试／2文档，新专项单文件 force-add，不改 ignore；用户 v3、日志、缓存、锁和环境制品排除，提交前检查 status／完整 diff／cached check／敏感新增行，不推送／建PR。整体 goal 保持 active，完整 v4／H01–H12、E3／E4 不缩减；本子步不是全系统完成。剩余粗估仍为 **4–8周有效开发／验收**，外部等待另计，不承诺日期。
+
+### 56文件首组终态与历史样本夹具根因
+
+`e216-affected-final.log` 原句柄实际 **1 failed、2198 passed、10022.00秒（2:47:01）、exit1，无skip／deselect**。不能称56文件全绿。唯一失败为 `test_controlled_case_admission.py::test_expired_original_receipt_stays_readable_but_new_run_attempt_cannot_refreeze_it`，停在构造旧历史样本的通用 `start_item`，尚未到原 admission 冲突断言：
+
+~~~text
+run_store._start_item_sync -> require_generic_approval_resume
+ValueError: Controlled case requires its dedicated approval continuation
+~~~
+
+查证 `git blame`、§213 和当前锁内调用链：旧 admission 测试原本借通用入口制造“继承保留标记的 running 后继”历史样本；§213 已明确禁止通用 start 拆开此类归属，夹具未同步。该拒绝符合现行契约，不是新等待材料的生产缺陷，也不是 §215 的历史账本失败。`e216-admission-legacy-red.log` 在相同源码定点复现 **1 failed、11.52秒、exit1** 后才修改测试。
+
+仅在此旧测试追加严格断言：现代通用 start 抛原精确异常且完整数据库摘要不变；再在隔离夹具内显式持久化旧 running 后继，复用已有同事务 start 记录内核，不开放生产入口。保留原运行状态、继承身份、`AgentSubmissionConflict("execution intent")`、原 receipt 可读以及原件不变断言，未跳过或放宽它们。`e216-admission-legacy-green.log` 实际 **1 passed、10.10秒、exit0**。本步相关范围因此为19文件：14生产Python、3测试（含新专项）及2文档。
+
+此后不改生产源码；`e216-source-after-fixture.log` 的src仍为原879文件及同一 `e47a4ad3ad1c7a2d2145b9b187e63dd5666971aa3884c91f86310d0c6e9ab69e`。tests仍693文件，仅上述旧测试函数变化，聚合摘要为 `0a15dbec43d465963ee900a24050ad04689e6d862af2a044dfa4ffb1eba72bfb`；不是原56文件运行时的测试字节。针对变更后的旧 admission 文件及共享夹具／归属边界，运行完整 admission、execution_lease、approval_claim 和 approval_state 四文件组，日志 `e216-admission-state-regression.log`，终态另追加：
+
+~~~powershell
+# cwd: Agent_Server；先 clear_uv_environment.ps1 -ProcessOnly；固定解释器及环境同上。
+& E:\MiniConda3\envs\Agent\python.exe -u -m pytest tests/test_controlled_case_admission.py tests/test_controlled_case_execution_lease.py tests/test_controlled_case_approval_claim.py tests/test_controlled_case_approval_state.py -q -rs --tb=short
+~~~
+
+没有盲重跑2小时47分的56文件整组：生产字节未变，修订只在已确定根因的单个测试函数；四文件回归与首组结果分别报告，不能合写为当前56文件2199通过。原首组失败日志保留。§215 的两项未再现账本风险仍未确认根因，即使本首组未复现它们也不关闭。
+
+同字节新专项 opt-out 原句柄已取得终态：`e216-optout-final.log` **1 passed、35 skipped、9.82秒、exit0**，跳过原因均缺真实PG／Redis，不能称36通过，也不能作为已修旧admission函数的证据。新格式独立进程强杀等未验出口保持前述范围，不引用旧格式 process 验收替代它。
+
+### 修订后四文件终态与交付核对
+
+`e216-admission-state-regression.log` 原句柄实际 **223 passed、1019.68秒（0:16:59）、exit0，无skip／deselect**，含完整四文件及全部36项新state专项。四文件当前字节通过，不把先前56文件失败抹去，不累加重复用例数，也不据此宣称完整审批 Runtime／全系统完成。此结果混合无服务协议、内存／替身、真实隔离PG／Redis、固定官方图和合成HTTP，未发生付费模型或真实业务目标调用。
+
+`e216-static-final.log` 在四文件终态后实际运行全src／tests `compileall -q` 和 `pip check`，均exit0，后者为 No broken requirements found。ruff／mypy 均缺失，未安装或执行独立lint／typecheck。`e216-source-verified.log` 的879个src与693个tests完全匹配上述修订后摘要；除旧admission测试函数外，生产与测试字节未再改变。全部测试句柄终态已取回，pytest／multiprocessing残留数为0；用户v3的SHA256仍为原 `8a43e94160767a0de20740f2cb30782f06322cbc3467076dfcb120d4efdf1ad4`，不修改或暂存。
+
+本地交付限定19文件，检查完整相关diff、暂存清单、cached diff --check及敏感新增行，新专项仅单文件force-add。提交使用“【feat】留存正式审批等待状态与原工具槽位”，实际ID见Git／交付，不推送／建PR；不含用户v3、原测试日志、缓存、锁或环境制品。新writer仍默认关闭，完整后继Runtime、再次停车、兄弟运行中受理、后继结果／唯一结算及前述环境验收仍为下一出口。整体goal保持active，仍估计4–8周有效开发／验收，外部等待另计。

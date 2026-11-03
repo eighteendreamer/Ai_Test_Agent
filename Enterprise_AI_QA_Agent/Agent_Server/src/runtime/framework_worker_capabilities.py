@@ -46,15 +46,16 @@ class FrameworkWorkerCapabilities:
     model_budget_max_version: int = 2
     controlled_case_available: bool = False
     controlled_case_input_max_version: int = 4
-    controlled_case_checkpoint_max_version: int = 6
+    controlled_case_checkpoint_max_version: int = 7
     controlled_case_settlement_admission_available: bool = False
     controlled_case_settlement_max_version: int = 1
     controlled_case_settlement_available: bool = False
     controlled_case_recovery_receipt_max_version: int = 1
-    controlled_case_approval_wait_max_version: int = 1
+    controlled_case_approval_wait_max_version: int = 2
     controlled_case_approval_admission_max_version: int = 1
     controlled_case_approval_claim_available: bool = False
     controlled_case_approval_delivery_available: bool = False
+    controlled_case_approval_state_available: bool = False
 
     @classmethod
     def from_artifact(cls, *, deepagents_available: bool):
@@ -327,13 +328,13 @@ class FrameworkWorkerCapabilities:
 
     def require_case_approval_wait_format(self, value):
         """Historical parking codec only, never decision/resume admission."""
-        from src.schemas.controlled_case_approval_wait import ControlledCaseApprovalWaitReceipt
+        from src.schemas.controlled_case_approval_wait import parse_controlled_case_approval_wait
 
         reason = "framework_case_approval_wait_format_unavailable"
         version = value.get("schema_version") if isinstance(value, dict) else None
         if type(version) is not int or not 1 <= version <= self.controlled_case_approval_wait_max_version:
             raise TaskDeferred(reason)
-        return self._read_compatible(ControlledCaseApprovalWaitReceipt.model_validate, value, reason,
+        return self._read_compatible(parse_controlled_case_approval_wait, value, reason,
             literal_fields=("scope",))
 
     def require_case_approval_admission_format(self, value):

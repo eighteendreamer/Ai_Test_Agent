@@ -18,6 +18,7 @@ from src.schemas.framework_projection_commit import (
 from src.schemas.framework_observation_projection import FrameworkObservationAsset, FrameworkObservationCommits
 from src.schemas.controlled_case_assessment import ControlledCaseAssessmentAsset
 from src.schemas.controlled_case_settlement import ControlledCaseSettlementReceipt
+from src.schemas.controlled_case_approval_state import ControlledCaseApprovalStateAsset
 
 
 CONTROLLED_CASE_ADMISSION_KEY = "controlled_case_admission"
@@ -190,6 +191,33 @@ class ControlledCaseSettlementCheckpoint(ControlledCaseAssessmentCheckpoint):
         return self
 
 
+class ControlledCaseApprovalStateCheckpoint(BaseModel):
+    """Waiting branch, deliberately NOT a result checkpoint subclass."""
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    schema_version: Literal[7]
+    admission: ControlledCaseAdmissionCheckpoint
+    state_asset: ControlledCaseApprovalStateAsset
+    retained_at: datetime
+
+    @model_validator(mode="before")
+    @classmethod
+    def require_version(cls, value):
+        if isinstance(value, dict) and type(value.get("schema_version")) is not int:
+            raise ValueError("Controlled waiting checkpoint requires its explicit integer version")
+        return value
+
+    @model_validator(mode="after")
+    def verify(self):
+        source, asset = self.admission, self.state_asset
+        if (self.retained_at != asset.retained_at or asset.binding != source.binding or asset.task_id != source.task_id
+            or asset.run_item_execution_attempt_id != source.run_item_execution_attempt_id
+            or asset.input_sha256 != source.input_sha256
+            or asset.admission_sha256 != approval_value_hash(source.model_dump(mode="json"))):
+            raise ValueError("Controlled waiting checkpoint differs from its original admission")
+        return self
+
+
 def read_result_checkpoint(attempt) -> ControlledCaseResultCheckpoint | None:
     if attempt.checkpoint_version == 1:
         return None
@@ -203,10 +231,13 @@ def read_result_checkpoint(attempt) -> ControlledCaseResultCheckpoint | None:
 
 def read_admission_checkpoint(attempt) -> ControlledCaseAdmissionCheckpoint:
     """Read the original reservation only; inherited attempts need reconciliation."""
-    if attempt.checkpoint_key != CONTROLLED_CASE_ADMISSION_KEY or attempt.checkpoint_version not in {1, 2, 3, 4, 5, 6}:
+    if attempt.checkpoint_key != CONTROLLED_CASE_ADMISSION_KEY or attempt.checkpoint_version not in {1, 2, 3, 4, 5, 6, 7}:
         raise ValueError("RunItem has no supported original controlled case admission checkpoint")
-    result = read_result_checkpoint(attempt)
-    checkpoint = result.admission if result is not None else ControlledCaseAdmissionCheckpoint.model_validate(attempt.checkpoint_payload)
+    if attempt.checkpoint_version == 7:
+        checkpoint = ControlledCaseApprovalStateCheckpoint.model_validate(attempt.checkpoint_payload).admission
+    else:
+        result = read_result_checkpoint(attempt)
+        checkpoint = result.admission if result is not None else ControlledCaseAdmissionCheckpoint.model_validate(attempt.checkpoint_payload)
     if ((checkpoint.run_id, checkpoint.run_item_id, checkpoint.run_item_execution_attempt_id)
         != (attempt.run_id, attempt.run_item_id, attempt.id)
         or checkpoint.plan_snapshot_identity != attempt.plan_snapshot_identity
