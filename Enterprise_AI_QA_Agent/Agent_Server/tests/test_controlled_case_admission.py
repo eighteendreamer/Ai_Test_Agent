@@ -504,7 +504,9 @@ async def test_generic_memory_checkpoint_writer_uses_the_same_reserved_namespace
 
 
 @pytest.mark.asyncio
-async def test_original_worker_still_defers_real_admitted_case_without_claiming_an_attempt(formal_case):
+@pytest.mark.parametrize("case_port_available", [False, True])
+async def test_original_worker_still_defers_real_admitted_case_without_claiming_an_attempt(
+        formal_case, case_port_available, monkeypatch):
     from src.application.orchestration.agent_task_dispatcher import AgentTaskDispatcher
     from src.infrastructure.redis_task_queue import QueuedTask
     from src.runtime.framework_worker_capabilities import FrameworkWorkerCapabilities
@@ -512,14 +514,25 @@ async def test_original_worker_still_defers_real_admitted_case_without_claiming_
 
     s = formal_case
     receipt = await submit(s)
+    def forbidden(*args, **kwargs):
+        pytest.fail("Unavailable formal execution must not claim, acquire resources or call its runtime")
+    # Missing composition and disabled execution capability are independent
+    # admission boundaries. Installing a port must not enable the writer.
+    port = SimpleNamespace(require_dispatch_ready=forbidden, execute=forbidden,
+        acknowledge_delivery=forbidden) if case_port_available else None
     dispatcher = AgentTaskDispatcher(s.h.settings, s.h.tasks, s.h.sessions, s.h.resources,
-        framework_model_calls=s.calls, framework_capabilities=FrameworkWorkerCapabilities("a" * 64, True))
+        framework_model_calls=s.calls, framework_capabilities=FrameworkWorkerCapabilities("a" * 64, True),
+        controlled_case_runtime=port)
+    for name in ("claim", "claim_controlled_case", "begin", "finish"):
+        monkeypatch.setattr(s.h.tasks, name, forbidden)
+    monkeypatch.setattr(s.h.resources, "acquire", forbidden)
     before = database_digest(s)
     with postgres_connect(s.h.settings) as conn, conn.cursor() as cur:
         cur.execute(f"SELECT payload FROM {s.h.settings.database.postgres_task_outbox_table}")
         wire = cur.fetchone()["payload"]
     for _ in range(2):
-        with pytest.raises(TaskDeferred, match="runtime_kind_unavailable"):
+        reason = "framework_runtime_kind_unavailable" if case_port_available else "framework_case_execution_port_unavailable"
+        with pytest.raises(TaskDeferred, match=f"^{reason}$"):
             await dispatcher.handle_v2(QueuedTask("case-admission", wire), worker_id="old-reader")
         assert database_digest(s) == before
     task = await s.h.tasks.get(receipt.id)

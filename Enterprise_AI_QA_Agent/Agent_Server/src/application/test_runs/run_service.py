@@ -16,7 +16,7 @@ from uuid import uuid4
 from src.application.projects.project_service import ProjectService
 from src.application.runtime.tool_job_service import ToolJobService
 from src.application.test_cases.case_service import TestCaseService
-from src.application.test_runs.run_store import TestRunStore
+from src.application.test_runs.run_store import TestRunStore, is_controlled_case_attempt
 from src.core.request_context import get_request_context, new_id
 from src.application.test_suites.suite_service import TestSuiteService
 from src.runtime.store import SessionStore
@@ -1179,6 +1179,16 @@ class TestRunService:
                     None,
                 )
                 if approval is None or approval.status != ToolApprovalStatus.denied:
+                    continue
+                attempt = await self._store.get_latest_attempt(item.id)
+                if attempt is not None and is_controlled_case_attempt(attempt):
+                    # A retained human decision is not native delivery/result
+                    # proof. Do not attempt generic ToolJob/result mutations or
+                    # fail the restart batch on another subsystem's ownership.
+                    logger.info("test_run_denied_approval_dedicated_continuation_required", extra={
+                        "run_id": item.run_id, "run_item_id": item.id, "attempt_id": attempt.id,
+                        "approval_id": approval.id, "recovery_reason": "controlled_case_dedicated_approval_required",
+                        "automatic_replay": False})
                     continue
                 await self._mark_denied_tool_job(
                     item.tool_job_id,

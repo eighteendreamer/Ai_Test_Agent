@@ -10364,3 +10364,61 @@ opt-out命令工作目录Agent_Server；静态两条工作目录仓库根，e210
 只精确暂存9个本轮相关文件，新专项按单文件force-add，不修改ignore；检查完整暂存diff、git diff --cached --check及高置信度敏感新增行，不提交原始日志、环境、缓存、依赖锁或用户v3。本地fix提交“【fix】衔接正式停车提交与运行监控生命周期”，实际commit id见Git／交付，不推送或建PR。
 
 v4 A2-3／E、§7／§8–10／§12.1 → §210 → 正式停车四个独立Worker强杀出口＋本次已提交回执结束运行监控＋只读重投递 → 691项最终回归与opt-out／静态 → 专用正式决定准入、双归属后继／继续、完整v4及H01–H12和真实依赖／部署验收仍待完成。默认writer关闭，整体goal继续active；整体仍粗估4–8周有效开发／验收，外部授权／环境／人工发布等待另计，不作完成日期承诺。
+
+## 211. v4 §7.3／§12.1：正式审批停车与通用 RunItem 维护的所有权隔离（2026-11-03）
+
+续接基线 093cb0b78030051578b401bc868f09ad0a28d34a（§210）。核对 active goal、v4、§52及较新实施事实、Git 与原正式审批入口。用户v3仍为8a43e94160767a0de20740f2cb30782f06322cbc3467076dfcb120d4efdf1ad4，不改、不暂存。原Conda＋pip迁移已完成，本步不重装环境、不改任何依赖／锁，不启停服务、不部署生产writer或调用付费供应商／业务目标。
+
+### 依据 → 真实缺口 → 最小修复
+
+- 原RunStore的checkpoint／result／expiry保留规则及§208–210原子停车 → 正式Attempt的不可变controlled_case_admission键已决定事务归属，但通用resume_waiting_approval漏用该归属，在waiting分支竟可恢复仅RunItem租约；旧claimed幂等分支也直接返回该记录。原case_execute Task已completed，框架owner仍是停车后的状态，不能由此获得下一次双归属继续。此处是已有所有权边界遗漏，不引入新调度层或仅靠HTTP调用者记得检查。
+- 原TestRunService._reconcile_denied_approvals先按业务denied尝试改ToolJob，再写结果；真实红测在原framework_tool_authority拒绝无captured owner时抛错。底层已阻止这次越权写，不能虚称已改坏Job；但通用启动／reaper补偿仍误走专用路径并报告批次失败。人的denied不是原生交付／工具结果证据，不能直接结算整个正式条目。
+- 本地专业原文项目借鉴/llm-testing-course/Agent轨迹与协议鲁棒性.html，04.5幂等／补偿及权限／轨迹要求 → 用真实冻结／领取／官方图双工具interrupt／原子停车样本验证不改持久原件、不运行工具及普通幂等兼容；未知保留版本不作为降级权。
+
+run_store新增共享is_controlled_case_attempt纯归属判定，现有checkpoint／result／expiry保持原语义并复用；require_generic_approval_resume由内存同锁和PG原Item／Attempt锁内调用，等待→claimed与旧claimed早返回都拒绝，结构化记录controlled_case_approval_continuation_required。仅匹配保留键，不按可变approval source或可识别schema猜权限，不解析／迁移未知保留payload，不修复旧错误claimed状态或重置任何Task／Attempt。
+
+通用denied扫描在任何Job／结果修改前读原latest Attempt；遇到保留键记录test_run_denied_approval_dedicated_continuation_required并继续同批普通条目。该记录不是“已交付专用继续”，没有创建后继、改变决定或自动重跑。正式决定受理／双归属后继和继续仍待实现，不将通用approval_resume解禁，也不创建尚无消费者的生产任务。
+
+本步无公共HTTP／DTO、数据库DDL、schema版本或配置／依赖变化；原普通恢复、agent_case_execution及无关未知checkpoint保持可用。路由说明同步。修改范围为2个生产文件、新专项测试、既有admission测试契约同步、路由说明及本节，共6文件；用户v3不含在内。
+
+### TDD 与验证（保留失败，不累计历史绿色）
+
+固定E:\MiniConda3\envs\Agent\python.exe（3.11.18），每条命令前clear_uv_environment.ps1 -ProcessOnly。业务组RUN_LIVE_POSTGRES_TESTS／RUN_LIVE_REDIS_TESTS=1，Docker／MySQL／PLAN_RUN_CREATION=0，QA_FRAMEWORK_WORKER_DIAGNOSTICS=1，PYTHONIOENCODING=utf-8。仅清测试子进程继承的UV配置，不宣称反向修改Codex父进程。
+
+1. e211-ownership-red.log：9 failed、31.95秒、exit1。4个真实PG／框架停车样本和4个显式内存保留键样本均DID NOT RAISE，真实PG服务还记录test_run_item_approval_resume_requested；第9项为前述无owner的ToolJob写入拒绝，未吞异常。
+2. 同9项实现后e211-ownership-green.log：9 passed、30.49秒、exit0，无skip／deselect。PG全表／native摘要在拒绝前后一致，原完整格式还走原专用历史ACK，无新模型／工具；手工旧claimed／schema999样本仅验证保留不降级，不称其为合法执行／历史ACK材料。
+3. 新增混合补偿批次／重复扫描与source-only兼容，第一轮7文件e211-domain-affected.log：91 passed、16 skipped、99.50秒、exit0。16项为旧AgentCase所需MySQL／RustFS等真实依赖未开，不能计通过；它不是随后新增普通checkpoint正例后的最终字节结果。
+4. 冻结测试另补普通None／agent_case_execution／无关未知checkpoint的原Attempt恢复和幂等，共14项新专项。第一轮13文件e211-affected-final.log实际1 failed、336 passed、16 skipped、1257.29秒、exit1。唯一失败为既有test_original_worker_still_defers_real_admitted_case_without_claiming_an_attempt，旧断言仍期待runtime_kind_unavailable，原正式Dispatcher早已按专用组合先拒绝framework_case_execution_port_unavailable；不是本次resume改动让任务可运行。精确单项e211-admission-contract-red.log重现1 failed、11.70秒，保留原输出。
+5. 对照原Dispatcher._handle_controlled_case及test_controlled_case_dispatch的实际能力顺序，同步旧用例为“缺专用端口”和“已有专用端口但writer能力关闭”两项，各要求精确不同TaskDeferred原因，并新增禁止调用原claim／claim_controlled_case／begin／finish／资源获取／Runtime的显式断言；保留重复投递、全表不变、attempt_id为空和运行调用为空，未放宽为任意异常／宽正则。e211-admission-contract-green.log为2 passed、14.55秒、exit0，无skip／deselect。生产Dispatcher／能力顺序没有改动。
+6. 最终同字节重跑原13文件并加正式Dispatcher测试共14文件，e211-affected-verified.log仍等待原句柄终态，不将前述336条搬作最终全绿。
+
+静态e211-static-final.log：compileall -q Agent_Server/src Agent_Server/tests exit0；pip check为No broken requirements found、exit0。ruff／mypy实际缺包，未跑独立lint／typecheck，未擅自新增依赖。没有完整前端／全量后端、真实供应商／领域Runner、Docker／MySQL／RustFS或完整main lifespan验收；本步未重新跑§210独立强杀，不沿用691条代表当前字节。
+
+### 最终回归与交付核对
+
+最终扩大组的精确命令（工作目录Agent_Server，环境开关如前）：
+
+~~~powershell
+& E:\MiniConda3\envs\Agent\python.exe -u -m pytest tests/test_controlled_case_approval_ownership.py tests/test_test_run_duration_transitions.py tests/test_test_run_postgres_claim.py tests/test_test_run_regression.py tests/test_agent_case_execution.py tests/test_case_execution_service.py tests/test_cancelled_run_missing_approval_recovery.py tests/test_controlled_case_admission.py tests/test_controlled_case_execution_lease.py tests/test_controlled_case_approval_wait.py tests/test_controlled_case_approval_wait_ack.py tests/test_controlled_case_settlement.py tests/test_framework_approval_submission.py tests/test_controlled_case_dispatch.py -q -rs --tb=short
+~~~
+
+专项opt-out（全部live开关0，diagnostics=0）实际e211-optout-final.log：9 passed、5 skipped、6.77秒、exit0。9条是内存保留／普通checkpoint／混合批次测试，5条明确缺真实PG／Redis，不能将跳过项计作业务通过。
+
+~~~powershell
+& E:\MiniConda3\envs\Agent\python.exe -u -m pytest tests/test_controlled_case_approval_ownership.py -q -rs --tb=short
+# 工作目录仓库根
+& E:\MiniConda3\envs\Agent\python.exe -m compileall -q Agent_Server/src Agent_Server/tests
+& E:\MiniConda3\envs\Agent\python.exe -m pip check
+~~~
+
+admission用例同步后重新运行的e211-static-verified.log仍compileall_exit=0、No broken requirements found、pip_check_exit=0；静态没有使用早于最终测试变更的输出代替。e211-source-frozen.log冻结src 873个py、a2a266d413372cfae36cc2ea0eb8504628478b04091659b76d8a9c8fc2b47a34，tests 688个py、f22a32daeae8b6029a09a8fadec5737d6e7d1f0afae831e07ff29fb0578fd8c3。摘要算法同§210：相对Agent_Server的POSIX路径排序，依次路径UTF8＋NUL＋原字节＋NUL；后续只写文档，最终组终态后复核摘要。
+
+本步最终回归、opt-out、字节摘要及commit核对在原句柄终态后追加。整体goal继续active；剩余出口仍包括专用正式决定准入及原生决定交付、双归属后继／继续、全系统v4及H01–H12、真实依赖和部署验收。整体粗估4–8周有效开发／验收，外部等待另计，不作完成日期承诺。
+
+### 原最终句柄已取得终态
+
+e211-affected-verified.log实际 **367 passed、16 skipped、1446.09秒、exit0，无deselect／失败**。16条skip全部来自既有test_agent_case_execution所需真实MySQL／RustFS等依赖未启用，不能当作通过；367包括14项新专项、同步后的2项正式准入边界及上列全部14文件消费者。本轮没有重跑独立进程强杀；真实隔离PG／Redis、固定官方图／SDK、本机合成HTTP、内存／替身／协议测试是混合证据，不是367个真实业务目标或完整E3／E4通过。初始9红、扩大组1失败及单项失败原日志均保留，不累计中间绿色数，也不以修改错误断言掩盖生产失败。
+
+最终组后重新聚合，src／tests数量和摘要均与e211-source-frozen.log相同；全部pytest句柄终态已取回，系统核对pytest／multiprocessing为0。用户v3原hash不变。精确核对6文件、完整暂存diff与git diff --cached --check，并检查高置信度敏感新增行；新专项仅单文件force-add，不改ignore，不包含原始日志、环境／缓存／锁或用户v3。只创建本地fix提交“【fix】隔离正式审批停车与通用运行维护”，实际ID见Git／交付，不推送或建PR。
+
+v4 §7.3／§12.1 → §211 → 共享保留Attempt归属＋通用恢复锁内拒绝＋通用denied补偿分流 → 367通过／16依赖skip、专项opt-out与静态 → 专用决定准入／双归属继续仍待完成。整体goal保持active；没有给本轮保留边界授予图恢复权、生产writer或外部工具执行权。

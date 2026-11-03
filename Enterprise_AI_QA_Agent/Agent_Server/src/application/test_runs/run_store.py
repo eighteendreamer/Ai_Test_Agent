@@ -64,10 +64,16 @@ TERMINAL_ITEM_STATUSES = {
 ACTIVE_ITEM_STATUSES = {"claimed", "running"}
 
 
+def is_controlled_case_attempt(attempt: TestRunAttemptRecord) -> bool:
+    # The durable reservation, not mutable approval metadata or a known
+    # payload version, determines which transaction owns the original Attempt.
+    return attempt.checkpoint_key == CONTROLLED_CASE_ADMISSION_KEY
+
+
 def require_generic_checkpoint_write(attempt: TestRunAttemptRecord, checkpoint_key: str) -> None:
     # The reservation owns task/input/budget/outbox identities in one atomic
     # writer. The generic checkpoint API cannot install or replace that fact.
-    if CONTROLLED_CASE_ADMISSION_KEY in {attempt.checkpoint_key, checkpoint_key}:
+    if is_controlled_case_attempt(attempt) or checkpoint_key == CONTROLLED_CASE_ADMISSION_KEY:
         logger.warning("controlled_case_checkpoint_atomic_writer_required", extra={"run_id": attempt.run_id,
             "run_item_id": attempt.run_item_id, "attempt_id": attempt.id,
             "recovery_reason": "controlled_case_admission_reserved"})
@@ -78,18 +84,29 @@ def require_generic_result_write(attempt: TestRunAttemptRecord) -> None:
     # Like the checkpoint reservation, the original admission cannot be
     # completed by a writer which does not settle its AgentTask in the same
     # transaction. Do not parse/upgrade the reserved payload or add a bypass.
-    if attempt.checkpoint_key == CONTROLLED_CASE_ADMISSION_KEY:
+    if is_controlled_case_attempt(attempt):
         logger.warning("controlled_case_result_atomic_writer_required", extra={"run_id": attempt.run_id,
             "run_item_id": attempt.run_item_id, "attempt_id": attempt.id,
             "recovery_reason": "controlled_case_atomic_settlement_required"})
         raise ValueError("Controlled case result requires its atomic settlement")
 
 
+def require_generic_approval_resume(attempt: TestRunAttemptRecord) -> None:
+    # Like result/checkpoint writes, resume must not grant a RunItem-only lease
+    # for a reserved execution. Its completed producer remains immutable; only
+    # the dedicated continuation may establish the next dual-owner identity.
+    if is_controlled_case_attempt(attempt):
+        logger.warning("controlled_case_approval_continuation_required", extra={"run_id": attempt.run_id,
+            "run_item_id": attempt.run_item_id, "attempt_id": attempt.id,
+            "recovery_reason": "controlled_case_dedicated_approval_required", "automatic_replay": False})
+        raise ValueError("Controlled case requires its dedicated approval continuation")
+
+
 def can_requeue_expired_attempt(attempt: TestRunAttemptRecord) -> bool:
     # The reservation also owns the original execution identity. Expiry is not
     # permission to move its checkpoint to a fresh generic execution attempt.
     # Match only the reserved key; unknown payload versions remain untouched.
-    if attempt.checkpoint_key == CONTROLLED_CASE_ADMISSION_KEY:
+    if is_controlled_case_attempt(attempt):
         logger.warning("controlled_case_expiry_requires_reconciliation", extra={"run_id": attempt.run_id,
             "run_item_id": attempt.run_item_id, "attempt_id": attempt.id,
             "recovery_reason": "controlled_case_original_attempt_preserved", "automatic_replay": False})
@@ -970,6 +987,7 @@ class InMemoryTestRunStore:
                 ):
                     raise ValueError(f"Resumed run item lease is not active: {item_id}")
                 attempt = self._active_attempt(item_id, item.lease_token)
+                require_generic_approval_resume(attempt)
                 if attempt.status != "claimed":
                     raise ValueError(f"Resumed run item attempt is not claimed: {item_id}")
                 return item.model_copy(deep=True)
@@ -978,6 +996,7 @@ class InMemoryTestRunStore:
             if not item.lease_token:
                 raise ValueError(f"Waiting run item has no preserved lease token: {item_id}")
             attempt = self._active_attempt(item_id, item.lease_token)
+            require_generic_approval_resume(attempt)
             updated = item.model_copy(
                 deep=True,
                 update={
@@ -3286,6 +3305,7 @@ class PostgresTestRunStore:
                     ):
                         raise ValueError(f"Resumed run item lease is not active: {item_id}")
                     attempt = self._lock_attempt(cur, item_id, item.lease_token)
+                    require_generic_approval_resume(attempt)
                     if attempt.status != "claimed":
                         raise ValueError(f"Resumed run item attempt is not claimed: {item_id}")
                     return item
@@ -3294,6 +3314,7 @@ class PostgresTestRunStore:
                 if not item.lease_token:
                     raise ValueError(f"Waiting run item has no preserved lease token: {item_id}")
                 attempt = self._lock_attempt(cur, item_id, item.lease_token)
+                require_generic_approval_resume(attempt)
                 waiting_duration_delta_ms = elapsed_ms(item.waiting_started_at, now)
                 item = item.model_copy(
                     update={

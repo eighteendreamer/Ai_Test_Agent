@@ -896,6 +896,24 @@ lifespan、部署滚动／回滚或正式决定后继续执行验收。默认 wr
 此处只结束监控，不直接 ACK Redis，也不跳过原 execution 返回及正常回执比较；仍需原
 Worker ack_owned。确定性回归同时覆盖停车和正式结算的原件完好／审计漂移／回执缺失。
 
+### 正式审批与通用 RunItem 维护的所有权边界（§211）
+
+原子停车后，原 `case_execute` Task 已完成的是本次执行阶段，不是正式用例。通用
+`resume_waiting_approval` 不能只恢复 RunItem 租约而不恢复框架所有权，也不能将旧 claimed
+记录作为幂等恢复成功返回。PostgreSQL 在原 Item／Attempt 锁内、内存实现的同一互斥区内，
+统一依据不可变 `controlled_case_admission` 检查点键拒绝这两条路径；不依赖可变审批 source，
+不解码／迁移未知保留版本，不重置原 Task 或原正式 Attempt。普通 legacy／其他检查点键
+仍沿原恢复与幂等协议。
+
+通用拒绝审批补偿扫描遇到该保留 Attempt 时，记录
+`test_run_denied_approval_dedicated_continuation_required`，不尝试写专用 ToolJob 或正式结果，
+继续处理同批普通条目。该日志只说明需要专用继续，不代表已经创建后继或交付拒绝决定。
+人的拒绝仍须经过原生交付／结果证明，不能直接等同整个正式条目 blocked。
+
+真实隔离 PG／Redis、本机合成模型 HTTP 及内存样本覆盖等待／旧 claimed、保留格式未知、
+普通检查点兼容、混合补偿批次及重复扫描。正式决定受理与双归属继续仍未实现；默认
+writer、公共 HTTP／DTO、数据库 schema 和依赖不变。命令、红测与最终结果见实施记录 §211。
+
 ### 原路由与恢复验证
 
 关闭新选路时记录 `deep_agent_new_turn_route_disabled`，带 `session_id`、`turn_id` 和 `recovery_reason=new_turn_admission_disabled`；这是路由决定，不是取消/停止回执。
