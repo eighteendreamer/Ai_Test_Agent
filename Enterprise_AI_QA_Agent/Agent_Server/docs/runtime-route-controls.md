@@ -914,6 +914,28 @@ Worker ack_owned。确定性回归同时覆盖停车和正式结算的原件完�
 普通检查点兼容、混合补偿批次及重复扫描。正式决定受理与双归属继续仍未实现；默认
 writer、公共 HTTP／DTO、数据库 schema 和依赖不变。命令、红测与最终结果见实施记录 §211。
 
+### 正式停车决定的内部原子受理（§212，尚无领取／图继续）
+
+`ControlledCaseApprovalSubmission` 仅供显式内部组合，未安装到公共审批路由、main 或默认 Worker。
+它复用同连接的停车历史原件核，但新决定还须在 Session → plan／RunItem／原正式 Attempt →
+RuntimeOwner 锁内确认当前仍是原完整停车批次、无取消／控制冲突、原生批次仍 pending、
+无新增模型活动且所有本批 ToolJob 未开始。历史 ACK 的有效性不授予决定受理权。
+
+同一事务保存人工决定、原 journal queued 回执、`case_approval` Task、identity-only v2 outbox
+及两条审计事件。新 schema1 admission scope 仅为 `controlled_case_approval_admission_only`，
+不能作为原生交付、RunItem 续租、正式结果或恢复证明。原生产 Task／AgentAttempt、正式
+RunItem／Attempt／输入预算、原生 checkpoint 和工具状态不重置。拒绝决定也不直接结算用例。
+
+相同决定重试只核原 admission／journal／outbox／审计并返回原 Task，保留原理由和时间；
+反向决定或原件漂移明确失败，不补造丢失事实。取消等待者不证明 SQL 回滚；提交后回执
+丢失记录 `decision_admission_receipt_unknown`，不自动重跑，显式相同重试才能确认持久原件。
+
+新增格式读者与执行权限分开：旧格式读者不能受理，普通 Task.claim 明确拒绝 `case_approval`，
+默认 Dispatcher 在 claim 前延期；即使正式首次执行 writer 打开也不放行决定后继。前端
+AgentTaskRecord operation 类型同步，但公共审批入口与生产 writer 均未切换。
+双归属后继领取、逐项原生决定交付、B 执行期间受理 A、继续与强杀恢复仍待后续子步。
+本步无数据库 DDL／依赖升级；实际测试及证据范围见实施记录 §212。
+
 ### 原路由与恢复验证
 
 关闭新选路时记录 `deep_agent_new_turn_route_disabled`，带 `session_id`、`turn_id` 和 `recovery_reason=new_turn_admission_disabled`；这是路由决定，不是取消/停止回执。

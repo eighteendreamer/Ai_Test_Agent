@@ -85,54 +85,63 @@ class ControlledCaseApprovalWaits:
             raise
 
     def _read_delivery_original(self, command, capabilities, scope):
+        with postgres_connect(self._tasks._settings) as conn, conn.cursor() as cur:
+            configure_runtime_owner_transaction(cur, self._tasks._settings)
+            return self.require_original_in_transaction(cur, command, capabilities, scope)
+
+    def require_original_in_transaction(self, cur, command, capabilities, scope):
+        """Historical facts only, reusable by a caller's separate admission.
+
+        The caller must still establish current formal eligibility. Keeping the
+        native/ledger/original reader on this connection avoids a check-then-
+        write window; this reader alone never grants a decision or live owner.
+        """
         from src.application.deep_agents.native_approval_batch import require_historical_tool_interrupts_original
         from src.runtime.controlled_case_execution import lock_case_delivery
         from src.runtime.framework_event_completion import original_checkpoint_source
         from src.schemas.controlled_case_task_input import parse_controlled_case_task_input
 
         tasks, settings, binding = self._tasks, self._tasks._settings, command.runtime_binding
-        with postgres_connect(settings) as conn, conn.cursor() as cur:
-            configure_runtime_owner_transaction(cur, settings)
-            tasks._lock_session(cur, binding.session_id)  # Lock order only, NOT current Session authority.
-            case, _ = lock_case_delivery(cur, tasks, command, capabilities)
-            scope["original_stage"] = "producer_receipt"
-            cur.execute(f"SELECT * FROM {tasks._tasks} WHERE id=%s FOR SHARE", (command.task_id,))
-            task = cur.fetchone()
-            payload = task["result_payload"]
-            _require(task["status"] == "completed" and task["result_status"] == "waiting_approval"
-                and task["error_code"] is None and isinstance(payload, dict) and set(payload) == {WAIT_KEY},
-                "Controlled wait original completed producer/receipt is missing")
-            receipt = capabilities.require_case_approval_wait_format(payload[WAIT_KEY])
-            scope["original_stage"] = "producer_admission_identity"
-            source = original_checkpoint_source(cur, settings, binding, task, receipt.owner_epoch)
-            cur.execute(f"SELECT * FROM {tasks._attempts} WHERE id=%s FOR SHARE", (source.attempt_id,))
-            attempt = cur.fetchone()
-            _require(attempt is not None and attempt["status"] == "completed" and attempt["error_code"] is None
-                and attempt["finished_at"] is not None
-                and (attempt["task_id"], attempt["worker_id"], attempt["lease_token"], attempt["attempt_no"])
-                    == (task["id"], task["worker_id"], task["lease_token"], task["attempt_no"])
-                and (receipt.binding_fingerprint, receipt.task_id, receipt.attempt_id, receipt.run_id,
-                    receipt.run_item_id, receipt.run_item_execution_attempt_id, receipt.input_sha256, receipt.submission_sha256)
-                    == (binding.fingerprint, task["id"], source.attempt_id, case.item.run_id,
-                        case.item.id, case.attempt.id, case.checkpoint.input_sha256, case.checkpoint.submission_sha256)
-                and receipt.admission_sha256 == approval_value_hash(case.checkpoint.model_dump(mode="json")),
-                "Controlled wait original producer/admission identity changed")
-            scope["original_stage"] = "worker_claim_return"
-            _require(receipt.task_claim_sha256 == self._worker_fact(cur, source, task, attempt, "agent_task.claimed")
-                and receipt.task_return_sha256 == self._worker_fact(cur, source, task, attempt, "agent_task.completed"),
-                "Controlled wait original Worker claim/return changed")
-            scope["original_stage"] = "atomic_wait_audit"
-            event = approval_wait_event(receipt, binding)
-            cur.execute(f"SELECT * FROM {settings.database.postgres_event_table} WHERE id=%s FOR SHARE", (event.id,))
-            _require_event_intent(cur.fetchone(), event)
-            scope["original_stage"] = "historical_model_ledger"
-            self._historical_ledger(cur, binding, task, receipt, capabilities)
-            scope["original_stage"] = "complete_batch_links"
-            natives = self._batch_original(cur, binding, receipt, capabilities, project_id=command.project_id)
-            scope["original_stage"] = "historical_native_interrupts"
-            original = parse_controlled_case_task_input(task["input_payload"]["case_execution_input"])
-            require_historical_tool_interrupts_original(cur, settings, source, original.graph_input, natives)
-            return receipt
+        tasks._lock_session(cur, binding.session_id)  # Lock order only, NOT current Session authority.
+        case, _ = lock_case_delivery(cur, tasks, command, capabilities)
+        scope["original_stage"] = "producer_receipt"
+        cur.execute(f"SELECT * FROM {tasks._tasks} WHERE id=%s FOR SHARE", (command.task_id,))
+        task = cur.fetchone()
+        payload = task["result_payload"]
+        _require(task["status"] == "completed" and task["result_status"] == "waiting_approval"
+            and task["error_code"] is None and isinstance(payload, dict) and set(payload) == {WAIT_KEY},
+            "Controlled wait original completed producer/receipt is missing")
+        receipt = capabilities.require_case_approval_wait_format(payload[WAIT_KEY])
+        scope["original_stage"] = "producer_admission_identity"
+        source = original_checkpoint_source(cur, settings, binding, task, receipt.owner_epoch)
+        cur.execute(f"SELECT * FROM {tasks._attempts} WHERE id=%s FOR SHARE", (source.attempt_id,))
+        attempt = cur.fetchone()
+        _require(attempt is not None and attempt["status"] == "completed" and attempt["error_code"] is None
+            and attempt["finished_at"] is not None
+            and (attempt["task_id"], attempt["worker_id"], attempt["lease_token"], attempt["attempt_no"])
+                == (task["id"], task["worker_id"], task["lease_token"], task["attempt_no"])
+            and (receipt.binding_fingerprint, receipt.task_id, receipt.attempt_id, receipt.run_id,
+                receipt.run_item_id, receipt.run_item_execution_attempt_id, receipt.input_sha256, receipt.submission_sha256)
+                == (binding.fingerprint, task["id"], source.attempt_id, case.item.run_id,
+                    case.item.id, case.attempt.id, case.checkpoint.input_sha256, case.checkpoint.submission_sha256)
+            and receipt.admission_sha256 == approval_value_hash(case.checkpoint.model_dump(mode="json")),
+            "Controlled wait original producer/admission identity changed")
+        scope["original_stage"] = "worker_claim_return"
+        _require(receipt.task_claim_sha256 == self._worker_fact(cur, source, task, attempt, "agent_task.claimed")
+            and receipt.task_return_sha256 == self._worker_fact(cur, source, task, attempt, "agent_task.completed"),
+            "Controlled wait original Worker claim/return changed")
+        scope["original_stage"] = "atomic_wait_audit"
+        event = approval_wait_event(receipt, binding)
+        cur.execute(f"SELECT * FROM {settings.database.postgres_event_table} WHERE id=%s FOR SHARE", (event.id,))
+        _require_event_intent(cur.fetchone(), event)
+        scope["original_stage"] = "historical_model_ledger"
+        self._historical_ledger(cur, binding, task, receipt, capabilities)
+        scope["original_stage"] = "complete_batch_links"
+        natives = self._batch_original(cur, binding, receipt, capabilities, project_id=command.project_id)
+        scope["original_stage"] = "historical_native_interrupts"
+        original = parse_controlled_case_task_input(task["input_payload"]["case_execution_input"])
+        require_historical_tool_interrupts_original(cur, settings, source, original.graph_input, natives)
+        return receipt
 
     def _historical_ledger(self, cur, binding, task, receipt, capabilities):
         """Freeze at the DB parking boundary; later calls are not old ACK facts."""

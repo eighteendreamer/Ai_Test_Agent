@@ -15,6 +15,7 @@ from src.schemas.controlled_case_task_input import (
 from src.schemas.session import ConversationResponse
 from src.schemas.runtime_binding import RuntimeBinding, RuntimeExecutionOwner
 from src.schemas.controlled_case_settlement_recovery import ControlledCaseSettlementReference, settlement_recovery_task_id
+from src.schemas.controlled_case_approval_submission import ControlledCaseApprovalReference, case_approval_task_id
 
 
 AgentTaskStatus = Literal[
@@ -37,7 +38,7 @@ LegacyAgentTaskOperation = Literal[
     "coordinator_child",
     "coordinator_resume",
 ]
-AgentTaskOperation = Literal[LegacyAgentTaskOperation, "framework_reconcile", "approval_recover", "message_recover", "case_execute", "case_settle"]
+AgentTaskOperation = Literal[LegacyAgentTaskOperation, "framework_reconcile", "approval_recover", "message_recover", "case_execute", "case_settle", "case_approval"]
 TERMINAL_AGENT_TASK_STATUSES = frozenset(
     {"completed", "interrupted", "failed", "cancelled", "recovery_required"}
 )
@@ -98,6 +99,7 @@ class AgentTaskCommandV2(BaseModel):
         default=None, exclude_if=lambda value: value is None)
     case_execution_reference: ControlledCaseTaskInputReference | None = Field(default=None, exclude_if=lambda value: value is None)
     case_settlement_reference: ControlledCaseSettlementReference | None = Field(default=None, exclude_if=lambda value: value is None)
+    case_approval_reference: ControlledCaseApprovalReference | None = Field(default=None, exclude_if=lambda value: value is None)
 
     @field_validator("case_execution_input", mode="before")
     @classmethod
@@ -142,6 +144,18 @@ class AgentTaskCommandV2(BaseModel):
                 raise ValueError("case_settle requires its exact identity-only settlement lineage")
         elif settlement is not None:
             raise ValueError("Only case_settle may carry settlement lineage")
+        approval = self.case_approval_reference
+        if self.operation == "case_approval":
+            if (approval is None or self.task_type != "agent_turn" or self.runtime_binding.runtime_kind != "langgraph"
+                or self.parent_task_id != approval.origin_task_id
+                or self.task_id != case_approval_task_id(approval.origin_task_id, self.reference_id)
+                or not all((self.project_id, self.run_id, self.run_item_id, self.reference_id))
+                or self.turn_id != str(uuid5(NAMESPACE_URL,
+                    f"case-run:{self.run_id}:{self.run_item_id}:{approval.run_item_execution_attempt_id}"))
+                or any(value is not None for value in (self.attempt_id, self.worker_id, self.resource_id)) or self.payload):
+                raise ValueError("case_approval requires its exact identity-only decision lineage")
+        elif approval is not None:
+            raise ValueError("Only case_approval may carry formal decision lineage")
         return self
 
 

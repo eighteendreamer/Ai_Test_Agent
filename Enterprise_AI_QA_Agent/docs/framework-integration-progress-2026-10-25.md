@@ -10422,3 +10422,63 @@ e211-affected-verified.log实际 **367 passed、16 skipped、1446.09秒、exit0�
 最终组后重新聚合，src／tests数量和摘要均与e211-source-frozen.log相同；全部pytest句柄终态已取回，系统核对pytest／multiprocessing为0。用户v3原hash不变。精确核对6文件、完整暂存diff与git diff --cached --check，并检查高置信度敏感新增行；新专项仅单文件force-add，不改ignore，不包含原始日志、环境／缓存／锁或用户v3。只创建本地fix提交“【fix】隔离正式审批停车与通用运行维护”，实际ID见Git／交付，不推送或建PR。
 
 v4 §7.3／§12.1 → §211 → 共享保留Attempt归属＋通用恢复锁内拒绝＋通用denied补偿分流 → 367通过／16依赖skip、专项opt-out与静态 → 专用决定准入／双归属继续仍待完成。整体goal保持active；没有给本轮保留边界授予图恢复权、生产writer或外部工具执行权。
+
+## §212 正式停车决定的内部原子受理与专用后继引用
+
+### 续接、依据与范围
+
+基线为 §211 已提交 `1a8f02714`。恢复时有本步未提交生产草稿及被仓库 ignore 的专项测试，先审阅、核对原日志再继续，不把草稿当已验证实现；用户 v3 草稿 SHA256 仍为 `8a43e94160767a0de20740f2cb30782f06322cbc3467076dfcb120d4efdf1ad4`，不修改或暂存。再次核对 active goal、v4、§52／§53及后续事实与最近提交。用户关于 Conda＋pip 的选择已在 §184／`435d9cf7c` 实施，本步不重复安装／迁移、不改依赖和任何锁。固定 Python 仍为 `E:\MiniConda3\envs\Agent\python.exe`。
+
+本步对应 v4 §7.3／§12.1／E 的专用决定受理子步，不包含后继领取或图继续。依据 → 采用方式：
+
+- 既有 `FrameworkApprovalSubmission`、journal.queue_decision_in_transaction、Task／outbox → 复用同一持久机制，将正式人工决定、queued journal 回执、专用 Task、outbox 与原审计事件原子提交，不新增调度层。
+- §209 的历史停车原件核 → 抽出 caller-owned 同连接读取核，历史 ACK 继续复用；受理在同一连接另核当前正式停车资格，避免把 ACK 权限扩大成决定／恢复权。
+- §211 的正式 Attempt 保留归属与普通恢复隔离 → 后继采用独立 `case_approval` operation，普通 Task.claim 显式拒绝，默认 Dispatcher 在领取前延期；不借普通 approval_resume 恢复正式租约。
+- 本地《Agent轨迹与协议鲁棒性.html》04 权限／04.5 幂等与补偿 → 验证全表与 native 原件、并发单赢家、每个事务写入窗口故障，以及取消等待者后 SQL 仍可能提交，不只检查返回答案。
+
+### 生产实现与契约同步
+
+新增 `runtime/controlled_case_approval_submission.py` 和对应 schema。显式内部服务先独立复制 delivery／决定，按 Session → plan／RunItem／原正式 Attempt → RuntimeOwner 锁序，在 caller-owned 事务复核原完整停车回执、冻结输入／admission、历史 claim／return／审计、全部 link／业务身份与精确 native 原件。新决定还须当前 Session／Item／Attempt 仍是原 waiting、无控制／interrupt／活动租约冲突、owner 是原 completed 代次、完整 pending 批次未改变、当前模型账本未增加活动且本批全部 ToolJob 未开始。历史 ACK 允许的后来状态变化不成为新决定的授权。
+
+同事务只修改选定人工决定并写 journal queued 回执、确定性后继 Task／v2 outbox 和 `approval.resolved`／`approval.continuation_queued` 审计。`case_approval` 的身份由原 Task＋approval 固定；wire 只携带原 Task／AgentAttempt／正式 Attempt／admission 摘要引用，无参数正文、输入副本或 owner／租约凭据。schema1 scope=`controlled_case_approval_admission_only` 不授予领取、native delivery、正式结果或恢复权。原 case_execute Task／AgentAttempt、RunItem／正式 Attempt、输入预算、native、Job 不重置；Session 仅沿原事件设施推进审计头，不伪造新执行归属。人工 denied 不直接裁决正式条目。
+
+同决定重试精确核原 admission／journal／outbox／审计，返回原 Task，保留原理由、决定 ID 与时间；不同决定冲突，丢失／漂移不补造。已有人工决定但没有专用完整受理事务时拒绝迁移，不覆盖／重排原决定。提交后回执丢失／取消等待者记录 `decision_admission_receipt_unknown`、automatic_replay=false，不自动重跑；显式相同重试只确认原持久事实。已受理后 RunStore 真取消仍可只读返回原受理，不重开执行。
+
+同步 AgentTaskCommandV2／AgentTaskRecord operation、引用校验、Worker admission 格式读者及前端 `agent_web/src/types.ts` 的 operation 联合类型；全局核对生产者、codec、claim、Dispatcher、前端与文档。新增类型是兼容性契约变化，不能因没有 DDL 就当作旧读者已支持。旧格式读者不能受理；新读者只会解析，不会开启执行。公共审批路由／main 未安装此内部服务，默认 writer 不变，不创建无人消费的生产任务；双归属后继与图继续仍是独立出口。无依赖升级、数据库 DDL 或生产开关变更。
+
+### TDD、实际失败与专项验证
+
+所有业务测试从 Agent_Server 工作目录运行，先 `scripts/clear_uv_environment.ps1 -ProcessOnly` 清当前测试子进程继承；PG／Redis=1，Docker／MySQL／PLAN_RUN_CREATION=0，QA_FRAMEWORK_WORKER_DIAGNOSTICS=1，PYTHONIOENCODING=utf-8。不调用 UV、不启停既有服务、不调用付费模型或真实领域目标。
+
+1. 接续原日志 e212-first-red.log 为 **3 failed、22.01秒、exit1**，缺专用受理模块；e212-first-green.log 为 **3 passed、21.25秒**。这些是前期字节，不冒充最终验证。
+2. e212-submission-contracts.log 为 **2 failed、30 passed、156.58秒、exit1**。两项分别为缺停车审计／既有受理审计漂移：生产原件核已明确抛 `FrameworkMessageStageRecoveryRequired`，测试误预期 ValueError。按既有异常契约精确更新对应预期，不捕获／替换生产错误，原漂移与全表不变断言保留。
+3. 新反例 e212-batch-red.log 为 **3 failed、32 deselected、21.77秒、exit1**，三项均 DID NOT RAISE：草稿只用批次第一项调用 assert_active_approval，遗漏了当前清单中目标项缺失、额外项和重复项。根因是“当前完整停车资格”未落实，不是历史原件不完整。最小修复在原受理锁内核清单长度与全部原 ID，不增加审批引擎或放宽原件核。
+4. e212-submission-verified.log 为 **35 passed、158.61秒、exit0，无skip／deselect**。随后新增格式／谱系编解码、控制／interrupt／活跃租约、历史 ACK 与后来模型账本权限分离、已有人工决定保留；e212-codecs.log 为 **26 passed、35 deselected、7.36秒**，只是纯协议子集。
+5. 冻结后的完整新专项 e212-all-submission.log 为 **66 passed、191.38秒、exit0，无skip／deselect**。包含26项无服务纯协议与40项真实隔离 PG／Redis、官方图／SDK、本机合成 HTTP 的混合测试，领域配置／检索／工具等仍有既有替身。测试涵盖每个写入边界整笔回滚、提交后丢回执、取消等待者后 SQL 提交、同决定／反决定／不同项并发、原件漂移、真实 outbox→Redis relay 和默认 Worker 不领取；不是独立进程决定强杀或真实供应商验收。
+
+一次误在仓库根执行该专项 --collect-only 导致收集错误／exit1、无测试收集，不计通过；上述专项和下列最终组均明确使用 Agent_Server 工作目录。原失败日志保留，不叠加中间绿色数。
+
+### 最终受影响组、静态与前端
+
+源码／测试冻结后，单次串行13文件组 e212-affected-final.log 从原句柄取得终态后再记结果；不以专项66项代替最终消费者回归：
+
+~~~powershell
+# cwd: Agent_Server，固定 Python／环境如上
+& E:\MiniConda3\envs\Agent\python.exe -u -m pytest tests/test_controlled_case_approval_submission.py tests/test_controlled_case_approval_wait.py tests/test_controlled_case_approval_wait_ack.py tests/test_controlled_case_pending_approvals.py tests/test_controlled_case_approval_ownership.py tests/test_framework_approval_submission.py tests/test_framework_approval_receipts.py tests/test_controlled_case_dispatch.py tests/test_controlled_case_settlement_recovery.py tests/test_agent_v2_worker_contract.py tests/test_runtime_binding_contract.py tests/test_runtime_binding_persistence.py tests/test_framework_task_control.py -q -rs --tb=short
+~~~
+
+e212-static.log 的 `python -m compileall -q Agent_Server/src Agent_Server/tests` 与 `python -m pip check` 均exit0，后者 No broken requirements found；ruff／mypy 实际未安装，独立 lint／typecheck 未执行，不擅自安装。前端 e212-frontend-typecheck.log 的 `npm.cmd run typecheck` exit0；e212-frontend-tests.log 的 `npm.cmd test -- sessionReceiptDedup.test.ts sessionQueue.test.ts SmokeTestingResultPanel.test.ts` 实际 **3文件／8 passed、2.90秒、exit0**。未执行全量前后端、前端build／浏览器、真实供应商／领域 Runner、Docker／MySQL／RustFS、独立决定强杀、双制品部署／一致备份恢复或性能基线。
+
+e212-source-frozen.log：相对 Agent_Server 的 POSIX 路径排序，依次路径UTF8＋NUL＋原字节＋NUL 聚合，src **875个py、a12a9281c2d5e556ed4d6a2c3e77c195aaaac57770a02d436652958ace26a1a7**，tests **689个py、f8a1be44cbe51bf61ef0434a2bd3d78f4cb1976603e236b7e6ef4d8ef929825e**。冻结后只补文档；最终组后复核字节与测试进程残留。不提交原始日志、环境制品、锁或用户 v3；仅相关文件中文commit，不推送／建PR。
+
+### 对应与剩余出口
+
+v4 §7.3／§12.1／E → §212 → 同连接历史原件核＋当前完整停车资格＋专用决定／journal／Task／outbox事务＋版本化身份引用＋默认领取隔离＋前端类型同步 → 红绿／66项专项及最终消费者组 → 双归属后继领取／原生决定交付／逐项继续／强杀恢复仍待实现。生产writer保持关闭，完整v4／H01–H12、E3／E4范围不缩减，整体goal继续active；整体剩余粗估仍为4–8周有效开发／验收，环境、授权及人工发布等待另计，不作日期承诺。实际最终组、opt-out、字节复核与commit核对在原句柄终态后追加。
+
+### 原最终句柄终态与交付核对
+
+e212-affected-final.log 原句柄已返回：**687 passed、1508.05秒、exit0，无skip／deselect／失败**，包含上述66项新专项及13文件全部消费者，不额外累加中间通过数。证据是无服务协议、真实隔离PG／Redis、固定官方图／SDK、本机合成HTTP与原夹具的混合，不是687个真实目标或完整E3／E4验收；本步没有重新验收正式停车／决定独立进程强杀。
+
+全部live开关0、diagnostics=0时，e212-optout-final.log 的同一新专项实际 **26 passed、40 skipped、10.40秒、exit0**；26项仅纯编解码／身份协议，40项明确requires real PostgreSQL and Redis，不能把skip计通过。最终组后 e212-static-final.log 重新compileall与pip check均exit0，e212-source-verified.log 复核src／tests数量与聚合摘要均与冻结值完全一致；全部pytest句柄终态已取回，系统核对pytest／multiprocessing测试进程为0。用户v3仍为原SHA256。没有为通过而安装ruff／mypy或运行付费／未授权目标。
+
+仅核对并提交本步10文件：6生产Python（含两新文件）、1新专项、1前端类型、路由说明和本实施记录。新测试被既有ignore覆盖，按单文件force-add，不修改ignore或提交日志、锁、环境制品、用户v3。提交前检查Git status、完整暂存diff、diff --cached --check及高置信度敏感新增行；本地提交使用“【feat】原子受理正式停车审批决定并隔离后继权限”，实际ID见Git／交付，不推送／建PR。整体goal保持active，下一出口仍为专用双归属领取和原生决定继续，不能把本次决定受理当作整系统或正式审批闭环完成。

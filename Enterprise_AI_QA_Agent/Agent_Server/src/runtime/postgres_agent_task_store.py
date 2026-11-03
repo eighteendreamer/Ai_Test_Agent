@@ -1379,6 +1379,8 @@ class PostgresAgentTaskStore:
                 raise ValueError("Controlled case claim requires its reference and original RunItem lease")
             if row["operation"] == "case_settle":
                 raise ValueError("Controlled case settlement requires its scoped settlement claim")
+            if row["operation"] == "case_approval":
+                raise ValueError("Controlled case approval requires its dedicated dual-owner continuation claim")
             if framework_capabilities is not None:
                 try:
                     framework_capabilities.require_release(saved_binding)

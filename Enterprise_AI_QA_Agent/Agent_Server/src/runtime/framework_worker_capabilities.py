@@ -52,6 +52,7 @@ class FrameworkWorkerCapabilities:
     controlled_case_settlement_available: bool = False
     controlled_case_recovery_receipt_max_version: int = 1
     controlled_case_approval_wait_max_version: int = 1
+    controlled_case_approval_admission_max_version: int = 1
 
     @classmethod
     def from_artifact(cls, *, deepagents_available: bool):
@@ -331,6 +332,16 @@ class FrameworkWorkerCapabilities:
         if type(version) is not int or not 1 <= version <= self.controlled_case_approval_wait_max_version:
             raise TaskDeferred(reason)
         return self._read_compatible(ControlledCaseApprovalWaitReceipt.model_validate, value, reason,
+            literal_fields=("scope",))
+
+    def require_case_approval_admission_format(self, value):
+        from src.schemas.controlled_case_approval_submission import ControlledCaseApprovalAdmission
+
+        reason = "framework_case_approval_admission_format_unavailable"
+        version = value.get("schema_version") if isinstance(value, dict) else None
+        if type(version) is not int or not 1 <= version <= self.controlled_case_approval_admission_max_version:
+            raise TaskDeferred(reason)
+        return self._read_compatible(ControlledCaseApprovalAdmission.model_validate, value, reason,
             literal_fields=("scope",))
 
     @staticmethod
