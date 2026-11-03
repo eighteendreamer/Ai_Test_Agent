@@ -10558,3 +10558,70 @@ v4 §7.3／§8／§12.1 → §213 → 专用双归属 claim／begin、原 reserv
 最终组后 `e213-static-final.log` 的 compileall 和 pip check 均exit0，后者 No broken requirements found；ruff／mypy 仍未安装，独立 lint／typecheck 未跑。`e213-source-verified.log` 的src／tests数量与聚合摘要完全等于冻结值；全部测试句柄终态已取回，系统检查pytest／multiprocessing残留为0。用户v3仍为原SHA256，没有修改或暂存；没有调用付费模型、真实领域目标或启停现有服务。
 
 仅检查并提交本步11文件：7生产Python、2测试、路由说明和本实施记录。新测试单文件force-add，不修改ignore。检查完整相关diff、暂存清单、diff --cached --check和高置信度敏感模式；不包含原日志、缓存、锁、环境制品或用户v3。本地提交使用“【feat】接入正式审批后继双归属领取与启动”，实际ID见Git／交付，不推送／建PR。整体goal保持active；下一出口是逐项原生决定交付及后继执行／重新停车／正式收尾，不能将claim／begin完成称作正式审批或全系统接入完成。
+
+## §214 正式后继的单项原生决定交付与已消费事实对账
+
+### 续接、依据与范围
+
+基线 `a742a5389`／§213；续接已有单项交付草稿和5项缺 reconcile_delivery 的真实红测，不把草稿或上轮1011项结果当本轮通过。核对 active goal、v4 §7.3／§12.1、当前源码与未提交 diff；用户 v3 仍为 SHA256 `8a43e94160767a0de20740f2cb30782f06322cbc3467076dfcb120d4efdf1ad4`，不修改或暂存。Conda＋pip 迁移已在 §184 完成，不重复迁移、不调用 UV、不改依赖声明或锁。
+
+本步解决的是正式审批后继缺少单项决定交付／已消费事实投影的边界，不另造审批、调度或恢复循环。依据 → 采用方式：
+
+- 原 `ControlledCaseExecutor` 的 begin → owner／sink → adapter 边界 → 在同一执行体显式组合专用后继 begin／prepare，不建立第二套图循环或临时普通 approval_resume Task。
+- 原 `FrameworkApprovalContinuation` 的决定／native／ToolJob 核、journal 的 sending／原子 delivered／reconcile、Fenced saver → 提取共享同连接读核与交付审计；正式路径先核自己真实 admission，再提供原 decision ID／hash，普通路径继续核原 frozen approval／business link。
+- v4 §7.3 的三类事实分离与逐项继续、本地《Agent轨迹与协议鲁棒性.html》04／04.5 → 核被选工具、其他 pending、模型调用次数和所有持久原件，补事务故障、未知回执、重复、失租、权限撤销，不能只验函数返回。
+
+范围共7文件：4个生产 Python（capabilities、正式 continuation、普通 continuation、统一 Executor）、1个新专项、路由说明和本记录。没有公共 API／DTO、DDL、依赖升级、前端或生产选路改动。初始停车后的一项交付是本步出口；重新停车、应用 applied、后继结果谱系、正式结算和运行时受理兄弟决定不在本步实现范围，仍保留在完整 v4 目标中。
+
+### 实现与权限边界
+
+新增独立 `controlled_case_approval_delivery_available`，默认 false；即使已有领取能力或首次 case_execute 能力，也不自动获得交付权。统一 Executor 在 begin 前拒绝缺专用 port、缺 delivery／claim 能力和序列化剥离第二租约的 Task。首次执行仍沿原入口，后继经专用 begin 返回原冻结输入；治理工具仍在同一 running owner／acknowledged sink 中组装，再把一个原 interrupt 的 resume 交给既有 adapter。没有自动传 None、完成 Task、重领或重试。
+
+`prepare_delivery` 深复制捕获 Task，核 operation、完整 envelope／input／parent／reference／priority、owner 和双租约，重读原 outbox、完整停车与决定受理原件、当前 Session／project、完整 pending/native、原账本与本批 ToolJob 未开始。仅接受 queued 且无 delivered／applied／proof 的决定，同事务 mark_sending 与 `test_run.case_approval_sending`；最后写入后用 fresh DB clock 再核双租约及原根期限。sending 或已消费不是重发许可，明确要求 reconcile。
+
+原 Fenced saver 的 `__resume__` 与 journal delivered 仍为同一事务；没有新 journal。原生成功写证明保留首次 epoch／time／identity。`reconcile_delivery` 只在捕获身份、原 admission／停车事实、真实 native 消费和 ToolJob 已知安全均成立时，复用原 journal 恢复缺失投影或保留已有 atomic_write proof，同时复用幂等 `approval.decision_delivered` 审计。最后再次核当前双租约。未消费 sending、原生事实缺失、proof／decision 漂移、已启动且效果未知均拒绝，不修补冲突原件。
+
+历史交付对账不等于新的执行资格：不要求当前 pending 仍等于已执行前整批，也不延长／重置根预算；根期限已过仍可核已知历史事实，但不调用图、模型或工具。返回的 plan 中 resume=None／continue_from_checkpoint 只是原有 receipt 派生的数据，不是本专用服务授予执行权。取消等待者不证明 to_thread SQL 回滚；发送回执未知不会自动重发，对账回执未知可显式再观察同一事实。
+
+正式原 RunItem／Attempt、Attempt ID／attempt_no／checkpoint／started_at、原输入预算与原生产 Task 保留。实际批准只执行 B 合成 handler，拒绝不执行 handler；A 保留原 interrupt／ToolJob，批次未闭合时本机 HTTP 模型请求仍只有初始1次。批准后的实时权限撤销由原治理执行边界拒绝，ToolJob denied／未 started，不伪造工具成功。当前原应用 Runtime 仍拒绝无 case_execution_input 的后继，不能误送首次结果 finalizer。
+
+本步返回 raw graph outcome，后继 Task／正式 Attempt 仍 running；delivered 不等于 applied、工具成功、正式结果或用例完成。此组合未装入默认 Dispatcher、公共审批路由或 main，生产保持关闭。
+
+### TDD 与实际专项结果
+
+固定 `E:\MiniConda3\envs\Agent\python.exe`，cwd 为 Agent_Server；每条测试命令先执行 `scripts/clear_uv_environment.ps1 -ProcessOnly`。PG／Redis=1，其他 RUN_LIVE_* 均0，QA_FRAMEWORK_WORKER_DIAGNOSTICS=1，PYTHONIOENCODING=utf-8。仅 UUID 隔离夹具、已有服务、固定官方图／SDK和本机合成 HTTP；没有启停服务、付费模型、真实领域目标或 Docker 操作。
+
+1. `e214-first-red.log`：3 failed、23.53秒、exit1，缺交付 capability 构造参数。`e214-first-green.log` 实际仍为2 failed、1 passed、26.64秒、exit1，不能因文件名当绿色：新测试误按 wait.batch 末项猜 B，且误以为夹具整个 Run 仅有一个 Attempt。修正为按 native tool_call_id B 找原 interrupt／审批，比较原 Attempt 集合及 checkpoint／started_at 不变，未弱化业务断言。`e214-native-green.log` 为3 passed、22.89秒、exit0。
+2. `e214-boundaries.log`：2 failed、11 passed、76.04秒、exit1，故障注入 wrapper 对 psycopg Composed 错用 split。改为仅匹配字符串 SQL，其他原样透传。随后 `e214-reconcile-red.log` 为5 failed、13 deselected、35.45秒、exit1，全部因缺 reconcile_delivery，确认目标红测后才实现共享对账。
+3. `e214-reconcile-green.log` 实际1 failed、17 passed、101.93秒、exit1。对账5项已通过；剩余为新注入测试漏了原 journal SQL 的 public. 限定，没命中写入。改为使用既有 journal 的真实 receipts 表名，不改生产 SQL 迎合测试。
+4. `e214-delivery-expanded.log`：1 failed、73 passed、438.33秒、exit1。新 native_source 漂移测试误预期 FrameworkMessageStageRecoveryRequired；实际历史原件核明确抛 FrameworkApprovalRecoveryRequired("Historical wait native checkpoint changed")，全表保持不变。精确更正为原异常，不捕获／替换生产错误。
+5. 最终新专项 `e214-delivery-verified.log` 实际 **81 passed、544.58秒、exit0，无skip／deselect**。含默认能力纯协议1项、真实隔离PG／Redis及官方图／本机HTTP混合80项。除单项批准／拒绝、重复和权限关闭，还覆盖发送各写入回滚、原生 resume／receipt 原子回滚、输入与原件漂移、双租约／epoch、最终审计等待跨期、真实冻结根期限前后、已消费 present／missing 投影、冲突证据、对账回执丢失／取消与幂等、根期限已过／pending 改变时的事实观察，以及原应用 finalizer 不误接后继。
+
+以上仅是本步真实证据，非81个真实业务目标、完整 E3／E4 或新正式后继的独立进程强杀。所有中间红／绿保留，不把同一用例的多次执行累加为覆盖。
+
+### 冻结后最终受影响回归与未验出口
+
+81项通过后冻结当前源码／测试，最终回归期间不再修改这些字节。`e214-source-frozen.log` 使用相对 Agent_Server 的 POSIX 路径排序、路径 UTF8＋NUL＋原字节＋NUL 聚合：src **876个py、747546e28b77c82a6a519f5a8b49b7d1282639511d5a87c1745805a13570e8aa**；tests **691个py、14e394fb59b436b8bc1a03aac8454ef9ab5ec34e79d315edbc821efda496f131**。
+
+42文件扩大组 `e214-affected-final.log` 等待原句柄终态，不用81项专项或上轮1011项冒充本轮消费者通过。实际命令（固定环境如上）：
+
+~~~powershell
+# cwd: Agent_Server，先 clear_uv_environment.ps1 -ProcessOnly
+& E:\MiniConda3\envs\Agent\python.exe -u -m pytest tests/test_controlled_case_approval_delivery.py tests/test_controlled_case_approval_claim.py tests/test_controlled_case_approval_submission.py tests/test_controlled_case_approval_wait.py tests/test_controlled_case_approval_wait_ack.py tests/test_controlled_case_approval_ownership.py tests/test_controlled_case_pending_approvals.py tests/test_controlled_case_executor.py tests/test_controlled_case_adapter.py tests/test_controlled_case_graph.py tests/test_controlled_case_dispatch.py tests/test_controlled_case_runtime.py tests/test_framework_approval_continuation.py tests/test_framework_approval_runtime.py tests/test_framework_approval_receipts.py tests/test_framework_approval_submission.py tests/test_framework_tool_bridge.py tests/test_framework_checkpoint_fencing.py tests/test_framework_approval_recovery.py tests/test_framework_approval_settlement.py tests/test_framework_approval_results.py tests/test_framework_approval_graph_input.py tests/test_framework_approval_asset_gap_recovery.py tests/test_framework_approval_result_reconstruction.py tests/test_framework_approval_reader_admission.py tests/test_framework_approval_http.py tests/test_framework_approval_progress.py tests/test_framework_harness_settings.py tests/test_framework_context_runtime.py tests/test_framework_model_admission.py tests/test_framework_model_calls.py tests/test_framework_model_reservation_transfer.py tests/test_framework_model_result_import.py tests/test_framework_recovery_proof_reader_admission.py tests/test_framework_structured_result.py tests/test_framework_tool_authority.py tests/test_framework_unsealed_result_reconstruction.py tests/test_framework_task_control.py tests/test_framework_worker_activity.py tests/test_framework_tool_activity.py tests/test_agent_v2_worker_contract.py tests/test_runtime_binding_persistence.py -q -rs --tb=short
+~~~
+
+`e214-static.log` 的 compileall 与 pip check 均exit0，后者 No broken requirements found；find_spec 确认 ruff／mypy 缺失，独立 lint／typecheck 未安装或执行。同字节 opt-out（全部live=0、diagnostics=0）`e214-optout-final.log` 实际 **1 passed、80 skipped、12.17秒、exit0**；仅默认能力协议1项通过，80项明确缺真实PG／Redis，不能计通过。未运行全量后端、前端 build／typecheck／浏览器、新正式交付的独立进程强杀、真实供应商／领域 Runner、Docker／MySQL／RustFS、完整 main lifespan、双制品部署／备份恢复、E3／E4 与性能基线，不能引用其他章节绿色当本轮已跑。
+
+### 对应与剩余
+
+v4 §7.3／§12.1 → §214 → 专用单项 prepare／显式已消费 reconcile＋普通审批共享读核／交付审计＋统一 Executor 调用边界 → 红绿、81项专项及冻结后42文件组 → applied／后继重新停车、运行中受理兄弟决定、后继结果／正式结算谱系与独立进程强杀仍待后续子步。当前仍只支持初始停车的一项，不承诺兄弟下一项已经可领取或再次完整推进。
+
+完整 v4／H01–H12、E3／E4 范围不缩减，整体 goal 保持 active；本子步不能称为审批闭环或全系统完成。整体剩余粗估仍为 **4–8周有效开发／验收**，环境、授权及人工发布等待另计，不作日期承诺。最终回归、opt-out、字节复核和本地中文commit在原句柄终态后追加。仅提交本轮7文件，不含用户v3、日志、锁、缓存或环境制品，不推送／建PR。
+
+### 最终句柄终态与交付核对
+
+`e214-affected-final.log` 原42文件组句柄已取得终态：**1684 passed、7571.27秒（2:06:11）、exit0，无失败／skip／deselect**，包含81项新专项及普通审批所有已列消费者。证据混合无服务协议／内存替身、真实隔离 PG／Redis、固定官方图／SDK、本机合成 HTTP 和既有普通恢复进程夹具；不是1684个真实目标，也不能替代新正式交付后继的独立强杀、真实供应商／领域 Runner 或完整 E3／E4。
+
+最终组后 `e214-static-final.log` 重新 compileall 与 pip check 均exit0；ruff／mypy 仍未安装，独立 lint／typecheck 未跑。`e214-source-verified.log` 复核 src／tests 数量和摘要与冻结值完全一致；全部测试句柄终态已取，系统核对 pytest／multiprocessing 残留为0。用户v3仍为原SHA256，未修改或暂存。没有启停服务、调用付费模型或测试未授权目标。
+
+仅暂存本步7文件，新专项单文件 force-add，不修改ignore；提交前检查完整相关diff、暂存清单、diff --cached --check及高置信度敏感新增行。排除原日志、缓存、锁、环境制品和用户v3。本地提交使用“【feat】交付正式审批单项决定并复用原生事实对账”，实际ID见Git／交付；不推送／建PR。整体goal仍active，下一出口为应用事实与后继重新停车／继续生命周期，不把单项交付完成等同审批闭环或整系统完成。

@@ -17,15 +17,18 @@ class ControlledCaseExecutor:
 
     No upstream counterpart (checked: original task begin/claim, controlled
     adapter, v4 §9/§12.1): a native graph does not own our formal task start.
-    There is no retry/resume, new claim, heartbeat loop or task completion here.
+    An explicit approval port may deliver one dedicated decision; there is no
+    automatic replay, new claim, heartbeat loop or task completion here.
     Native outcomes are read material, NOT RuntimeTurnResult/test verdicts.
     The existing Dispatcher owns resource admission/heartbeat. Installing this
     port does not enable the production writer or grant recovery authority.
     """
 
-    def __init__(self, *, task_store, graph_adapter):
+    def __init__(self, *, task_store, graph_adapter, approval_continuations=None, framework_capabilities=None):
         self._tasks = task_store
         self._adapter = graph_adapter
+        self._approval_continuations = approval_continuations
+        self._framework_capabilities = framework_capabilities
 
     def require_execution_available(self):
         self._adapter.require_execution_available()
@@ -39,21 +42,29 @@ class ControlledCaseExecutor:
         phase = "preflight"
         try:
             owner = task.runtime_owner
-            if (task.operation != "case_execute" or owner is None or owner.controlled_case_lease is None
+            if (task.operation not in {"case_execute", "case_approval"} or owner is None or owner.controlled_case_lease is None
                 or owner.binding != task.runtime_binding or owner.task_id != task.id
                 or owner.attempt_id != task.attempt_id or owner.worker_id != task.worker_id
                 or owner.owner_token != task.lease_token):
                 raise ValueError("Controlled execution requires its original captured case owner")
-            if set(task.input) != {"case_execution_input"}:
-                raise ValueError("Controlled execution requires its single frozen case input")
-            original = parse_controlled_case_task_input(task.input["case_execution_input"])
-            if original.graph_input.binding != owner.binding:
-                raise ValueError("Controlled execution input differs from its captured binding")
+            approval = task.operation == "case_approval"
+            if approval:
+                if self._approval_continuations is None:
+                    raise ValueError("Controlled approval execution requires its dedicated continuation port")
+                self._approval_continuations.require_delivery_available(self._framework_capabilities)
+            else:
+                if set(task.input) != {"case_execution_input"}:
+                    raise ValueError("Controlled execution requires its single frozen case input")
+                original = parse_controlled_case_task_input(task.input["case_execution_input"])
+                if original.graph_input.binding != owner.binding:
+                    raise ValueError("Controlled execution input differs from its captured binding")
             phase = "begin_receipt_unknown"
             # This original transaction compares captured/durable inputs and
             # both live leases, then commits running BEFORE any graph action.
             # A cancelled to_thread waiter may still commit: never auto-retry.
-            prepared = await self._tasks.begin(task, resource_id=resource_id, fencing_token=fencing_token)
+            prepared = (await self._approval_continuations.begin(task, resource_id=resource_id, fencing_token=fencing_token,
+                capabilities=self._framework_capabilities) if approval else
+                await self._tasks.begin(task, resource_id=resource_id, fencing_token=fencing_token))
             logger.info("controlled_case_execution_started", extra={**scope,
                 "binding_id": owner.binding.binding_id, "execution_id": owner.controlled_case_lease.run_item_execution_attempt_id})
             sink = SessionEventSink(self._tasks._sessions, task.session_id,
@@ -67,8 +78,13 @@ class ControlledCaseExecutor:
                     # running owner. Do not weaken that check to pre-build tools.
                     phase = "tool_assembly_unsettled"
                     tools = list(await build_business_tools(prepared))
+                    invocation = {}
+                    if approval:
+                        phase = "decision_delivery_receipt_unknown"
+                        plan = await self._approval_continuations.prepare_delivery(task, capabilities=self._framework_capabilities)
+                        invocation = {"resume": plan.resume}
                     phase = "native_outcome_unknown"
-                    outcome = await self._adapter.execute_frozen(prepared.graph_input, business_tools=tools)
+                    outcome = await self._adapter.execute_frozen(prepared.graph_input, business_tools=tools, **invocation)
                     if project_outcome is not None:
                         # Application projection/ACKs must finish BEFORE this
                         # original owner/sink scope closes, never after return.

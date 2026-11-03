@@ -964,6 +964,35 @@ running 并返回原冻结输入；最后写入后仍核双租约和原根期限
 资产谱系／唯一正式结算、独立进程强杀与真实供应商／领域验收仍待完成。当前初始停车
 领取不承诺重新停车后的第二项推进。无公共 DTO／DDL／依赖变更；实测及限制见 §213。
 
+### 正式后继的单项原生决定交付与事实对账（§214）
+
+内部 `ControlledCaseExecutor` 的原 sink／owner scope／图调用边界现在可显式组合
+`ControlledCaseApprovalContinuations`。只有独立的
+`controlled_case_approval_delivery_available` 和领取能力同时打开，才可启动后继并
+交付一个原决定；两项能力默认均关闭。普通 Dispatcher、公共审批路由和 main 未安装
+这套组合，首次正式执行能力不隐含后继交付权限。
+
+发送前重新读取完整受理／停车／outbox 原件、捕获的 Task 身份、双租约、当前完整
+pending/native 批次、未开始 ToolJob、原模型账本与根期限，同事务写原 journal sending
+和 `test_run.case_approval_sending`。最后写入后再次用 DB 时钟检查双租约和根期限。
+统一适配器只收到一个 interrupt 的 `Command(resume)`，不发送其他审批，也不自动传
+None 再继续。原 Fenced saver 在同事务提交原生 `__resume__` 和 delivered 证据。
+
+sending／回执未知不能再次 prepare 或重跑。显式 `reconcile_delivery` 复用普通审批的
+原生决定／ToolJob 读核、journal 和幂等交付审计；必须证实决定已持久消费，ToolJob
+效果已知安全，才可保留首次交付证明或恢复缺失投影。原生事实缺失、决定／证明漂移或
+已启动但效果未知均失败，不补造事实。对账仍核当前捕获身份与双租约，但不把历史原件、
+变化后的 pending 清单或根预算变成新的执行资格；返回 plan 不授权执行图、模型或工具。
+
+当前验证出口是单项原生交付：批准只运行被选中的合成 handler，拒绝不运行 handler；
+其余审批保留原身份，批次未闭合不调用下一轮模型。实时权限撤销仍由原工具执行边界治理。
+原正式 Attempt、冻结输入／预算／checkpoint 与原生产 Task 不重置。
+
+这不是审批闭环或用例通过：本步不写 applied、不完成后继 Task、不重新停车、不生成
+正式结果或结算，也不支持在执行中受理兄弟决定。后继仍 running，需要后续子步完善这些
+生命周期和恢复出口；不能据此开启生产。独立进程交付强杀、真实供应商／领域 Runner、
+E3／E4 仍待验收。无公共 API／DTO、DDL、依赖或生产选路变化，实测结果见实施记录 §214。
+
 ### 原路由与恢复验证
 
 关闭新选路时记录 `deep_agent_new_turn_route_disabled`，带 `session_id`、`turn_id` 和 `recovery_reason=new_turn_admission_disabled`；这是路由决定，不是取消/停止回执。

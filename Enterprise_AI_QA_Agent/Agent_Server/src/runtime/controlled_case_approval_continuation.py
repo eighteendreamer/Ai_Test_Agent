@@ -1,4 +1,4 @@
-"""Dedicated dual claim/start of an admitted formal approval, not graph delivery.
+"""Dual-owned formal approval continuation and single native decision delivery.
 
 No upstream counterpart (checked: Task claim/owner kernels, RunStore resume,
 formal admission and v4 §7.3/§12.1): the native graph cannot adopt a RunItem.
@@ -17,6 +17,7 @@ from src.infrastructure.postgres_runtime import postgres_connect
 from src.runtime.controlled_case_execution import lock_case_delivery, require_case_deadline
 from src.runtime.controlled_case_approval_submission import ENVELOPE
 from src.runtime.framework_approval_journal import FrameworkApprovalRecoveryRequired
+from src.runtime.framework_approval_continuation import FrameworkApprovalContinuation
 from src.runtime.postgres_agent_task_store import PostgresAgentTaskStore
 from src.runtime.postgres_runtime_owner import assert_runtime_owner, configure_runtime_owner_transaction, lock_owner_row
 from src.runtime.task_deferred import TaskDeferred
@@ -93,6 +94,95 @@ class ControlledCaseApprovalContinuations:
                 case_approval_preparer=lambda cur, row, case, captured:
                     self._prepare_begin(cur, row, case, captured, capabilities))
         return await self._run("begin", begin, task.id, task.runtime_binding)
+
+    def require_delivery_available(self, capabilities):
+        if capabilities is None or not capabilities.controlled_case_approval_delivery_available:
+            raise TaskDeferred("framework_case_approval_delivery_unavailable")
+        if not capabilities.controlled_case_approval_claim_available:
+            raise TaskDeferred("framework_case_approval_claim_unavailable")
+
+    def _capture_delivery(self, task, capabilities):
+        task = task.model_copy(deep=True)
+        self.require_delivery_available(capabilities)
+        owner = task.runtime_owner
+        _require(task.operation == "case_approval" and owner is not None and owner.controlled_case_lease is not None
+            and owner.binding == task.runtime_binding and owner.task_id == task.id
+            and owner.attempt_id == task.attempt_id and owner.owner_token == task.lease_token
+            and owner.worker_id == task.worker_id,
+            "Formal decision delivery requires its captured case owner")
+        capabilities.require_runtime_artifact(task.runtime_binding)
+        return task
+
+    async def prepare_delivery(self, task, *, capabilities):
+        """Admit exactly one first send, never replay a sending/unknown intent."""
+        task = self._capture_delivery(task, capabilities)
+        return await self._run("prepare_delivery", self._prepare_delivery, task.id, task.runtime_binding, task, capabilities)
+
+    async def reconcile_delivery(self, task, *, capabilities):
+        """Read/project consumed facts only, without graph execution authority."""
+        task = self._capture_delivery(task, capabilities)
+        return await self._run("reconcile_delivery", self._reconcile_delivery, task.id, task.runtime_binding, task, capabilities)
+
+    def _delivery_originals(self, cur, task, capabilities):
+        assert_runtime_owner(cur, self._settings, task.runtime_owner)
+        saved = self._locked(cur, self._wire(cur, task.id, capabilities), capabilities)
+        row = saved.task
+        _require(task.operation == row["operation"] == "case_approval"
+            and task.input == row["input_payload"]
+            and all(row[name] == getattr(task, name) for name in (*ENVELOPE, "parent_task_id", "reference_id", "priority"))
+            and row["runtime_binding"] == task.runtime_binding.model_dump(mode="json")
+            and (row["status"], row["attempt_id"], row["lease_token"], row["worker_id"])
+                == ("running", task.attempt_id, task.lease_token, task.worker_id)
+            and saved.session["status"] == "running" and saved.session["lease_active"]
+            and saved.session["project_id"] == row["project_id"],
+            "Formal decision delivery differs from its captured running task")
+        return saved
+
+    def _decision_reader(self):
+        return FrameworkApprovalContinuation(self._settings, sessions=self._tasks._sessions,
+            jobs=self._submission._waits._projection._jobs)
+
+    def _inspect_decision(self, cur, task, saved, shared):
+        return shared.inspect_decision_originals_in_transaction(cur, task.runtime_binding,
+            approval_id=saved.admission.approval_id, decision_id=saved.admission.decision_id,
+            decision_sha256=saved.admission.decision_sha256)
+
+    def _reconcile_delivery(self, task, capabilities):
+        with postgres_connect(self._settings) as conn, conn.cursor() as cur:
+            configure_runtime_owner_transaction(cur, self._settings)
+            saved = self._delivery_originals(cur, task, capabilities)
+            shared = self._decision_reader()
+            plan, consumed = self._inspect_decision(cur, task, saved, shared)
+            _require(consumed, "Formal decision is not durably consumed; delivery remains unknown")
+            receipt = shared.reconcile_delivery_in_transaction(cur, task.runtime_owner, plan, saved.task)
+            # Historical delivery is not a fresh execution admission: neither
+            # current complete pending nor the old budget grants replay rights.
+            assert_runtime_owner(cur, self._settings, task.runtime_owner)
+            return plan.model_copy(update={"receipt": receipt})
+
+    def _prepare_delivery(self, task, capabilities):
+        tasks = self._tasks
+        with postgres_connect(self._settings) as conn, conn.cursor() as cur:
+            configure_runtime_owner_transaction(cur, self._settings)
+            saved = self._delivery_originals(cur, task, capabilities)
+            row = saved.task
+            _require(saved.receipt.state == "queued" and saved.receipt.proof is None
+                and saved.receipt.delivered_at is saved.receipt.applied_at is None,
+                "Formal decision already sending or delivered; reconcile instead of replay")
+            self._submission.require_pending_originals_in_transaction(cur, saved.origin_command, saved.case,
+                saved.session, saved.owner, saved.wait, saved.origin, capabilities)
+            plan, consumed = self._inspect_decision(cur, task, saved, self._decision_reader())
+            _require(not consumed, "Formal decision already consumed; reconcile instead of replay")
+            self._deadline(cur, task.runtime_binding)
+            receipt = self._submission._journal.mark_sending_in_transaction(cur, plan.approval.id)
+            tasks._event(cur, row, "test_run.case_approval_sending", {
+                "origin_task_id": saved.origin["id"], "execution_id": saved.case.attempt.id,
+                "approval_id": saved.admission.approval_id, "decision_id": saved.admission.decision_id,
+                "admission_sha256": saved.admission.admission_sha256,
+                "interrupt_id": plan.link.interrupt_id, "automatic_replay": False})
+            assert_runtime_owner(cur, self._settings, task.runtime_owner)
+            self._deadline(cur, task.runtime_binding)
+            return plan.model_copy(update={"receipt": receipt})
 
     async def _run(self, operation, function, task_id, binding, *args):
         scope = {"operation": operation, "task_id": task_id, "binding_id": binding.binding_id, "automatic_replay": False}

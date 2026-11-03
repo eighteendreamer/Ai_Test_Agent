@@ -241,15 +241,7 @@ class FrameworkApprovalContinuation:
         plan, consumed, task = self._owned_plan_in_transaction(cur, owner, approval_id, decision_id)
         binding = owner.binding
         if consumed:
-            receipt = self._journal.reconcile_delivery_in_transaction(cur, owner, approval_id)
-            event = ExecutionEvent(id=f"framework-decision:{decision_id}:delivered", session_id=binding.session_id,
-                type="approval.decision_delivered", timestamp=receipt.delivered_at,
-                turn_id=binding.turn_id, trace_id=task["trace_id"], request_id=task["request_id"],
-                attempt_id=owner.attempt_id, worker_id=owner.worker_id,
-                payload={"task_id": owner.task_id, "turn_id": binding.turn_id, "approval_id": approval_id,
-                    "decision_id": decision_id, "tool_job_id": plan.job.id, "interrupt_id": plan.link.interrupt_id})
-            self._sessions.append_event_in_transaction(cur, binding.session_id, event,
-                turn_lease_token=owner.owner_token)
+            receipt = self.reconcile_delivery_in_transaction(cur, owner, plan, task)
         else:
             receipt = self._journal.mark_sending_in_transaction(cur, approval_id)
         from src.runtime.framework_message_stages import message_stage_table, validate_message_stage
@@ -267,6 +259,24 @@ class FrameworkApprovalContinuation:
                     raise FrameworkApprovalRecoveryRequired("Harness settings have no original prepared binding")
                 harness_settings = original.harness_settings
         return plan.model_copy(update={"receipt": receipt, "harness_settings": harness_settings})
+
+    def reconcile_delivery_in_transaction(self, cur, owner, plan, task):
+        """Project an already verified consumed decision, never send it again.
+
+        Both ordinary and formal admissions retain the same journal and audit
+        identity. Callers own their admission/Job checks and final live fence.
+        """
+        binding = owner.binding
+        receipt = self._journal.reconcile_delivery_in_transaction(cur, owner, plan.approval.id)
+        event = ExecutionEvent(id=f"framework-decision:{receipt.decision_id}:delivered", session_id=binding.session_id,
+            type="approval.decision_delivered", timestamp=receipt.delivered_at,
+            turn_id=binding.turn_id, trace_id=task["trace_id"], request_id=task["request_id"],
+            attempt_id=owner.attempt_id, worker_id=owner.worker_id,
+            payload={"task_id": owner.task_id, "turn_id": binding.turn_id, "approval_id": plan.approval.id,
+                "decision_id": receipt.decision_id, "tool_job_id": plan.job.id, "interrupt_id": plan.link.interrupt_id})
+        self._sessions.append_event_in_transaction(cur, binding.session_id, event,
+            turn_lease_token=owner.owner_token)
+        return receipt
 
     async def read_tool_projection(self, owner, approval_id, decision_id):
         """Read original material, not a fresh ToolJob output transformation.
@@ -372,17 +382,33 @@ class FrameworkApprovalContinuation:
         neither sends a decision nor changes receipt delivery/application facts.
         """
         approval_id, decision_id = task["reference_id"], task["input_payload"].get("decision_id")
+        frozen = ToolApprovalRequest.model_validate(task["input_payload"].get("approval"))
+        decision = ({"type": "approve"} if frozen.status.value == "approved" else
+            {"type": "reject", "message": frozen.decision_note or "Human denied execution."})
+        plan, consumed = self.inspect_decision_originals_in_transaction(cur, binding, approval_id=approval_id,
+            decision_id=decision_id, decision_sha256=approval_value_hash(decision))
+        self._journal.assert_business_link(binding, plan.link, frozen.model_dump(mode="python"))
+        if (plan.approval.id, plan.approval.status, plan.approval.decision_note) != (
+                frozen.id, frozen.status, frozen.decision_note):
+            raise FrameworkApprovalRecoveryRequired("Continuation differs from its frozen business decision")
+        return plan, consumed
+
+    def inspect_decision_originals_in_transaction(self, cur, binding, *, approval_id, decision_id, decision_sha256):
+        """Shared native/Job facts, not admission or a synthetic ordinary task.
+
+        The caller must first authorize its real task and immutable decision
+        identity. Ordinary tasks supply the frozen approval hash; formal tasks
+        supply their verified admission hash. Neither gets execution rights here.
+        """
         cur.execute(f"SELECT * FROM {self._settings.database.postgres_approval_table} WHERE id=%s FOR UPDATE",
             (approval_id,))
         row = cur.fetchone()
         link = self._journal.require_link_in_transaction(cur, binding, approval_id, row)
         approval = ToolApprovalRequest.model_validate(row)
-        frozen = ToolApprovalRequest.model_validate(task["input_payload"].get("approval"))
-        self._journal.assert_business_link(binding, link, frozen.model_dump(mode="python"))
         receipt = self._journal.get_receipt_in_transaction(cur, approval_id)
-        if (approval.id != frozen.id or approval.status != frozen.status
-            or approval.decision_note != frozen.decision_note or approval.status.value not in {"approved", "denied"}
+        if (approval.status.value not in {"approved", "denied"}
             or receipt is None or receipt.decision_id != decision_id
+            or receipt.decision_hash != decision_sha256
             or approval_value_hash(receipt.decision) != receipt.decision_hash
             or receipt.decision != ({"type": "approve"} if approval.status.value == "approved" else
                 {"type": "reject", "message": approval.decision_note or "Human denied execution."})):
