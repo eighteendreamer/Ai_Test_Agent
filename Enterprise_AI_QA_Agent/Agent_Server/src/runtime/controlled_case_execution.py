@@ -30,10 +30,11 @@ class LockedCaseExecution:
     attempt: TestRunAttemptRecord
     checkpoint: ControlledCaseAdmissionCheckpoint
     lease: ControlledCaseExecutionLease
+    active_states: tuple[str, ...] = ("running",)
 
 
 def lock_case_execution(cur, settings, lease, *, task_id, binding, schema="", require_active=True,
-        checkpoint_reader=read_admission_checkpoint):
+        checkpoint_reader=read_admission_checkpoint, active_states=("running",)):
     store = PostgresTestRunStore(settings)
     lock_plan_projection(cur, run_table=f"{schema}{store._run_table}", run_id=lease.run_id)
     cur.execute(f"SELECT record FROM {schema}{store._item_table} WHERE id=%s FOR UPDATE", (lease.run_item_id,))
@@ -56,23 +57,35 @@ def lock_case_execution(cur, settings, lease, *, task_id, binding, schema="", re
         or checkpoint.input_sha256 != lease.input_sha256):
         raise ContinuationLeaseLostError("Controlled case original admission identity differs")
     if require_active and (store._run_from_value(row["record"]).status in {"completed", "cancelled"}
-        or item.status != "running" or attempt.status != "running"
+        or item.status not in active_states or attempt.status != item.status
         or item.attempt_no != lease.attempt_no or attempt.attempt_no != lease.attempt_no
         or item.lease_owner != lease.worker_id or attempt.worker_id != lease.worker_id
         or item.lease_token != lease.lease_token or attempt.lease_token != lease.lease_token
         or attempt.recovered_from_attempt_id is not None):
         raise ContinuationLeaseLostError("Controlled case original execution identity is no longer active")
-    return LockedCaseExecution(store, item, attempt, checkpoint, lease)
+    return LockedCaseExecution(store, item, attempt, checkpoint, lease, active_states)
 
 
 def require_case_live(locked, now):
     try:
-        locked.store._validate_lease(locked.item, locked.lease.lease_token, now, {"running"})
+        locked.store._validate_lease(locked.item, locked.lease.lease_token, now, set(locked.active_states))
     except ValueError:
         logger.warning("controlled_case_execution_lease_rejected", extra={"run_id": locked.lease.run_id,
             "run_item_id": locked.item.id, "execution_id": locked.attempt.id,
             "authority_observed_at": now.isoformat(), "recovery_reason": "original_run_item_lease_inactive"})
         raise ContinuationLeaseLostError("Controlled case original RunItem lease is no longer active") from None
+
+
+def require_case_deadline(cur, settings, binding):
+    """Check the frozen root policy on a fresh clock after waiting writes."""
+    from src.runtime.postgres_framework_model_calls import PostgresFrameworkModelCalls
+
+    policy = PostgresFrameworkModelCalls(settings)._policy(cur, binding.binding_id)
+    cur.execute("SELECT clock_timestamp() AS now")
+    now = cur.fetchone()["now"]
+    if policy.deadline_at <= now:
+        raise ValueError("Controlled case original model deadline has expired")
+    return now
 
 
 def prepare_case_claim(cur, tasks, command, capabilities):
@@ -190,9 +203,9 @@ def lock_case_owner(cur, settings, owner, *, schema=""):
     """A stripped owner/source may not bypass the second lease check."""
     if owner.binding.runtime_kind != "langgraph" and owner.controlled_case_lease is None:
         return None
-    cur.execute(f"SELECT operation FROM {schema}{settings.database.postgres_agent_task_table} WHERE id=%s", (owner.task_id,))
+    cur.execute(f"SELECT * FROM {schema}{settings.database.postgres_agent_task_table} WHERE id=%s", (owner.task_id,))
     row = cur.fetchone()
-    is_case = row is not None and row["operation"] == "case_execute"
+    is_case = row is not None and row["operation"] in {"case_execute", "case_approval"}
     if not is_case and owner.controlled_case_lease is None:
         return None  # Existing non-case direct graph harnesses keep their contract.
     if not is_case or owner.controlled_case_lease is None or owner.binding.runtime_kind != "langgraph":
@@ -201,8 +214,14 @@ def lock_case_owner(cur, settings, owner, *, schema=""):
             "recovery_reason": "captured_case_lease_missing_or_mismatched"})
         raise ContinuationLeaseLostError("Controlled case writes require both captured execution leases")
     try:
+        task_id, active_states = owner.task_id, ("running",)
+        if row["operation"] == "case_approval":
+            from src.runtime.controlled_case_approval_continuation import require_owner_admission
+
+            task_id = require_owner_admission(row, owner)
+            active_states = (row["status"],) if row["status"] in {"claimed", "running"} else ()
         return lock_case_execution(cur, settings, owner.controlled_case_lease,
-            task_id=owner.task_id, binding=owner.binding, schema=schema)
+            task_id=task_id, binding=owner.binding, schema=schema, active_states=active_states)
     except (ValueError, ContinuationLeaseLostError) as exc:
         logger.warning("controlled_case_execution_owner_rejected", extra={"task_id": owner.task_id,
             "attempt_id": owner.attempt_id, "binding_id": owner.binding.binding_id,

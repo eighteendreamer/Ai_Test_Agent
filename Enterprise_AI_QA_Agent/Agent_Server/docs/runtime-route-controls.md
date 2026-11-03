@@ -936,6 +936,34 @@ AgentTaskRecord operation 类型同步，但公共审批入口与生产 writer �
 双归属后继领取、逐项原生决定交付、B 执行期间受理 A、继续与强杀恢复仍待后续子步。
 本步无数据库 DDL／依赖升级；实际测试及证据范围见实施记录 §212。
 
+### 正式审批后继的双归属领取与启动（§213，尚无原生决定交付）
+
+`ControlledCaseApprovalContinuations` 仅供显式内部组合。新能力
+`controlled_case_approval_claim_available` 默认 false，claim 与 begin 均须显式启用；
+它不改变普通能力检查，默认 Dispatcher／普通 Task.claim 仍不能执行 `case_approval`。
+公共审批路由、main 与生产 writer 没有安装或启用这个组合。
+
+领取在原 Session → plan／RunItem／正式 Attempt → RuntimeOwner 锁序内，重新核对停车、
+决定受理、原 outbox、完整 pending/native 批次、未开始 ToolJob、原模型账本与根期限。
+只领取尚无执行历史且 journal 仍 queued／未交付的原 Task；同 Session FIFO 串行，其他
+Turn 的排队新消息不阻塞当前审批。重复投递、失租 claimed/running 或丢失回执不自动接管、
+重领或重跑命令；取消等待者不代表后台 SQL 已回滚。
+
+后继建立新 AgentAttempt 和 owner epoch，同时轮换正式 RunItem／原 Attempt 的当前
+worker／lease capability；原正式 Attempt ID、attempt_no、started_at、冻结 admission
+checkpoint 和原 `case_execute` Task／AgentAttempt 保留。关系租约列与 JSON 原件同写。
+live fence 从持久 admission 找到原 reservation，不信调用方提供的原 Task 提示，任一
+租约、owner 代次或捕获身份失效即拒绝。审计只保存前后租约摘要，不输出凭据。
+
+专用 begin 复用 Task 状态事务及 RunStore 时长内核，原子提交正式 Attempt／Task／Session
+running 并返回原冻结输入；最后写入后仍核双租约和原根期限。通用 RunStore start／resume、
+普通 Task.begin／defer／completed 不能拆开双归属；原普通非保留 Attempt 的启动不变。
+新后继纳入原 Worker 活动计费，但未触发图、模型或工具，也不修改 queued 决定回执。
+
+这不是正式审批闭环：逐项原生决定交付、运行期间受理兄弟决定、后继重新停车、后继结果
+资产谱系／唯一正式结算、独立进程强杀与真实供应商／领域验收仍待完成。当前初始停车
+领取不承诺重新停车后的第二项推进。无公共 DTO／DDL／依赖变更；实测及限制见 §213。
+
 ### 原路由与恢复验证
 
 关闭新选路时记录 `deep_agent_new_turn_route_disabled`，带 `session_id`、`turn_id` 和 `recovery_reason=new_turn_admission_disabled`；这是路由决定，不是取消/停止回执。

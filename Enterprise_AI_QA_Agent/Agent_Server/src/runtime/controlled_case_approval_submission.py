@@ -122,11 +122,6 @@ class ControlledCaseApprovalSubmission:
     def _require_parked(self, cur, command, case, session, owner, wait, origin, capabilities):
         binding = command.runtime_binding
         run = case.store._read_run(cur, command.run_id)
-        pending_ids = (session["metadata"].get("pending_turn") or {}).get("pending_approval_ids")
-        _require(isinstance(pending_ids, list) and len(pending_ids) == len(wait.batch)
-            and all(entry.approval_id in pending_ids for entry in wait.batch),
-            "Formal decision requires its complete parked batch")
-        assert_active_approval(session, binding, wait.batch[0].approval_id, owner)
         _require(session["project_id"] == command.project_id == run.project_id
             and session["status"] == "waiting_approval" and not session["lease_active"]
             and run.status not in {"completed", "cancelled"}
@@ -138,6 +133,16 @@ class ControlledCaseApprovalSubmission:
                 == (wait.task_id, wait.attempt_id, wait.owner_epoch, "completed")
             and (session["metadata"].get("pending_turn") or {}).get("controlled_case_wait_sha256") == wait.receipt_sha256,
             "Formal decision requires its current parked original; dual-owner continuation is separate")
+        self.require_pending_originals_in_transaction(cur, command, case, session, owner, wait, origin, capabilities)
+
+    def require_pending_originals_in_transaction(self, cur, command, case, session, owner, wait, origin, capabilities):
+        """Shared current pending facts, not parking or owner adoption authority."""
+        binding = command.runtime_binding
+        pending_ids = (session["metadata"].get("pending_turn") or {}).get("pending_approval_ids")
+        _require(isinstance(pending_ids, list) and len(pending_ids) == len(wait.batch)
+            and all(entry.approval_id in pending_ids for entry in wait.batch),
+            "Formal decision requires its complete parked batch")
+        assert_active_approval(session, binding, wait.batch[0].approval_id, owner)
         cur.execute(f"SELECT id FROM {self._tasks._tasks} WHERE session_id=%s AND turn_id=%s "
             "AND interrupt_requested=TRUE LIMIT 1", (binding.session_id, binding.turn_id))
         _require(cur.fetchone() is None, "Formal decision Turn has a pending interrupt request")

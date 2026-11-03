@@ -1569,18 +1569,9 @@ class PostgresAgentTaskStore:
                 cur.execute("SELECT clock_timestamp() AS now")
                 require_case_submission(cur, self, row, case, cur.fetchone()["now"])
             row = self._claim_task_attempt(cur, row, worker_id)
-            token, attempt_id = row["lease_token"], row["attempt_id"]
             if saved_binding is not None:
-                cur.execute(f"""UPDATE {runtime_owner_table(self._settings)} SET
-                    owner_epoch=owner_epoch+1,owner_token=%s,task_id=%s,attempt_id=%s,worker_id=%s,
-                    expires_at=(SELECT (metadata->>'turn_lease_expires_at')::timestamptz
-                        FROM {self._session_table} WHERE id=%s),execution_state='claimed'
-                    WHERE binding_id=%s RETURNING owner_epoch""",
-                    (token, task_id, attempt_id, worker_id, row["session_id"], saved_binding.binding_id))
-                row = {**row, "runtime_owner": RuntimeExecutionOwner(
-                    binding=saved_binding, owner_epoch=cur.fetchone()["owner_epoch"],
-                    owner_token=token, task_id=task_id, attempt_id=attempt_id, worker_id=worker_id,
-                    controlled_case_lease=case.lease if case is not None else None)}
+                row = self._adopt_runtime_owner(cur, row, saved_binding, worker_id,
+                    case_lease=case.lease if case is not None else None)
                 if row["operation"] == "approval_recover":
                     from src.runtime.framework_approval_finalization import is_finalization_task, adopt_finalization_owner
                     from src.runtime.framework_approval_settlement import is_settlement_task, adopt_settlement_owner
@@ -1594,6 +1585,18 @@ class PostgresAgentTaskStore:
                 "owner_epoch": row["runtime_owner"].owner_epoch,
             } if saved_binding is not None else {}))
         return self._record(row)
+
+    def _adopt_runtime_owner(self, cur, row, binding, worker_id, *, case_lease=None):
+        """Adopt a verified physical claim; keep reservation and execution distinct."""
+        cur.execute(f"""UPDATE {runtime_owner_table(self._settings)} SET
+            owner_epoch=owner_epoch+1,owner_token=%s,task_id=%s,attempt_id=%s,worker_id=%s,
+            expires_at=(SELECT (metadata->>'turn_lease_expires_at')::timestamptz
+                FROM {self._session_table} WHERE id=%s),execution_state='claimed'
+            WHERE binding_id=%s RETURNING owner_epoch""",
+            (row["lease_token"], row["id"], row["attempt_id"], worker_id, row["session_id"], binding.binding_id))
+        return {**row, "runtime_owner": RuntimeExecutionOwner(binding=binding,
+            owner_epoch=cur.fetchone()["owner_epoch"], owner_token=row["lease_token"], task_id=row["id"],
+            attempt_id=row["attempt_id"], worker_id=worker_id, controlled_case_lease=case_lease)}
 
     def _claim_task_attempt(self, cur, row, worker_id):
         """Existing task/Session lease kernel, not graph execution authority.
@@ -1625,6 +1628,7 @@ class PostgresAgentTaskStore:
         reason,
         resource_id,
         fencing_token,
+        *, case_approval_preparer=None,
     ):
         settlement = None
         case_input = None
@@ -1650,7 +1654,13 @@ class PostgresAgentTaskStore:
                 from src.runtime.controlled_case_execution import prepare_case_start
 
                 case_input = prepare_case_start(cur, self, row, case, task)
-            if row["operation"] == "case_execute" and status == "completed":
+            if row["operation"] == "case_approval" and status == "running":
+                if case_approval_preparer is None:
+                    raise ValueError("Controlled approval start requires its dedicated admission transaction")
+                case_input = case_approval_preparer(cur, row, case, task)
+            if row["operation"] == "case_approval" and status == "waiting_resource":
+                raise ValueError("Controlled approval deferral requires its dedicated admission transaction")
+            if row["operation"] in {"case_execute", "case_approval"} and status == "completed":
                 logger.warning("controlled_case_finalizer_required", extra={"task_id": task.id,
                     "attempt_id": task.attempt_id, "binding_id": task.runtime_binding.binding_id,
                     "recovery_reason": "controlled_case_application_projection_unavailable"})
@@ -1697,6 +1707,13 @@ class PostgresAgentTaskStore:
                 if status in {"failed", "cancelled", "recovery_required"}:
                     self._interrupt_expired_session(cur, row)
                 self._clear_lease(cur, row)
+            if row["operation"] == "case_approval" and status == "running":
+                # All event/Session writes may have waited. Recheck both leases
+                # only after their paired running transition, on a fresh DB clock.
+                assert_runtime_owner(cur, self._settings, task.runtime_owner)
+                from src.runtime.controlled_case_execution import require_case_deadline
+
+                require_case_deadline(cur, self._settings, task.runtime_binding)
 
         if settlement is not None:
             logger.info("framework_approval_projected_settled" if approval_settlement else "framework_message_projected_settled",

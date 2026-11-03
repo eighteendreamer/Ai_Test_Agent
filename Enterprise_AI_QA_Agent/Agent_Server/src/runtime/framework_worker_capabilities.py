@@ -53,6 +53,7 @@ class FrameworkWorkerCapabilities:
     controlled_case_recovery_receipt_max_version: int = 1
     controlled_case_approval_wait_max_version: int = 1
     controlled_case_approval_admission_max_version: int = 1
+    controlled_case_approval_claim_available: bool = False
 
     @classmethod
     def from_artifact(cls, *, deepagents_available: bool):

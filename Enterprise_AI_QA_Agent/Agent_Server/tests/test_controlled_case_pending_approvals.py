@@ -1,6 +1,7 @@
 """Exact native pending originals and dedicated formal scope, not parking/ACK."""
 from contextlib import asynccontextmanager
 from copy import deepcopy
+from datetime import datetime, timedelta, timezone
 import importlib
 import logging
 from types import SimpleNamespace
@@ -32,6 +33,11 @@ from tests.test_runtime_binding_persistence import make_command
 async def pending_formal(formal_case, tmp_path, request):
     s = formal_case
     options = getattr(request, "param", {})
+    if "deadline_seconds" in options:
+        # Freeze the real policy before admission; never rewrite its proof to
+        # manufacture an expired original after the graph has already parked.
+        s.budget = s.budget.model_copy(update={"deadline_at": datetime.now(timezone.utc)
+            + timedelta(seconds=options["deadline_seconds"])})
     reply = _tool_reply("openai_chat_completions")
     calls = reply["choices"][0]["message"]["tool_calls"]
     calls[0]["id"], calls[0]["function"]["arguments"] = "A", '{"path":"a.py"}'

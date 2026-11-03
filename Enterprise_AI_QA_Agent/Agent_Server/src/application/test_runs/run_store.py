@@ -92,9 +92,9 @@ def require_generic_result_write(attempt: TestRunAttemptRecord) -> None:
 
 
 def require_generic_approval_resume(attempt: TestRunAttemptRecord) -> None:
-    # Like result/checkpoint writes, resume must not grant a RunItem-only lease
-    # for a reserved execution. Its completed producer remains immutable; only
-    # the dedicated continuation may establish the next dual-owner identity.
+    # Like result/checkpoint writes, generic resume/start must not grant or
+    # activate a RunItem-only lease for a reserved execution. Only the dedicated
+    # continuation may establish AND start the next dual-owner identity.
     if is_controlled_case_attempt(attempt):
         logger.warning("controlled_case_approval_continuation_required", extra={"run_id": attempt.run_id,
             "run_item_id": attempt.run_item_id, "attempt_id": attempt.id,
@@ -806,6 +806,7 @@ class InMemoryTestRunStore:
             if not dependencies_ready(item, self._items, self._results):
                 raise ValueError("运行条目的必要前置或输出尚未满足")
             attempt = self._active_attempt(item_id, lease_token)
+            require_generic_approval_resume(attempt)
             self._run_for_attempt(self._require_run(item.run_id), attempt)
             updated = item.model_copy(
                 deep=True,
@@ -2870,6 +2871,7 @@ class PostgresTestRunStore:
                     logger.warning("test_run_claimed_snapshot_selection_changed", extra={"run_id": run.id,
                         "run_item_id": item.id, "attempt_id": attempt.id})
                     raise ValueError("领取计划身份在环境确认期间变化，不能使用陈旧依据开始执行")
+                require_generic_approval_resume(attempt)
                 validate_claimed_plan_snapshot(run, attempt)
                 restricted = restriction_reviews(run.plan_snapshot.plan, item, reviews) if reviews else []
                 if restricted and not self._prior_business_started(cur, item):
@@ -2892,31 +2894,36 @@ class PostgresTestRunStore:
                     else:
                         logger.warning("test_run_historical_environment_admission_missing",extra={"run_id":run.id,
                             "run_item_id":item.id,"attempt_id":attempt.id,"reason":"preserve_original_started_context"})
-                item = item.model_copy(
-                    update={
-                        "status": "running",
-                        "started_at": item.started_at or now,
-                        "active_started_at": item.active_started_at or now,
-                        "updated_at": now,
-                    }
-                )
-                attempt = attempt.model_copy(
-                    update={
-                        "status": "running",
-                        "started_at": attempt.started_at or now,
-                        "active_started_at": attempt.active_started_at or now,
-                        "heartbeat_at": now,
-                    }
-                )
-                self._write_item(cur, item)
-                self._write_attempt(cur, attempt)
-                self._refresh_run_in_cursor(
-                    cur,
-                    item.run_id,
-                    now,
-                    status_deltas=[("claimed", "running")],
-                )
+                item, _ = self._start_claimed_item_in_transaction(cur, item, attempt, now)
         return item
+
+    def _start_claimed_item_in_transaction(self, cur, item, attempt, now):
+        """Reuse formal active timing after the caller has verified admission."""
+        item = item.model_copy(
+            update={
+                "status": "running",
+                "started_at": item.started_at or now,
+                "active_started_at": item.active_started_at or now,
+                "updated_at": now,
+            }
+        )
+        attempt = attempt.model_copy(
+            update={
+                "status": "running",
+                "started_at": attempt.started_at or now,
+                "active_started_at": attempt.active_started_at or now,
+                "heartbeat_at": now,
+            }
+        )
+        self._write_item(cur, item)
+        self._write_attempt(cur, attempt)
+        self._refresh_run_in_cursor(
+            cur,
+            item.run_id,
+            now,
+            status_deltas=[("claimed", "running")],
+        )
+        return item, attempt
 
     def _mark_waiting_resource_sync(
         self,
@@ -3315,43 +3322,49 @@ class PostgresTestRunStore:
                     raise ValueError(f"Waiting run item has no preserved lease token: {item_id}")
                 attempt = self._lock_attempt(cur, item_id, item.lease_token)
                 require_generic_approval_resume(attempt)
-                waiting_duration_delta_ms = elapsed_ms(item.waiting_started_at, now)
-                item = item.model_copy(
-                    update={
-                        "status": "claimed",
-                        "lease_expires_at": now + timedelta(seconds=lease_seconds),
-                        "heartbeat_at": now,
-                        "waiting_duration_ms": add_waiting_duration(
-                            waiting_duration_ms=item.waiting_duration_ms,
-                            waiting_started_at=item.waiting_started_at,
-                            now=now,
-                        ),
-                        "waiting_started_at": None,
-                        "updated_at": now,
-                    }
-                )
-                attempt = attempt.model_copy(
-                    update={
-                        "status": "claimed",
-                        "heartbeat_at": now,
-                        "waiting_duration_ms": add_waiting_duration(
-                            waiting_duration_ms=attempt.waiting_duration_ms,
-                            waiting_started_at=attempt.waiting_started_at,
-                            now=now,
-                        ),
-                        "waiting_started_at": None,
-                    }
-                )
-                self._write_item(cur, item)
-                self._write_attempt(cur, attempt)
-                self._refresh_run_in_cursor(
-                    cur,
-                    item.run_id,
-                    now,
-                    status_deltas=[("waiting_approval", "claimed")],
-                    waiting_duration_delta_ms=waiting_duration_delta_ms,
-                )
+                item, _ = self._resume_waiting_approval_in_transaction(
+                    cur, item, attempt, now + timedelta(seconds=lease_seconds), now)
         return item
+
+    def _resume_waiting_approval_in_transaction(self, cur, item, attempt, expires_at, now):
+        """Timing/state kernel; caller locks and authorizes both original records."""
+        waiting_duration_delta_ms = elapsed_ms(item.waiting_started_at, now)
+        item = item.model_copy(
+            update={
+                "status": "claimed",
+                "lease_expires_at": expires_at,
+                "heartbeat_at": now,
+                "waiting_duration_ms": add_waiting_duration(
+                    waiting_duration_ms=item.waiting_duration_ms,
+                    waiting_started_at=item.waiting_started_at,
+                    now=now,
+                ),
+                "waiting_started_at": None,
+                "updated_at": now,
+            }
+        )
+        attempt = attempt.model_copy(
+            update={
+                "status": "claimed",
+                "heartbeat_at": now,
+                "waiting_duration_ms": add_waiting_duration(
+                    waiting_duration_ms=attempt.waiting_duration_ms,
+                    waiting_started_at=attempt.waiting_started_at,
+                    now=now,
+                ),
+                "waiting_started_at": None,
+            }
+        )
+        self._write_item(cur, item)
+        self._write_attempt(cur, attempt)
+        self._refresh_run_in_cursor(
+            cur,
+            item.run_id,
+            now,
+            status_deltas=[("waiting_approval", "claimed")],
+            waiting_duration_delta_ms=waiting_duration_delta_ms,
+        )
+        return item, attempt
 
     def _list_waiting_approval_items_sync(
         self, limit: int | None = None, after: tuple[datetime, str] | None = None,
@@ -4184,8 +4197,8 @@ class PostgresTestRunStore:
 
     def _write_attempt(self, cur, attempt: TestRunAttemptRecord) -> None:
         cur.execute(
-            f"UPDATE {self._attempt_table} SET status = %s, record = %s::jsonb WHERE id = %s",
-            (attempt.status, self._json(attempt), attempt.id),
+            f"UPDATE {self._attempt_table} SET status = %s, lease_token = %s, record = %s::jsonb WHERE id = %s",
+            (attempt.status, attempt.lease_token, self._json(attempt), attempt.id),
         )
 
     @staticmethod

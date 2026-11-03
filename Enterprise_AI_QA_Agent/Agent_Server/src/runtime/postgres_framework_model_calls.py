@@ -348,7 +348,7 @@ class PostgresFrameworkModelCalls:
                 JOIN {attempts_table} AS attempt ON attempt.task_id=task.id
                 WHERE task.runtime_binding->>'binding_id'=%s
                   AND task.session_id=%s AND task.turn_id=%s
-                  AND task.operation IN ('message','message_recover','approval_resume','case_execute')""",
+                  AND task.operation IN ('message','message_recover','approval_resume','case_execute','case_approval')""",
                 (binding.binding_id, binding.session_id, binding.turn_id),
             )
             intervals.extend((row["started_at"], row["finished_at"]) for row in cur.fetchall())
@@ -364,7 +364,7 @@ class PostgresFrameworkModelCalls:
                 FROM {tasks_table} AS task
                 WHERE task.runtime_binding->>'binding_id'=%s
                   AND task.session_id=%s AND task.turn_id=%s
-                  AND task.operation IN ('message','message_recover','approval_resume','case_execute')""",
+                  AND task.operation IN ('message','message_recover','approval_resume','case_execute','case_approval')""",
                 (binding.binding_id, binding.session_id, binding.turn_id),
             )
             for task in cur.fetchall():
