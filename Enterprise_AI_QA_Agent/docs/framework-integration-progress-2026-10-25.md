@@ -11208,3 +11208,59 @@ pytest.main([
 不再通过重复扩大回归、增加生产诊断补丁、换时间源、延长租约或改变历史原件来获取绿色。已向用户一次说明并请求**最小可回滚干预验证**：仅临时停止Ubuntu systemd-timesyncd（不禁用开机启动），按实测CLK_TCK=100将共享tick从9000恢复10000，再做有界观察与原回归；明确影响所有共享该内核的WSL／Docker进程，不手设日期、不改Windows时钟或clocksource、不重启WSL／容器／PG／Redis、不改生产路由。**本节记录时尚未获答复、未执行干预**；原PG／Redis启动及隔离Docker验收授权不扩展为系统时钟修改授权。
 
 本步只提交本记录的证据追加；临时脚本／日志、§219全部草稿、用户v3和环境配置均不提交，不push／建PR。后续获授权才进行环境干预与同字节验收；未授权则保留原件和待验证结论，不宣称修复。环境稳定并收口历史失败后，才推进§219、专用re-park、A领取、terminal／新批次、结果谱系／唯一结算及独立进程验收。完整v4目标保持active，剩余仍粗估 **4–8周有效开发／验收**，环境与人工等待另计。
+
+## §223 授权的共享时钟最小干预、根命名空间取证与原回归（2026-11-04）
+
+### 授权、实际操作与边界
+
+续接§222／`dd628240c6ab32de872fd10058649366b2a51fbb`，对应v4 §6.3／§8／§9.2 的租约、审批恢复和原材料验收。用户明确同意§222列出的最小修复验证；另分别授权最多120秒内核调用边界观测，以及输出器修正后追加最多15秒同范围观测。不是停止任何时钟进程或修改任意时钟参数的泛化授权。本步不修改产品源码／测试，不安装依赖、不调用UV；§219草稿及用户v3保持原字节，不提交后继功能。
+
+实际执行 `wsl -d Ubuntu -u root -- systemctl stop systemd-timesyncd.service`，仅临时停止，不disable。随后仅一次 `adjtimex(modes=ADJ_TICK,tick=10000)`：写前tick9000／freq0，返回result0／errno0，写后tick10000／freq0，日志 `e223-tick-repair.log`。只设置ADJ_TICK（16384），未设置日期／offset／freq／其他mode，之后没有再次写tick或回写9000。没有修改Windows时间、clocksource、Hyper-V隐式同步参数，没有重启WSL／容器／PG／Redis、切换生产路由或调用付费模型。影响范围是所有共享此Linux内核的WSL／Docker进程，不能说仅影响测试数据库。
+
+Ubuntu timesyncd后续只读核查为 **inactive／dead、UnitFileState=enabled**；按后续授权暂维持暂停，不冒称已恢复原active状态。根chronyd没有停止、重启或改配置。
+
+### 首次修复采样失败，保留原断言与结果
+
+`e223-clock-probe.log`／`e223-clock-probe-summary.json` 的120秒窗口实际为 **exit1**，不能以采样结束当作修复通过：
+
+- PG四backend共35944次采样，未观察到全局／单backend倒退；DB相对宿主机perf残差 **-0.3434416～+0.9752572秒**。
+- guest共11381次采样，三类时钟均无倒退；REALTIME／MONOTONIC／RAW增量分别为120.16670635／115.217878032／120.007090422秒，MONOTONIC/RAW约 **0.9600923**。
+- tick被其他来源再次调节，窗口观测集合为9015／9044／9798；临时探针原 `assert observed_ticks == [10000]` 失败。集合为去重排序值，不是写入先后轨迹。没有反复重设tick或修改旧日志／断言来“获绿”；当时没有启动33文件回归。
+
+### 两次有界内核观测及已确认的进程身份
+
+依据[内核ftrace文档](https://docs.kernel.org/trace/ftrace.html)，使用Ubuntu root的私有mount namespace和独立 `xg-clock-*` trace实例，只启用adjtimex／clock_adjtime／settimeofday／clock_settime的8个enter／exit事件。不改主缓冲区或全局trace_options；根tracefs本来已挂载，没有新增挂载。只输出进程名、PID、时间与函数边界，不输出指针参数、内存或凭据。两个实例均在finally撤销并删除，后续只读find未发现本步实例残留。
+
+首次 `e223-kernel-clock-trace.log` 实测120.058951561秒：临时输出解析器正则转义写错，1106条边界未解析，未保留下进程身份。脚本exit0仅说明脚本退出，不表示诊断成功；不能把 `boundaries=0` 解释为无调用。后续附加只读快照时实例已清理，AssertionError，没有从中补得身份。已向用户如实报告失败，未静默重开观测。
+
+用户同意追加后，输出器改为简单分隔和白名单函数标签，先对3种格式及畸形行自测，再运行 `e223-kernel-clock-trace15.log`：实测 **15.034717929秒、138条边界、0未解析、0overrun／drop**。其中120条为自身python3-8270的只读采样，18条为 **chronyd-228 的sys_clock_adjtime enter／exit边界**；18条边界不等于18次写入，未记录timex modes，不能据此证明每次调用在写入或它设置了原始tick9000。该窗口tick依次观察9974／9995／9966／10030，仍未再次手工改tick。
+
+普通Ubuntu／docker发行版的PID视图不能定位内核PID228。依据[微软根命名空间调试说明](https://github.com/microsoft/WSL/blob/master/doc/docs/debugging.md)尝试官方 `wsl --debug-shell`，本工具实际exit1并提示需Windows管理员身份，未绕过或另行提权。用户随后在管理员PowerShell手工执行只读命令并回传：根环境为 **Microsoft Azure Linux 3.0**；`/proc/228/comm=chronyd`，status为Name=chronyd／Pid=228／PPid=1／NSpid=228，exe为 `/usr/sbin/chronyd`，cgroup为 `0::/`。这确认了根虚拟机进程身份，不证明全部历史故障同源；没有请求用户停止它。
+
+### 后续只读窗口：速率接近正常，不把精确tick作为健康条件
+
+`e223-clock-final-readonly.log` 仅modes=0读取，tick10001、freq_scaled_ppm=-3252697。依据[adjtimex手册](https://man7.org/linux/man-pages/man2/adjtimex.2.html)区分读取、tick与频率调节；不能把任何非10000的tick都判为错误。保留首次失败脚本，另建 `e223_clock_observation.py` 仅用于只读观察：记录tick／freq／status集合及实测速率，保留无倒退断言，不设置精确tick断言。它与首次探针的判据不同，不能用新exit0抹去首次失败。
+
+原session81911已取得终态exit0，日志 `e223-clock-observation.log`／`e223-clock-observation-summary.json`：
+
+- 四backend共 **35344** 次PG采样，120.0020062秒，global_backward=0／backend_backward=0；DB相对宿主机perf残差 **-0.027009～+0.003058秒**，最小相邻增量0.001377秒。
+- guest共 **11820** 次采样，REALTIME／MONOTONIC／RAW增量分别 **120.006349270／120.011289457／120.004889032秒**，相对RAW速率为 **1.000012168／1.000053335**，三类时钟倒退计数均0。
+- 窗口tick均10001，freq_scaled_ppm观测范围-3703711～-2766584，status集合8192／8256；observed_adjustments是去重排序集合，不是按时间排列的调节轨迹。
+- 四连接均确认PG postmaster start仍为 **2026-10-30T10:02:42.181199+00:00**。
+
+仅证明该短窗口速率接近1且没有观察到倒退；暂停Ubuntu竞争服务后根chronyd正在收敛是与现象一致的**待验证假设**，没有证明原始tick写入者、所有时间跳变的唯一根因或长时间稳定。正常NTP微调不作为故障本身，亦不据此停止根chronyd。
+
+### 同字节原33文件回归：已启动，等待实际终态
+
+回归前 `e223-source-before.log` 与§222冻结聚合完全一致：src **881个py，38dbc7f89ae202c3c9cb67d4e9dd4f0ffb55527753b0f70eb79933f30c01f3f9**；tests **696个py，5529faf3e09ef1449803b9b97c37da51168399d08f69173b8c2529261355f74b**。用户v3 SHA256未变；固定Agent解释器原pytest／multiprocessing／本步探针残留为0后，才启动新一轮原33文件，不重复启动任何活句柄。
+
+cwd=`Agent_Server`，每条pytest前执行 `../scripts/clear_uv_environment.ps1 -ProcessOnly`，固定Agent解释器、PG=1、其他实际live开关=0、diagnostics=1、UTF8。核原 `e219-affected-files.txt` 恰为33项且全部存在，实际命令：
+
+~~~powershell
+$files = Get-Content ../.codex-logs/e219-affected-files.txt
+& E:\MiniConda3\envs\Agent\python.exe -u -m pytest @files -q -rs --tb=short
+~~~
+
+日志 `e223-original-33-regression.log`，**session52608正在运行**，没有最终passed／failed／skip计数，不用120秒观察或§222的197通过代替本次完整结果。运行期间不修改src／tests、租约、断言、排序或历史原件。原§219的3 failed／1699 passed、§221时序失败及§215两项模型账本拒绝仍保留，未因短窗口无倒退而结案。
+
+后续先接续原句柄、核终态和字节，再决定§219草稿是否具备提交条件；仍未释放B／让A领取，re-park、terminal／新批次、结果谱系／唯一结算、新格式独立进程验收及完整v4后续阶段仍待完成。全量后端、前端build／typecheck／浏览器、真实付费供应商／真实领域Runner、完整main lifespan、双制品部署／备份恢复、E3／E4及性能基线均未在本步执行。整体goal保持active，剩余仍粗估 **4–8周有效开发／验收**，环境和人工等待另计。本步仅拟提交本记录，排除§219草稿、用户v3及忽略日志，不push／建PR；完整回归实际结果另追加，不覆写历史。
