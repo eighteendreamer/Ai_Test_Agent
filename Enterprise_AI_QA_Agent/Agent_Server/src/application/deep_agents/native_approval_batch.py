@@ -80,7 +80,7 @@ def require_pending_tool_interrupts_original(cur, settings, source, graph_input,
     return read_pending_tool_snapshot_original(cur, settings, source, graph_input, expected)[0]
 
 
-def read_pending_tool_snapshot_original(cur, settings, source, graph_input, expected):
+def read_pending_tool_snapshot_original(cur, settings, source, graph_input, expected, *, consuming_interrupt_id=None):
     """Read the LATEST root, not an arbitrary historical candidate checkpoint.
 
     Keep BoundPostgresReader.get_interrupt_task closed: the explicit journal
@@ -103,6 +103,8 @@ def read_pending_tool_snapshot_original(cur, settings, source, graph_input, expe
             if isinstance(item, NativeToolInterrupt) else item) for item in expected]
         if not proposed or len({item.interrupt_id for item in proposed}) != len(proposed):
             raise FrameworkApprovalRecoveryRequired("Pending batch requires nonempty unique native identities")
+        if consuming_interrupt_id is not None and consuming_interrupt_id not in {n.interrupt_id for n in proposed}:
+            raise FrameworkApprovalRecoveryRequired("Consuming sibling is outside the original native batch")
         phase = "latest_native_checkpoint_read"
         # Follow native_terminal's SQLAlchemy-managed savepoint and official
         # source-only materializer; restore search_path even on failed reads.
@@ -128,7 +130,13 @@ def read_pending_tool_snapshot_original(cur, settings, source, graph_input, expe
             found = {item.interrupt_id: item.model_dump(mode="json") for item in identities}
             candidates = {item.interrupt_id: item.model_dump(mode="json") for item in proposed}
             phase = "complete_pending_batch_comparison"
-            if approval_value_hash(found) != approval_value_hash(candidates):
+            # A dedicated admission observer may read while exactly one known
+            # sibling is consuming. Only that identity can disappear; this is
+            # not a general subset mode and grants no delivery authority.
+            accepted = [candidates]
+            if consuming_interrupt_id is not None:
+                accepted.append({key: value for key, value in candidates.items() if key != consuming_interrupt_id})
+            if not any(approval_value_hash(found) == approval_value_hash(batch) for batch in accepted):
                 raise FrameworkApprovalRecoveryRequired("Proposed approvals differ from the complete pending native batch")
             # Pinned Pregel.get_state applies pending writes only when the
             # caller omits checkpoint_id (main.py:1433). Persist the exact

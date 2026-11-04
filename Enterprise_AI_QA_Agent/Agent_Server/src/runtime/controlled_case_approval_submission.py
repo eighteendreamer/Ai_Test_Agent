@@ -1,4 +1,4 @@
-"""Dedicated parked-case decisions on the original task/journal/outbox.
+"""Dedicated case decisions on the original task/journal/outbox.
 
 No upstream counterpart (checked: FrameworkApprovalSubmission, controlled
 wait originals, v4 §7.3/§12.1): native HITL does not own the formal RunItem.
@@ -14,7 +14,7 @@ from uuid import NAMESPACE_URL, uuid4, uuid5
 from pydantic import TypeAdapter
 
 from src.infrastructure.postgres_runtime import postgres_connect
-from src.runtime.controlled_case_execution import lock_case_delivery
+from src.runtime.controlled_case_execution import lock_case_delivery, lock_case_execution, require_case_live, require_case_deadline
 from src.runtime.framework_application_projection import _require_event_intent
 from src.runtime.framework_approval_journal import FrameworkApprovalRecoveryRequired
 from src.runtime.framework_approval_submission import assert_active_approval
@@ -137,12 +137,22 @@ class ControlledCaseApprovalSubmission:
 
     def require_pending_originals_in_transaction(self, cur, command, case, session, owner, wait, origin, capabilities):
         """Shared current pending facts, not parking or owner adoption authority."""
+        natives = self._pending_scope(cur, command, session, owner, wait, capabilities)
+        binding = command.runtime_binding
+        from src.application.deep_agents.native_approval_batch import require_pending_tool_interrupts_original
+
+        source = original_checkpoint_source(cur, self._settings, binding, origin, wait.owner_epoch)
+        original = capabilities.require_case_input_format(origin["input_payload"]["case_execution_input"])
+        require_pending_tool_interrupts_original(cur, self._settings, source, original.graph_input, natives)
+        self._require_unstarted_jobs(cur, wait.batch)
+
+    def _pending_scope(self, cur, command, session, owner, wait, capabilities, *, approval_id=None):
         binding = command.runtime_binding
         pending_ids = (session["metadata"].get("pending_turn") or {}).get("pending_approval_ids")
         _require(isinstance(pending_ids, list) and len(pending_ids) == len(wait.batch)
             and all(entry.approval_id in pending_ids for entry in wait.batch),
             "Formal decision requires its complete parked batch")
-        assert_active_approval(session, binding, wait.batch[0].approval_id, owner)
+        assert_active_approval(session, binding, approval_id or wait.batch[0].approval_id, owner)
         cur.execute(f"SELECT id FROM {self._tasks._tasks} WHERE session_id=%s AND turn_id=%s "
             "AND interrupt_requested=TRUE LIMIT 1", (binding.session_id, binding.turn_id))
         _require(cur.fetchone() is None, "Formal decision Turn has a pending interrupt request")
@@ -151,18 +161,77 @@ class ControlledCaseApprovalSubmission:
         ledger = PostgresFrameworkModelCalls(self._settings)._snapshot(cur, binding)
         _require(approval_value_hash(ledger.model_dump(mode="json")) == wait.model_ledger_sha256,
             "Formal parked decision has later model activity requiring reconciliation")
-        natives = self._waits._batch_original(cur, binding, wait, capabilities, project_id=command.project_id)
-        from src.application.deep_agents.native_approval_batch import require_pending_tool_interrupts_original
+        return self._waits._batch_original(cur, binding, wait, capabilities, project_id=command.project_id)
 
-        source = original_checkpoint_source(cur, self._settings, binding, origin, wait.owner_epoch)
-        original = capabilities.require_case_input_format(origin["input_payload"]["case_execution_input"])
-        require_pending_tool_interrupts_original(cur, self._settings, source, original.graph_input, natives)
-        for entry in wait.batch:
+    def _require_unstarted_jobs(self, cur, entries):
+        for entry in entries:
             cur.execute(f"SELECT status,started_at,completed_at FROM {self._settings.database.postgres_tool_job_table} "
                 "WHERE id=%s FOR SHARE", (entry.tool_job_id,))
             job = cur.fetchone()
             _require(job is not None and job["status"] == "waiting_approval"
                 and job["started_at"] is job["completed_at"] is None, "Formal parked ToolJob has already progressed")
+
+    def _active_sibling(self, cur, command, wait, capabilities):
+        """Observe an existing owner for intent admission; never mint a lease.
+
+        No upstream counterpart (checked: ordinary active-Turn admission,
+        dedicated continuation originals, case lease kernel, v4 §7.3): a
+        source-only read cannot adopt the currently executing formal sibling.
+        """
+        from src.runtime.controlled_case_approval_continuation import ControlledCaseApprovalContinuations
+
+        tasks, binding = self._tasks, command.runtime_binding
+        session = tasks._lock_session(cur, binding.session_id)
+        owner = lock_owner_row(cur, self._settings, binding)
+        shared = ControlledCaseApprovalContinuations(self)
+        active_command = shared._wire(cur, owner["task_id"], capabilities)
+        _require(active_command.operation == "case_approval" and active_command.case_approval_reference is not None
+            and active_command.runtime_binding == binding and active_command.task_id == owner["task_id"]
+            and active_command.case_approval_reference.origin_task_id == command.task_id,
+            "Formal sibling admission requires its dedicated approval owner")
+        active = shared._locked(cur, active_command, capabilities)
+        row, metadata = active.task, session["metadata"]
+        state = row["status"]
+        _require(state in {"claimed", "running"} and active.origin_command == command and active.wait == wait
+            and session["project_id"] == command.project_id
+            and session["status"] == ("running" if state == "running" else "waiting_approval")
+            and (metadata.get("pending_turn") or {}).get("controlled_case_wait_sha256") == wait.receipt_sha256
+            and (owner["task_id"], owner["attempt_id"], owner["worker_id"], owner["owner_token"], owner["execution_state"])
+                == (row["id"], row["attempt_id"], row["worker_id"], row["lease_token"], state)
+            and metadata.get("turn_lease_token") == row["lease_token"]
+            and metadata.get("turn_lease_turn_id") == binding.turn_id,
+            "Formal sibling admission differs from its current dedicated owner")
+        case = lock_case_execution(cur, self._settings, active.case.lease, task_id=command.task_id,
+            binding=binding, active_states=(state,), checkpoint_reader=capabilities.require_case_checkpoint_format)
+        _require(case.lease.worker_id == row["worker_id"], "Formal sibling owner differs from its RunItem worker")
+        cur.execute(f"SELECT * FROM {tasks._attempts} WHERE id=%s FOR SHARE", (row["attempt_id"],))
+        attempt = cur.fetchone()
+        _require(attempt is not None and attempt["status"] == state and attempt["finished_at"] is None
+            and (attempt["task_id"], attempt["worker_id"], attempt["lease_token"], attempt["attempt_no"])
+                == (row["id"], row["worker_id"], row["lease_token"], row["attempt_no"]),
+            "Formal sibling admission has no matching active Worker attempt")
+        source = original_checkpoint_source(cur, self._settings, binding, row, owner["owner_epoch"])
+        self._waits._worker_fact(cur, source, row, attempt, "agent_task.claimed")
+        now = require_case_deadline(cur, self._settings, binding)
+        require_case_live(case, now)
+        cur.execute("SELECT %s::timestamptz > %s AS session_active, %s::timestamptz > %s AS owner_active",
+            (metadata.get("turn_lease_expires_at"), now, owner["expires_at"], now))
+        clock = cur.fetchone()
+        _require(clock["session_active"] and clock["owner_active"], "Formal sibling admission owner lease has expired")
+        return active, source
+
+    def _require_owned_sibling(self, cur, command, wait, origin, approval_id, capabilities):
+        from src.application.deep_agents.native_approval_batch import read_pending_tool_snapshot_original
+
+        active, source = self._active_sibling(cur, command, wait, capabilities)
+        _require(active.task["reference_id"] != approval_id, "Formal active decision cannot be admitted as its own sibling")
+        natives = self._pending_scope(cur, command, active.session, active.owner, wait, capabilities, approval_id=approval_id)
+        consuming, = [e for e in wait.batch if e.approval_id == active.task["reference_id"]]
+        original = capabilities.require_case_input_format(origin["input_payload"]["case_execution_input"])
+        read_pending_tool_snapshot_original(cur, self._settings, source, original.graph_input, natives,
+            consuming_interrupt_id=consuming.interrupt_id)
+        self._require_unstarted_jobs(cur, [e for e in wait.batch if e.approval_id == approval_id])
+        return active.task["id"]
 
     def _submit(self, command, approval_id, payload, capabilities, scope):
         tasks, settings, binding = self._tasks, self._settings, command.runtime_binding
@@ -187,7 +256,13 @@ class ControlledCaseApprovalSubmission:
             if rows:
                 _require(len(rows) == 1, "Formal decision has conflicting successor identities")
                 return self._existing(cur, rows[0], origin, binding, wait, approval, receipt, payload, capabilities, key)
-            self._require_parked(cur, command, case, session, owner, wait, origin, capabilities)
+            busy = owner["execution_state"] in {"claimed", "running"}
+            scope["admission_mode"] = "owned_sibling" if busy else "parked_original"
+            if busy:
+                scope["active_task_id"] = self._require_owned_sibling(
+                    cur, command, wait, origin, approval_id, capabilities)
+            else:
+                self._require_parked(cur, command, case, session, owner, wait, origin, capabilities)
             if approval["status"] != "pending" or receipt is not None or approval["resolved_at"] is not None:
                 raise AgentSubmissionConflict("Formal approval has a prior decision without its dedicated continuation")
             cur.execute("SELECT clock_timestamp() AS now")
@@ -220,4 +295,6 @@ class ControlledCaseApprovalSubmission:
             for event in approval_events(proof, successor):
                 _require(tasks._sessions.append_event_in_transaction(cur, binding.session_id, event),
                     "Formal decision audit exists without its atomic admission")
+            if busy:
+                self._active_sibling(cur, command, wait, capabilities)
             return AgentTaskRecord.model_validate(row), False

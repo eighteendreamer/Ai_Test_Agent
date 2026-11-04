@@ -1072,6 +1072,32 @@ LangGraph 最新状态自动合入 pending writes 的便捷投影当作不可变
 无公开 HTTP／DDL／依赖或格式版本变更，checkpoint 7／receipt 2 及新 writer 默认值不变。
 实际红绿、冻结后回归与证据限制见实施记录 §217；§215 未定位的账本风险仍保留。
 
+### 正式审批运行中受理兄弟决定（§218）
+
+内部 `ControlledCaseApprovalSubmission.submit` 现在区分原停车受理和已由专用
+`case_approval` 后继 claimed／running 的同 Turn 受理；不要求运行中的兄弟 ToolJob
+仍未开始。复用原 active-Turn、停车／admission、journal／outbox 和正式租约内核，
+只给选定的其他原 pending 项写决定、queued receipt、后继 Task／outbox 和两项审计。
+当前执行者的 owner／租约／状态、native、已知工具结果和模型账本不因受理改变。
+
+读取现 owner 的原出站命令后，先核专用 operation、同 binding、Task 身份及原 producer，
+再进入既有原件锁核；不跨入外部 Session／原任务。核当前 AgentAttempt／Worker claim
+事件、原正式 Attempt、Session／owner／RunItem 截止及根期限，全部写入后再次核验。
+同决定复用原受理，相反决定冲突；等待者取消或提交后丢回执不证明未提交，不自动重跑。
+日志沿原设施记录 `admission_mode`／`active_task_id`，不返回任何运行凭据。
+
+原生只读端口的可选 `consuming_interrupt_id` 仅用于上述已核验的兄弟观察：允许完整
+原批次，或仅减去这一确定已消费兄弟的批次。默认读者仍严格要求完整批次，不接受一般
+子集、选定项缺失、外部 identity 或原参数漂移。原 parser 仍拒绝“仅有持久 resume、
+没有已结算 native 工具结果”的未知窗口，不借此授予继续、投影或重放权限。
+
+专项验证包括真实阻塞工具期间受理、claimed 后受理再执行原 B、两个决定的交叉组合、
+串行领取隔离、原件／租约漂移、并发、事务回滚、丢回执及取消等待者。A 入队不使 B 的
+原 claim 失效，但 B 返回后仍是 §217 的 pre-repark，A 仍不能领取；正式后继重新停车、
+完整状态谱系、后继结果／唯一结算及独立进程强杀仍待实现或验收。main／CLI／Dispatcher
+未安装新路径，writer 默认关闭；无公共 API、DDL、依赖或格式版本变更。实际红绿和
+消费者回归见实施记录 §218；§215 未定位的账本风险继续保留。
+
 ### 原路由与恢复验证
 
 关闭新选路时记录 `deep_agent_new_turn_route_disabled`，带 `session_id`、`turn_id` 和 `recovery_reason=new_turn_admission_disabled`；这是路由决定，不是取消/停止回执。

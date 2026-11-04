@@ -2,7 +2,7 @@
 
 日期：2026-10-25 起。当前实施依据：[完整 v4 方案](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/docs/langgraph-deepagents-integration-plan-v4-2026-10-27.md)；[v3 方案](langgraph-deepagents-integration-plan-v3-2026-10-26.md)及[v2 方案](langgraph-deepagents-integration-plan-v2-2026-10-25.md)保留历史。
 
-**当前子步：v4 E／§12.1＋A2-3 的正式失租仅结算专用领取、原子结算与持久 ACK（§202），承接 §201 不可变谱系准入。独立 scoped Task 租约保留原生产者终态与 owner；复用唯一 RunStore 结算核，不重跑图／模型／工具／Session finalizer。普通 Worker 继续拒绝，未开放生产装配；验证范围及剩余出口见 §202。§52–54 等历史结果保留原证据范围，不代替当前源码或全系统验收。完整 v4 及 H01–H12 仍按实际依赖推进，生产默认关闭。**
+**当前子步：v4 §7.3.1–2／§12.1 的正式审批运行中受理兄弟决定（§218），承接 §216 原等待材料与 §217 单项 Runtime 应用。复用原 active-Turn／原件／双归属规则，当前 B claimed／running 时，A 只原子入队、不并发领取或推进图；A 入队后原 B 仍可继续。B 返回仍为 pre-repark，正式后继重新停车、完整状态谱系、后继结果／唯一结算及独立强杀仍待后续。顶部旧 §202 快照同步到最新子步，历史记录不改写；§215 两项未定位账本失败保留。验证范围及剩余出口见 §218，不代替全系统验收；完整 v4 及 H01–H12／E3／E4 仍按实际依赖推进，生产默认关闭。**
 
 2026-10-26 附件再复核见 §37；冻结请求恢复见 §38，语义输入冻结见 §39，结算响应绑定及已结算 DTO 只读导入见 §40，语义服务消费原结算见 §41，冻结语义输入的应用编排消费见 §42，orchestrating 安全后继与代码制品指纹见 §43，Deep Agents 图输入资产见 §44。各阶段记录保留当时结果，以本页顶部快照及最新阶段的限定范围为准。
 
@@ -10879,3 +10879,64 @@ $files = Get-Content ../.codex-logs/e217-affected-files.txt
 最终暂存 `diff --cached --check` 发现新专项末尾多一空行（exit2），只清理该EOF空行后复核exit0；没有改测试逻辑或生产字节。聚合校验确认给当前新专项加回这一LF即可精确复现五文件运行时的tests摘要 `9fc183fd7716493b48e2381f8abb606ff2325a2a88d895d72f0e202592596c3b`。格式修订后 `e217-runtime-final-format.log` 再次实际 **46 passed、251.64秒、exit0，无skip／deselect**；不是将此前273项或60文件整组重跑一遍。
 
 最终交付字节见 `e217-source-delivery.log`：src879个、摘要仍 `678771fffeb98612bbf5f3c5d0b14e74b1a9a55e68d507efb27c96df684f5f38`；tests694个、摘要 `56eb81268d5f852d03dc10e0277f12097cbff4066bd9ff8cf339436054a01cd5`。`e217-static-delivery.log` 的全src／tests compileall和pip check均exit0；测试／multiprocessing残留为0。最终只提交上述9文件，原失败与skip不抹除，不把独立lint／typecheck缺失说成已通过。
+
+
+## §218 正式审批运行中受理兄弟决定，不转移执行权（2026-11-04）
+
+### 续接、依据与范围
+
+基线 §217／`45aa5b53c98ed5abf7f80c88dc0606c94dd0aaeb`。核对 active goal、v4 §7.3.1–2／§12.1、最新记录、Git／未提交草稿及实际测试原句柄，不把草稿或旧绿色当当前实现。顶部“当前子步”仍停在 §202，本轮同步到 §218；历史章节不改写。用户 v3 SHA256 仍为 `8a43e94160767a0de20740f2cb30782f06322cbc3467076dfcb120d4efdf1ad4`，不改、不暂存。§184 的 Conda＋pip 迁移不重复、不调用 UV、不改依赖或锁；固定解释器仍为 `E:\MiniConda3\envs\Agent\python.exe`。
+
+本步是 v4 E／§12.1 的审批受理子步及 §7.3.1–2 串行所有权契约，不是正式后继重新停车、完整恢复或结算。依据 → 采用方式：
+
+- 普通 `framework_approval_submission.assert_active_approval` 已按有效 Turn 而非仅 waiting 状态受理 → 正式端口复用同一谓词；补充正式原件／双归属核，不伪装普通审批任务。
+- 原 `ControlledCaseApprovalContinuations._wire／_locked`、正式 `lock_case_execution／require_case_live／require_case_deadline`、等待 `_worker_fact` → 同连接观察已存在的专用执行者、AgentAttempt／Worker claim 和原正式 Attempt；不构造 RuntimeExecutionOwner、不领取或延长任何租约。
+- 原 `native_approval_batch`、固定 SDK 的 get_state／get_tuple 与共享 `native_interrupts` → 仍按官方保存的 pending／task-result 事实读取，仅为确定消费中的兄弟保留精确身份例外；不调用图、不改默认完整批次契约。
+- 本地《Agent轨迹与协议鲁棒性.html》04／04.5 的幂等、重复执行和半成功链路 → 核全表原件、效果次数、模型次数、并发／回滚／未知回执，而非只验返回值。
+
+仅5文件：2生产 Python（正式 submission／原生批次读者）、1新专项、路由说明和本记录。无公共 HTTP／DTO／DDL／依赖／格式版本或生产选路变更；main／CLI／Dispatcher 未安装新路径，writer 默认关闭。
+
+### 根因与实现
+
+原正式 submission 把“受理决定”与“全批次仍原样停车、所有 Job 均未开始”绑定。B claimed／running 时 A 即使仍是同 Turn 的原待审项，也被 `_require_parked` 拒绝，违背 v4 §7.3.1–2。此处缺的是受理资格与执行资格分离，而非取消原双租约核验；没有通过放宽领取、复制调度器或允许并发图调用来修补。
+
+提取原完整 pending／active-Turn／根模型账本／batch link 核与未启动 Job 核；旧停车受理、begin 和 prepare_delivery 保留原完整批次＋全部 Job 未启动语义。新增 owned-sibling 观察分支：先核当前 owner 出站命令确为同 binding、同物理 Task、同原 producer 的 case_approval，再复用专用原件锁核、AgentAttempt／Worker claim journal、Session token／Turn、正式 Item／Attempt、原期限和三项租约截止。仅 selected A 仍须完整原 pending 身份和未启动 Job，不错误要求 B 仍 waiting。
+
+沿原事务写 A 的决定／queued receipt、确定性 Task／v2 outbox 和 `approval.resolved／approval.continuation_queued` 两项审计；全部写完再观察当前 owner 与 fresh DB clock，任一期限跨越整体回滚。当前 B／原 producer、RunItem／Attempt、native 和模型账本不被受理改写；Session 仅沿原事件设施推进审计头。同决定复用原记录，相反决定冲突；取消等待者或提交后丢回执不被当作 SQL 未提交，不自动重跑。沿原日志补 `admission_mode／active_task_id`，失败也先记录所选受理模式，不记录执行凭据。
+
+原生读者新增可选内部参数 `consuming_interrupt_id`，只允许完整原候选或恰好减去已核验的 B；A 缺失、身份漂移、额外项、foreign consuming 仍拒绝，不是通用 subset 模式。默认调用方不传此参数，仍严格完整批次；已全局核对 state reader、正式 submission／begin／delivery 和共享 projection 消费方。共享 parser 的“持久 resume 但无已结算 native 工具结果”仍明确拒绝，本轮补了真实隔离 checkpoint_writes 负例，没有借此把未知效果推断为成功。
+
+### TDD、明确失败与修正
+
+所有日志在本机 `.codex-logs/` 保留、不提交；失败不覆盖、不计为通过：
+
+1. `e218-busy-red.log`：真实 B handler 阻塞时 A 批准／拒绝提交均被旧停车门拒绝，**2 failed、24.44秒**，确认目标红。
+2. 首次实现后 `e218-busy-first-green.log` 实为 **2 failed、21.48秒**：已成功入队，但新测试误读公开 AgentTaskRecord 不存在的 runtime_owner。只把新测试改为 queued／attempt_id=None 且序列化无 runtime_owner，不新增公开凭据字段。`e218-busy-real-tool-green.log` 随后 **2 passed、21.13秒**。
+3. 扩展 `e218-busy-expanded.log` 为 **1 failed、36 passed、216.57秒**。真实漂移 owner_task 指向原 case_execute 后，观察端错误进入专用 `_locked` 并解引用空 case_approval_reference。根因是调用专用原件核前未证明所读命令的专用身份；修到观察入口，不 catch 后吞错。
+4. 新增“claimed 的 B，在 A 入队后再真实 Runtime 执行”的四种批准／拒绝组合。`e218-busy-expanded-green.log` 为 **4 failed、37 passed、274.82秒**，4项均已走通执行但新断言误把 applied 当 receipt.state。依现有契约修为 delivered＋applied_at 非空；保留完整单项工具／原槽位、pending、模型／效果次数和 A 不可领取断言，不改生产状态机。
+5. 外部 Session／producer 防误锁测试首轮 `e218-foreign-delivery-red.log` 为 **2 failed、42 deselected、19.16秒**，停在新测试误把 wire 的 dict 当模型；先按真实 helper 解析 AgentTaskCommandV2，再运行 `e218-foreign-delivery-red-verified.log`：**2 failed、42 deselected、19.25秒**。其中 Session 漂移已跨入错误 Session 锁并抛 KeyError，producer 漂移已错误查外部原 outbox，未在观察入口拒绝。补齐上述同 binding／Task／producer 前置核，不减弱负例或允许外部原件。
+6. 最终 `e218-busy-final-specialty.log`：**44 passed、275.76秒、exit0，无skip／deselect**。覆盖真实阻塞工具期间受理、claimed／running／sending／已应用阶段、B批准／拒绝、A两个决定交叉、16种原件／所有权／期限漂移、同／相反决定并发、最后审计跨期限、rollback／reply-loss／cancelled waiter、未知 resume 和不允许一般 subset。之后未再改任何生产／测试字节。
+
+### 冻结后消费者回归与静态
+
+`e218-source-frozen.log` 与原句柄终态后 `e218-source-verified.log` 完全一致。按 POSIX 相对路径UTF8＋NUL＋原文件字节＋NUL聚合：src **879个py，1ee26bddcff348fccc9f991643512513e39a8bb791a139bbab8e4991aceda6ba**；tests **695个py，c1a2eda167fe4085299cd6fa69384ed639410c9a4afdeab3fe2acf1eb02d141d**。冻结前后全 src／tests compileall 与 pip check 均exit0，后者 No broken requirements found；ruff／mypy 经 find_spec 确认缺失，未安装或执行独立 lint／typecheck。
+
+每条 pytest 前实际执行 `../scripts/clear_uv_environment.ps1 -ProcessOnly`；cwd=Agent_Server，RUN_LIVE_POSTGRES_TESTS=1、其他实际 RUN_LIVE_* 开关=0、QA_FRAMEWORK_WORKER_DIAGNOSTICS=1、PYTHONIOENCODING=utf-8，不重启 PG／Redis。最终15文件组完整清单在 `e218-affected-files.txt`；等价实际文件命令：
+
+~~~powershell
+& E:\MiniConda3\envs\Agent\python.exe -u -m pytest tests/test_controlled_case_approval_busy_submission.py tests/test_controlled_case_approval_submission.py tests/test_controlled_case_approval_claim.py tests/test_controlled_case_approval_delivery.py tests/test_controlled_case_approval_application.py tests/test_controlled_case_approval_runtime.py tests/test_controlled_case_approval_state.py tests/test_controlled_case_approval_wait.py tests/test_controlled_case_approval_wait_ack.py tests/test_controlled_case_pending_approvals.py tests/test_controlled_case_executor.py tests/test_framework_approval_submission.py tests/test_framework_approval_runtime.py tests/test_framework_approval_projection.py tests/test_framework_native_interrupts.py -q -rs --tb=short
+~~~
+
+`e218-affected-final.log` 原句柄实际 **703 passed、3643.06秒（1:00:43）、exit0，无skip／deselect**；包含上述44项专项，不重复相加。覆盖正式 submission／claim／begin／delivery／application／Runtime／state／初次停车／ACK／pending／Executor，以及普通审批 submission／Runtime／projection 和共享 native parser。§215 旧账本拒绝路径本组未再现，但不能据此称其根因已修复；原核完全未改。
+
+以所有实际 live=0、diagnostics=0 运行同字节专项，`e218-optout-final.log` 为 **44 skipped、7.83秒、exit0**，全部因缺真实 PostgreSQL／Redis，无纯协议通过项；不是44通过。全部测试句柄已取终态，pytest／multiprocessing 残留为0。
+
+### 证据边界、剩余与交付
+
+本轮证据是 UUID 隔离真实 PostgreSQL／Redis、固定官方 SDK／图、本机供应商 HTTP 替身、临时文件受控工具与协议负例的混合，不是703个真实业务目标，不是付费供应商或真实领域 Runner 验收。未运行全量后端、前端 build／typecheck／浏览器、新行为独立进程强杀、Docker／MySQL／RustFS、完整 main lifespan、双制品部署／一致备份恢复、E3／E4 和性能基线。
+
+B执行期间A可受理，但不能并发推进同图；A在B claimed时入队，也不使原B的准备／begin／交付／单项应用失效。B返回仍是 §217 的 pre-repark：Task running、state resuming，无新正式 Result／Assessment／settlement，A仍queued且不可领取。完整后继 state 谱系／专用重新停车、随后领取下一项、后继结果谱系与唯一正式结算、正式后继恢复与独立强杀仍是后续出口，不把 intent 受理当闭环完成。§215 两项未定位账本风险继续保留。
+
+对应关系：v4 §7.3.1–2／§12.1 → §218 → 复用 active-Turn／专用原件／租约内核的 owned-sibling intent 受理＋精确单兄弟 native 观察 → 真实目标红绿、44项专项、冻结后15文件703通过、opt-out／静态 → 上述重新停车／谱系／唯一结算和完整v4／H01–H12／E3／E4仍待完成。整体 goal 保持active，完整范围不缩减；剩余仍粗估 **4–8周有效开发／验收**，环境、授权及人工发布等待另计，不承诺完成日期。
+
+最终仅拟本地提交上述5文件；新测试单文件 force-add，不改 ignore，用户v3／原日志／缓存／锁／环境制品排除。提交前核 status、完整相关 diff、暂存范围、cached diff --check 和高置信度敏感新增行；采用“【feat】受理正式审批运行中的兄弟决定”，实际ID见 Git／交付，不推送或建PR。
