@@ -45,8 +45,10 @@ def test_worker_activity_diagnostics_render_only_approved_scalar_fields():
 
 
 @pytest.mark.asyncio
-async def test_rejected_clock_order_logs_original_sequence_without_repair(model_calls_harness, caplog):
+@pytest.mark.parametrize("reader", ["task", "root"])
+async def test_rejected_clock_order_logs_original_sequence_without_repair(model_calls_harness, caplog, reader):
     h = model_calls_harness
+    await h.calls.freeze(h.owner, policy(h))
     await begin(h)
     claimed, running = activity_events(h)
     backwards = claimed['timestamp'] - timedelta(seconds=1)
@@ -56,7 +58,10 @@ async def test_rejected_clock_order_logs_original_sequence_without_repair(model_
             (backwards, backwards.isoformat(), running['id']))
     before = activity_events(h)
     with pytest.raises(ValueError, match='Worker activity observations are out of order'):
-        await h.tasks.get_framework_worker_activity(h.task.id, session_id=h.session_id)
+        if reader == "task":
+            await h.tasks.get_framework_worker_activity(h.task.id, session_id=h.session_id)
+        else:
+            await h.calls.root_activity_intervals(h.binding, as_of=claimed['timestamp'] + timedelta(seconds=60))
     rejected, = [r for r in caplog.records if r.message == 'framework_worker_activity_originals_rejected']
     assert (rejected.task_id, rejected.attempt_id, rejected.binding_id) == (h.task.id, h.task.attempt_id, h.binding.binding_id)
     assert rejected.automatic_replay is False and rejected.activity_event_count == 2
@@ -76,6 +81,25 @@ async def test_rejected_clock_order_logs_original_sequence_without_repair(model_
         assert (value['activity_boundary_index'], value['activity_event_id'], value['activity_event_sequence'],
             value['activity_observed_at']) == (index, row['id'], row['event_sequence'], row['timestamp'].isoformat())
         assert value['task_id'] == h.task.id and value['automatic_replay'] is False
+
+
+@pytest.mark.asyncio
+async def test_root_activity_projection_preserves_original_worker_boundaries(model_calls_harness):
+    h = model_calls_harness
+    await h.calls.freeze(h.owner, policy(h))
+    await begin(h)
+    before = activity_events(h)
+    running = before[-1]["timestamp"]
+    as_of = running + timedelta(seconds=60)
+    budget = await h.calls.snapshot(h.binding)
+    assert await h.calls.root_activity_intervals(h.binding, as_of=as_of) == [(running, as_of)]
+    assert activity_events(h) == before and await h.calls.snapshot(h.binding) == budget
+    await h.tasks.finish(h.task, status="completed", result_status="waiting_approval")
+    returned = activity_events(h)
+    expected = [(running, returned[-1]["timestamp"])]
+    assert await h.calls.root_activity_intervals(h.binding) == expected
+    assert await h.calls.root_activity_intervals(h.binding, as_of=as_of) == expected
+    assert activity_events(h) == returned and await h.calls.snapshot(h.binding) == budget
 
 
 @pytest.mark.asyncio

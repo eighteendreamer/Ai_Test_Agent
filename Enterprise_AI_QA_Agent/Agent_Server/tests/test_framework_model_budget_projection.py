@@ -282,7 +282,7 @@ async def test_postgres_activity_reader_uses_persisted_worker_running_boundary_n
     }
     attempt = {"id": "worker-attempt", "worker_id": "worker-1", "status": "completed"}
 
-    def worker_event(status, observed_at, *, execution_returned=False):
+    def worker_event(status, observed_at, *, sequence, execution_returned=False):
         payload = {
             "task_id": task["id"],
             "turn_id": binding.turn_id,
@@ -298,13 +298,14 @@ async def test_postgres_activity_reader_uses_persisted_worker_running_boundary_n
             execution_returned=execution_returned,
             observed_at=observed_at,
         )
-        return {"session_id": binding.session_id, "type": f"agent_task.{status}",
+        return {"id": f"worker-event-{sequence}", "event_sequence": sequence,
+            "session_id": binding.session_id, "type": f"agent_task.{status}",
             "timestamp": observed_at, "payload": payload}
 
     worker_events = [
-        worker_event("claimed", base),
-        worker_event("running", base + timedelta(seconds=10)),
-        worker_event("completed", base + timedelta(seconds=20), execution_returned=True),
+        worker_event("claimed", base, sequence=1),
+        worker_event("running", base + timedelta(seconds=10), sequence=2),
+        worker_event("completed", base + timedelta(seconds=20), sequence=3, execution_returned=True),
     ]
 
     class Cursor:
@@ -335,6 +336,7 @@ async def test_postgres_activity_reader_uses_persisted_worker_running_boundary_n
             elif "SELECT id, worker_id, status, started_at, finished_at FROM" in statement:
                 self.rows = [attempt]
             elif "payload->>'task_id'=%s" in statement:
+                assert "SELECT id, event_sequence, session_id, type, timestamp, payload FROM events " in statement
                 self.rows = worker_events
             elif "SELECT job.started_at" in statement:
                 self.rows = []

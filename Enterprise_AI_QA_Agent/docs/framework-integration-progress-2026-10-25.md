@@ -11411,3 +11411,13 @@ $files = Get-Content ../.codex-logs/e225-model-matrix-files.txt
 本步只提交共享resolver、官方模型测试及本记录，提交信息 `【fix】移出模型同步构造并绑定解析配置快照`，实际ID见Git。§224三文件另按归属提交；§219全部草稿和用户v3不暂存，忽略日志／临时诊断不入Git，不push／PR。没有公共契约／配置／数据库迁移或额外权限要求；取消后线程可能继续这一限制已在实现、日志和四传输测试中显式保留。
 
 下一步用同一冻结字节执行§219原33文件，而不是沿用§223旧字节的1704通过；schema8 re-park、A领取、terminal／新批次、结果谱系／唯一结算、独立进程新格式以及完整v4剩余阶段仍未完成。全量后端、前端build／typecheck／浏览器、真实供应商／领域Runner、完整main lifespan、双制品／备份恢复、E3／E4及性能基线未在本步执行。整体goal保持active，剩余仍粗估4–8周有效开发／验收，环境和人工等待另计。
+
+## §226 根活动预算SQL来源列修复的消费验收收口（2026-11-04）
+
+对应v4 §6.3、§8及§9.2；续接§224的6红／35绿与原八文件2 failed、303 passed。§225已提交为 `a8b5f02fa0eba64d63898997c3540c9c8cf3ca2b`，修复共享模型同步构造占用loop及配置快照竞态；原历史强杀失败仍保留，不回写旧结果。
+
+本步不新增源码修改，仅提交此前§224三份已冻结草稿：`src/runtime/postgres_framework_model_calls.py` 的根预算事件SELECT补id／event_sequence、`tests/test_framework_worker_activity.py` 的两读者拒绝与原件不变／正常区间覆盖、`tests/test_framework_model_budget_projection.py` 的替身来源列及SQL契约同步。WHERE／ORDER BY、原事件和预算语义不变，不伪造历史顺序或加缺字段fallback；不包含§219的schema8功能。
+
+验证依据是§225同字节的完整八文件 **305 passed、1776.83秒、exit0，无skip／deselect**，日志 `e225-projection-consumers.log`。包括原缺id四项、Worker／ToolJob／模型根预算与消息诊断，以及原2秒TTL下四个独立强杀窗口；另七模型消费文件266通过、compileall／pip check通过、字节前后相同，详见§225，不把重述计为又执行了一次回归。独立ruff／mypy、修复后的原33文件与全系统其他验收仍未执行。
+
+提交前重新核Git status、diff及暂存范围，仅这三文件和本记录；提交信息 `【fix】补齐根活动预算的持久事件来源列`，实际ID见Git。§219草稿、用户v3、日志／探针不暂存，不push／PR。没有API／DTO／DDL／路由或迁移变更；后续仍须在当前字节执行原33文件，才能决定§219是否可提交，未授予re-park／A领取或新格式恢复权限。完整goal继续active，剩余粗估4–8周有效开发／验收，等待另计。

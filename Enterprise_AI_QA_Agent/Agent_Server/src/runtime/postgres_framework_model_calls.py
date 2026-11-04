@@ -381,7 +381,7 @@ class PostgresFrameworkModelCalls:
                 )
                 claim_epochs = {}
                 cur.execute(
-                    f"SELECT session_id, type, timestamp, payload FROM {event_table} "
+                    f"SELECT id, event_sequence, session_id, type, timestamp, payload FROM {event_table} "
                     "WHERE session_id=%s AND payload->>'task_id'=%s "
                     "AND (payload->>'binding_id'=%s "
                     "OR payload->'framework_worker_activity'->>'binding_id'=%s) "
