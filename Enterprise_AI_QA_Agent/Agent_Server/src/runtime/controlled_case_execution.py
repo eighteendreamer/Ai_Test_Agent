@@ -72,7 +72,14 @@ def require_case_live(locked, now):
     except ValueError:
         logger.warning("controlled_case_execution_lease_rejected", extra={"run_id": locked.lease.run_id,
             "run_item_id": locked.item.id, "execution_id": locked.attempt.id,
-            "authority_observed_at": now.isoformat(), "recovery_reason": "original_run_item_lease_inactive"})
+            "authority_observed_at": now.isoformat(), "recovery_reason": "original_run_item_lease_inactive",
+            "case_lease_expires_at": locked.item.lease_expires_at.isoformat() if locked.item.lease_expires_at else None,
+            "case_lease_remaining_seconds": (locked.item.lease_expires_at-now).total_seconds()
+                if locked.item.lease_expires_at else None,
+            "case_lease_started_at": locked.item.started_at.isoformat() if locked.item.started_at else None,
+            "case_heartbeat_at": locked.item.heartbeat_at.isoformat() if locked.item.heartbeat_at else None,
+            "case_item_status": locked.item.status, "case_expected_states": ",".join(locked.active_states),
+            "automatic_replay": False})
         raise ContinuationLeaseLostError("Controlled case original RunItem lease is no longer active") from None
 
 

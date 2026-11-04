@@ -2,7 +2,7 @@
 
 日期：2026-10-25 起。当前实施依据：[完整 v4 方案](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/docs/langgraph-deepagents-integration-plan-v4-2026-10-27.md)；[v3 方案](langgraph-deepagents-integration-plan-v3-2026-10-26.md)及[v2 方案](langgraph-deepagents-integration-plan-v2-2026-10-25.md)保留历史。
 
-**当前子步：§219 正式后继状态材料仍为未提交草稿，44项专项通过，但33文件消费者回归实际3 failed／1699 passed。三项均在原初次停车遭 Worker 活动时序倒序拒绝，尚未定位根因；不能称33文件全绿或将草稿交付。§220 先补共享 Worker 原始边界诊断，保持拒绝规则、不排序／钳制／重写时间。§219 仍为 pre-repark，不释放 B、不让 A 领取；专用重新停车、完整多步继续、后继结果／唯一结算及独立强杀仍待后续。§215 两项账本风险另行保留，未证明与本次同源。完整 v4 及 H01–H12／E3／E4 范围不缩减，生产默认关闭，整体 goal active。**
+**当前子步：§219 正式后继状态材料仍为未提交草稿，44项专项通过，但33文件消费者回归实际3 failed／1699 passed。§221 带实际formatter的三文件诊断再现1 failed／195 passed／1 setup error：原Worker事件序号3→4，时间倒退76.757毫秒；另有正式RunItem租约失效，尚无同源证据。写入侧有界取证未复现，不能据定点绿色关闭风险；本步仅补租约拒绝原始到期值诊断，不改校验／时间／租约。§219仍为pre-repark，不释放B、不让A领取；重新停车、完整多步继续、后继结果／唯一结算及独立强杀仍待后续。§215两项账本风险独立保留。完整v4及H01–H12／E3／E4范围不缩减，生产默认关闭，整体goal active。**
 
 2026-10-26 附件再复核见 §37；冻结请求恢复见 §38，语义输入冻结见 §39，结算响应绑定及已结算 DTO 只读导入见 §40，语义服务消费原结算见 §41，冻结语义输入的应用编排消费见 §42，orchestrating 安全后继与代码制品指纹见 §43，Deep Agents 图输入资产见 §44。各阶段记录保留当时结果，以本页顶部快照及最新阶段的限定范围为准。
 
@@ -11074,3 +11074,81 @@ $files = Get-Content ../.codex-logs/e219-affected-files.txt
 最终实际全src／tests compileall与pip check均exit0，No broken requirements found；ruff／mypy仍经find_spec确认缺失，未安装／运行独立lint或typecheck。所有pytest、只读采样与临时诊断句柄均已取终态，pytest／multiprocessing无本轮残留。用户v3的原SHA256未变。
 
 §219仍保留未提交，§220只提交上述4文件的诊断子步；提交前核完整diff、status、cached diff --check、明确白名单新增行与暂存范围，不提交日志／临时包装／环境／用户v3，不push／建PR。提交说明“【chore】补充Worker活动时序拒绝诊断”，实际ID见Git与交付。三项间歇时序失败及§215风险均未关闭，后续应使用已配置ContextFormatter的诊断启动取得真正失败原件，而不是继续把未复现当修复；整体goal继续active。
+
+## §221 Worker时间倒序真实原件与正式租约拒绝取证（2026-11-04）
+
+### 续接、依据与未提交边界
+
+基线§220／`5ab345c9871311e19e77abb0ad6d383d13cb042a`。对应v4 §6.3／§8／§9.2：先定位间歇原件失败，不继续依赖它的重新停车。核active goal、v4、最新实施记录、Git与原调用链；§219生产／测试／路由草稿不覆盖、不暂存，用户v3原SHA256 `8a43e94160767a0de20740f2cb30782f06322cbc3467076dfcb120d4efdf1ad4`不变。
+
+用户关于“同时迁移项目依赖管理，逐步移除UV声明”的决定已由§184／`435d9cf7c`落实日常入口：根pyproject无tool.uv工作区声明，根requirements.lock完整固定版本／哈希，README当前启动与质量门用Conda＋pip。本轮实际核对这些文件与test_pip_environment_migration，不重装、不调用UV、不重复该迁移。运行时worker capabilities／orchestration artifact／submission／release verifier仍明确消费原uv.lock身份；reader-first身份演进仍待独立子步，不能仅因日常不用UV就删锁或将requirements摘要冒充历史绑定。保留这两类边界，不把历史验收命令改写为本轮成绩。
+
+依据与采用方式：PostgresAgentTaskStore._event同次clock_timestamp＋Session事务事件writer → 临时进程内包装原端口，记录数据库返回、INSERT意图与同事务读回，不替换时间源；原require_case_live／assert_runtime_owner → 诊断直接消费同次锁定RunItem和原now，不额外读取可能不同的时钟；原ContextFormatter标量白名单及§220实际输出测试 → 同步formatter并核渲染结果，不把caplog隐藏extra当可用日志。本地课程Agent轨迹与协议鲁棒性的状态／超时／原件要求仍适用；未引入计时器、调度层、重试或新依赖。
+
+### 三文件原诊断终态：再次失败，取得完整原边界
+
+`e221-owned-consumers-diagnostic.log`使用固定解释器、原pytest.main插件端口，只给Worker活动logger加既有ContextFilter／ContextFormatter的stderr handler；不改源码／校验。完整progress／delivery／application三文件原句柄实际 **1 failed、195 passed、1 error，2118.93秒（35:18）、exit1，无skip／deselect**。不是197项通过，不以§220较早219通过替代它。
+
+失败为application的 `test_application_and_material_reader_require_exact_captured_task[project_id-read_tool_projection]`，在初次park／`_worker_fact(agent_task.claimed)`读到：
+
+| 原顺序 | event_id | status | observed_at（UTC） |
+| --- | --- | --- | --- |
+| sequence 3 | `20e1808e-13c4-4341-ab36-77f24cebde50` | claimed | `2026-11-04T06:16:27.800195+00:00` |
+| sequence 4 | `e28c8cd9-9c27-45fd-926a-6766f39e12f7` | running | `2026-11-04T06:16:27.723438+00:00` |
+
+Task=`56fafbed-57c4-44e4-9bc7-8b0775924c17`、binding=`binding-10c6d12eaa4240099e9ba4e3c37e0a45`、attempt=`69b0b788-2d95-4daf-8ec7-2a2969619794`。两项execution_returned=false，原事件序号明确，时间倒退 **0.076757秒**；实际formatter已输出完整边界，不再仅有Pydantic截断input。当前只能证明读到的原件倒序，尚不能确认是系统时钟、数据库时钟、写入或其他路径的根因；没有排序、钳制、重写、忽略消息或放宽核验。
+
+另一个setup error是progress的 `test_retained_progress_preserves_root_and_exact_runtime_slots_without_parking[approved]`，在首次图调用 `execution_deadline → assert_runtime_owner → require_case_live`抛 **Controlled case original RunItem lease is no longer active**，尚未进入新progress功能。formal_case按应用UTC领取120秒正式租约是代码事实，但原失败缺完整expiry／准备耗时，不能把它直接归为冷启动慢或与Worker倒序同源；未延长120秒或增加自动续租。
+
+### 单次有界观察与写入侧证据，不冒称排除故障
+
+两次只读时钟窗口均已终态：`e221-db-clock-probe.log`为单连接 **175765样本、600.125秒、0次倒退、最小delta 0.001509秒**；`e221-cross-backend-clock-probe.log`为4个保持连接交替读取 **160176样本、120.062秒、跨连接及单backend倒退均0、最小跨连接delta 0.000349秒**。只说明这些窗口未观察到倒退；没有改系统／容器时钟、重启PG／Redis或推断NTP／虚拟化为根因。
+
+随后临时观测器包装原_event，保留原SQL及异常；从既有SQLAlchemy连接的固定psycopg ConnectionInfo.backend_pid取backend身份（已读安装版本属性源码），记录本机perf_counter_ns边界。附加SELECT只在原事务读回本事件id／sequence／timestamp／活动JSON时间，不改历史。该包装不进入产品提交，附加读会影响耗时，不能作为无探针性能基线。
+
+- 首次从临时脚本目录启动未配置PYTHONPATH，ModuleNotFoundError: src，尚未执行用例；修正为Agent_Server工作目录加该目录PYTHONPATH。
+- `e221-writer-boundaries.log`实际 **1 failed、4 passed、2 warnings、55.62秒、exit1**。4项是原progress setup及progress／delivery／application定点消费者；唯一失败是临时探针第二次复用同一Session提交，被pending-work规则正确拒绝，非产品缺陷。此轮23条写入边界、2个backend，数据库返回／INSERT时间／持久行头／JSON原件逐项一致，无同task倒序。
+- 临时隔离探针改用新Session时误复制原state_revision=1，`e221-isolated-writer-boundaries.log` **1 failed、2 warnings、14.14秒**，SessionWriteConflictError明确拒绝新id冒用原revision；尚未进入Worker写入，不计产品失败。随后改用项目harness已有的新SessionRecord构造，未重置已有Session／Task／RunItem。
+- `e221-isolated-writer-boundaries-v2.log`限定最多100个独立Session且最多240秒，不无限重试。实际 **1 passed、2 warnings、16.44秒**；探针循环100个Task生命周期 **11.087171秒**，300条原Worker边界、1个backend，四处时间逐项一致、同task倒序0。100个生命周期不是100项pytest，也不是完整正式用例／模型／工具执行。
+- `e221-case-lease-boundary.log`只单跑原setup error对应用例，实际 **1 passed、2 warnings、18.19秒**。63次原租约检查全部通过，初次now=`06:47:58.050610+00:00`、原expiry=`06:49:57.767230+00:00`、剩余119.71662秒；pending_formal准备2.753517秒，观测最小剩余116.442122秒。后继领取沿原协议更新expiry，并非探针续租。未再现原setup error，不能据此关闭它。
+
+上述warnings均为临时pytest.main进程内启动时anyio／langsmith已导入的assertion rewrite提示，未改测试断言。所有探针句柄已收终态；原PG／Redis UUID隔离夹具只清理自身记录，没有业务目标、供应商付费请求或服务重启。
+
+### TDD：仅补正式租约拒绝原值及实际日志输出
+
+取证暴露的是可观测性缺口，不是已经证实的租约算法缺陷。本步修改3个Python文件：
+
+- `src/runtime/controlled_case_execution.py`：原_validate_lease拒绝处记录**同次锁定item**的expiry、剩余秒数（可负，不钳制）、started_at、heartbeat_at、item status及原allowed states，automatic_replay=false；保留原reason、原ContinuationLeaseLostError与from None。无额外SQL、时钟、授权或数据修改，不打印item／attempt／lease对象、凭证或异常全文。
+- `src/core/log_format.py`：既有DIAGNOSTIC_FIELDS同步6项标量白名单，无任意extra字符串化；原run／item关联字段仍走ContextFilter。
+- `tests/test_controlled_case_execution_lease.py`：5项纯拒绝边界（过期／恰等／expiry缺失／状态／token）及1项live正例；真实PG原双租约／fenced saver／execution_deadline／模型准备负例扩展实际formatter核验，保持原失权拒写、账本不变、checkpoint不变和不续租断言。纯用例仅为日志契约输入，不声称复现了环境时钟故障。
+
+`e221-case-lease-log-red.log`实际 **6 failed、3 passed、22 deselected、22.90秒**，失败为缺新标量和缺实际formatter字段；原租约失效拒绝已发生，未削弱该断言。补齐后完整租约文件 `e221-case-lease-log-green.log` **31 passed、104.10秒、exit0，无skip／deselect**。随后将纯missing样本的started_at／heartbeat_at也设为None并核完整null输出，再冻结最终源码，不用前31项代表此后字节已验证。
+
+### 最终冻结回归与剩余出口
+
+`e221-source-frozen.log`按相对Agent_Server的POSIX路径UTF8＋NUL＋原字节＋NUL聚合：src **881个py，38dbc7f89ae202c3c9cb67d4e9dd4f0ffb55527753b0f70eb79933f30c01f3f9**；tests **696个py，5529faf3e09ef1449803b9b97c37da51168399d08f69173b8c2529261355f74b**。实际全src／tests compileall与pip check均exit0，No broken requirements found；ruff／mypy仍未安装，不安装或冒称跑过独立lint／typecheck。
+
+每条pytest前先执行 `../scripts/clear_uv_environment.ps1 -ProcessOnly`，固定 `E:\MiniConda3\envs\Agent\python.exe`、cwd=Agent_Server、PG=1、其他实际RUN_LIVE开关=0、diagnostics=1、UTF8。最终原句柄日志 `e221-lease-diagnostic-consumers.log`运行完整租约／Worker活动／monitor／release_startup四文件，以及上列4项定点消费者；实际终态另追加，不用31项中间结果或4项定点绿色替代完整三文件／33文件失败。
+
+完整命令（清UV与开关同上）：
+
+~~~powershell
+& E:\MiniConda3\envs\Agent\python.exe -u -m pytest `
+  tests/test_controlled_case_execution_lease.py `
+  tests/test_framework_worker_activity.py `
+  tests/test_agent_task_monitor.py `
+  tests/test_framework_release_startup.py `
+  'tests/test_controlled_case_approval_progress.py::test_retained_progress_preserves_root_and_exact_runtime_slots_without_parking[approved]' `
+  'tests/test_controlled_case_approval_progress.py::test_rehashed_progress_is_not_an_authority_for_changed_originals[drop]' `
+  'tests/test_controlled_case_approval_delivery.py::test_first_send_rechecks_current_originals_after_running[parent]' `
+  'tests/test_controlled_case_approval_application.py::test_application_and_material_reader_require_exact_captured_task[project_id-read_tool_projection]' `
+  -q -rs --tb=short
+~~~
+
+原句柄实际终态 **95 passed、341.83秒（5:41）、exit0，无skip／deselect**。这是最终字节的四文件＋4个定点消费者，不冒称完整progress／delivery／application三文件或33文件重跑通过。真实PG／Redis、固定官方图／fenced saver及本机HTTP合成对端只证明上述测试范围，非真实业务供应商／领域Runner。`e221-source-verified.log`与冻结src／tests数量和摘要完全相同，之后全src／tests compileall及pip check再次实际exit0；find_spec确认ruff／mypy缺失，未安装或运行独立lint／typecheck。
+
+同字节所有实际live=0、diagnostics=0的租约文件 `e221-case-lease-optout.log`实际 **6 passed、25 skipped、10.40秒、exit0**；6项为纯日志／校验契约，25项因需要真实PG／Redis跳过，不能算31通过。全部pytest／临时探针／采样句柄已终态，检查固定Agent解释器的pytest／multiprocessing／本步探针残留为0；用户v3原SHA256未变。提交前检查完整四文件diff、status、暂存范围、cached diff --check及高置信度敏感新增行；仅本步4文件本地中文提交，不含§219或用户文件。提交说明“【chore】补充正式租约拒绝原值诊断”，实际ID见Git及交付。
+
+本诊断不解决Worker时间倒序根因，也不关闭setup租约失效与§215账本风险；§219仍不提交。下一出口须在更接近原失败负载的**有界写入侧观测**中取得倒退那一刻的DB返回／pid／monotonic边界，区分writer与reader；租约下一次拒绝则用新增原值确定是否真正到期。未授权改系统／容器时间或重启服务，不能先动这些环境条件来“获绿”。之后才收口§219、专用re-park、A领取、terminal／新批次、结果谱系／唯一结算与独立进程验收。
+
+未运行全量后端、前端build／typecheck／浏览器、新格式独立强杀、真实付费供应商／领域Runner、Docker／MySQL／RustFS、完整main lifespan、双制品部署／一致备份恢复、E3／E4和性能基线。仅拟提交本步3个Python文件和本记录，共4文件；临时脚本／日志、§219全部草稿与用户v3排除，不push／建PR。完整v4目标继续active，剩余仍粗估 **4–8周有效开发／验收**，环境及人工等待另计；间歇故障根因未定使估算不确定性增大。

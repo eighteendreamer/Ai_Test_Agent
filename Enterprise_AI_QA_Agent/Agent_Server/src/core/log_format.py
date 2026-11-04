@@ -45,6 +45,8 @@ DIAGNOSTIC_FIELDS = (
     "authority_lock_seconds", "authority_check_seconds", "recovery_phase", "retry_count", "not_before_ms",
     "activity_event_count", "activity_boundary_index", "activity_event_id", "activity_event_sequence",
     "activity_status", "activity_observed_at", "activity_execution_returned", "automatic_replay",
+    "case_lease_expires_at", "case_lease_remaining_seconds", "case_lease_started_at", "case_heartbeat_at",
+    "case_item_status", "case_expected_states",
 )
 
 

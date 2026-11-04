@@ -5,6 +5,7 @@ import json
 import asyncio
 from datetime import datetime, timedelta, timezone
 import time
+from types import SimpleNamespace
 from uuid import uuid4
 
 import pytest
@@ -34,6 +35,50 @@ def capabilities():
 async def claim(s, raw=None):
     return await s.h.tasks.claim_controlled_case(raw or delivery(s), worker_id="case-worker",
         framework_capabilities=capabilities())
+
+
+@pytest.mark.parametrize("rejection", ["expired", "equal", "missing", "status", "token"])
+def test_case_lease_rejection_renders_same_original_clock_without_capabilities(caplog, rejection):
+    from src.core.log_format import ContextFilter, ContextFormatter, LOG_FORMAT
+    from src.runtime.controlled_case_execution import require_case_live
+    from src.application.test_runs.run_store import PostgresTestRunStore
+
+    now = datetime.fromisoformat("2026-11-04T06:16:27.800195+00:00")
+    expiry = now - timedelta(seconds=1) if rejection == "expired" else (
+        None if rejection == "missing" else now if rejection == "equal" else now + timedelta(seconds=1))
+    private = "fixture-private-case-lease-capability"
+    item = SimpleNamespace(id="item", status="queued" if rejection == "status" else "running",
+        lease_token="other" if rejection == "token" else private, lease_expires_at=expiry,
+        started_at=None if rejection == "missing" else now-timedelta(seconds=119),
+        heartbeat_at=None if rejection == "missing" else now-timedelta(seconds=120))
+    locked = SimpleNamespace(store=PostgresTestRunStore, item=item, attempt=SimpleNamespace(id="execution"),
+        lease=SimpleNamespace(run_id="run", lease_token=private), active_states=("running",))
+    before = vars(item).copy()
+    with pytest.raises(ContinuationLeaseLostError, match="original RunItem lease"):
+        require_case_live(locked, now)
+    record, = [record for record in caplog.records if record.message == "controlled_case_execution_lease_rejected"]
+    ContextFilter().filter(record)
+    diagnostic = json.loads(ContextFormatter(LOG_FORMAT).format(record).split(" diagnostics=", 1)[1])
+    assert diagnostic == dict(execution_id="execution", recovery_reason="original_run_item_lease_inactive",
+        authority_observed_at=now.isoformat(), case_lease_expires_at=expiry.isoformat() if expiry else None,
+        case_lease_remaining_seconds=(expiry-now).total_seconds() if expiry else None,
+        case_lease_started_at=item.started_at.isoformat() if item.started_at else None,
+        case_heartbeat_at=item.heartbeat_at.isoformat() if item.heartbeat_at else None,
+        case_item_status=item.status, case_expected_states="running", automatic_replay=False)
+    assert vars(item) == before and record.exc_info is None and private not in repr(record.__dict__)
+
+
+def test_case_live_check_does_not_log_rejection_or_rewrite_lease(caplog):
+    from src.runtime.controlled_case_execution import require_case_live
+    from src.application.test_runs.run_store import PostgresTestRunStore
+
+    now = datetime.now(timezone.utc)
+    item = SimpleNamespace(id="item", status="running", lease_token="capability", lease_expires_at=now+timedelta(seconds=1))
+    locked = SimpleNamespace(store=PostgresTestRunStore, item=item,
+        lease=SimpleNamespace(lease_token="capability"), active_states=("running",))
+    before = vars(item).copy()
+    assert require_case_live(locked, now) is None
+    assert vars(item) == before and caplog.records == []
 
 
 @pytest.mark.asyncio
@@ -227,7 +272,7 @@ async def test_case_heartbeat_renews_both_leases_atomically_and_does_not_change_
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("lost", ["run_item", "agent_task", "stripped"])
-async def test_either_lost_lease_fences_real_saver_writes_and_model_preparation(formal_case, lost):
+async def test_either_lost_lease_fences_real_saver_writes_and_model_preparation(formal_case, lost, caplog):
     from langgraph.checkpoint.base import empty_checkpoint
     from src.application.deep_agents.checkpoint_provider import DeepAgentCheckpointProvider
     from tests.test_framework_model_calls import intent
@@ -246,7 +291,8 @@ async def test_either_lost_lease_fences_real_saver_writes_and_model_preparation(
             if lost == "run_item":
                 with postgres_connect(s.h.settings) as conn, conn.cursor() as cur:
                     cur.execute("SELECT clock_timestamp() - interval '1 second' AS expiry")
-                    s.d.runs._write_item(cur, s.item.model_copy(update={"lease_expires_at": cur.fetchone()["expiry"]}))
+                    expiry = cur.fetchone()["expiry"]
+                    s.d.runs._write_item(cur, s.item.model_copy(update={"lease_expires_at": expiry}))
             elif lost == "agent_task":
                 assert await s.h.store.renew_turn_execution(s.session.id, task.lease_token, 0)
             else:
@@ -266,6 +312,19 @@ async def test_either_lost_lease_fences_real_saver_writes_and_model_preparation(
             assert database_digest(s) == before_ledger
             assert not await s.h.tasks.renew_framework_execution(task, 90)
             assert await saver.aget_tuple(saved) == before
+            if lost == "run_item":
+                from src.core.log_format import ContextFilter, ContextFormatter, LOG_FORMAT
+
+                records = [record for record in caplog.records if record.message == "controlled_case_execution_lease_rejected"]
+                assert records
+                for record in records:
+                    ContextFilter().filter(record)
+                    diagnostic = json.loads(ContextFormatter(LOG_FORMAT).format(record).split(" diagnostics=", 1)[1])
+                    observed = datetime.fromisoformat(diagnostic["authority_observed_at"])
+                    assert diagnostic["case_lease_expires_at"] == expiry.isoformat()
+                    assert diagnostic["case_lease_remaining_seconds"] == (expiry-observed).total_seconds() < 0
+                    assert diagnostic["case_item_status"] == "running" and diagnostic["automatic_replay"] is False
+                    assert s.item.lease_token not in repr(record.__dict__)
     finally:
         await provider.close()
         with postgres_connect(s.h.settings) as conn, conn.cursor() as cur:
