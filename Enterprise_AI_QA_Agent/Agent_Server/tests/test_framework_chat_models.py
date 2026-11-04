@@ -6,14 +6,17 @@ from contextlib import contextmanager
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
 import threading
+from types import SimpleNamespace
 
 import pytest
 from langchain_core.messages import HumanMessage, ToolMessage, messages_from_dict, messages_to_dict
 from langchain_core.tools import tool
 
 from src.application.model_adapters.official_chat_model_factory import OfficialChatModelFactory
+from src.application.model_adapters.langchain_model_adapter import LangChainModelAdapter
 from src.application.models.model_runtime_service import ModelRuntimeService
 from src.core.config import get_settings
+from src.runtime.execution_context import current_graph_event_sink, graph_event_scope
 from src.schemas.model_config import ModelConfigRecord
 from src.schemas.model_request_options import ModelReasoningOptions, ModelRequestProfile
 
@@ -218,6 +221,169 @@ async def test_database_backed_framework_model_resolver_uses_official_factory(tr
         model = await runtime.resolve_langchain_chat_model(config.key)
         result = await model.ainvoke([HumanMessage(content="fixture request")])
         assert _text(result) == "fixture answer" and len(requests) == 1
+
+
+@contextmanager
+def _pause_model_construction(monkeypatch, *, error=None):
+    """Gate the measured synchronous boundary; the timeout only prevents a hang."""
+    loop = asyncio.get_running_loop()
+    entered, finished, release = asyncio.Event(), threading.Event(), threading.Event()
+    build, attempts = LangChainModelAdapter.build_model, []
+
+    def paused(adapter, config, api_key):
+        attempt = SimpleNamespace(config=config, sink=current_graph_event_sink(),
+            thread_id=threading.get_ident(), released_by_loop=False)
+        attempts.append(attempt)
+        loop.call_soon_threadsafe(entered.set)
+        try:
+            attempt.released_by_loop = release.wait(5)
+            if error is not None:
+                raise error
+            return build(adapter, config, api_key)
+        finally:
+            finished.set()
+
+    monkeypatch.setattr(LangChainModelAdapter, "build_model", paused)
+    try:
+        yield SimpleNamespace(entered=entered, finished=finished, release=release, attempts=attempts)
+    finally:
+        release.set()
+
+
+def _model_runtime(config):
+    class Registry:
+        def get_runtime_config(self, key):
+            assert key == config.key
+            return config
+
+    return ModelRuntimeService(Registry(), get_settings())
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("outcome", ["returned", "failed"])
+async def test_model_resolution_leaves_loop_available_and_preserves_context_and_error(
+    monkeypatch, caplog, outcome,
+):
+    from src.application.models.framework_model_call_policy import model_config_fingerprint
+
+    error = RuntimeError("private fixture constructor detail") if outcome == "failed" else None
+    with _provider("openai_chat_completions") as (url, requests):
+        config = _config("openai_chat_completions", url)
+        sink, loop_thread = object(), threading.get_ident()
+        with _pause_model_construction(monkeypatch, error=error) as gate, graph_event_scope(sink):
+            task = asyncio.create_task(_model_runtime(config).resolve_langchain_chat_model(config.key))
+            try:
+                await asyncio.wait_for(gate.entered.wait(), 10)
+                # This coroutine must run while the synchronous constructor is
+                # still gated, as the resource-renewal coroutine must in reality.
+                assert not gate.finished.is_set(), "Model construction blocked the event loop"
+                attempt, = gate.attempts
+                assert attempt.thread_id != loop_thread and attempt.sink is sink
+                assert current_graph_event_sink() is sink
+                gate.release.set()
+                if error is None:
+                    model = await task
+                    assert model.metadata["qa_model_config_fingerprint"] == model_config_fingerprint(config)
+                else:
+                    with pytest.raises(RuntimeError) as raised:
+                        await task
+                    assert raised.value is error
+                    record, = [r for r in caplog.records
+                        if r.getMessage() == "framework_chat_model_construction_failed"]
+                    assert record.model_key == config.key and record.error_type == "RuntimeError"
+                assert attempt.released_by_loop and len(gate.attempts) == 1
+                assert requests == []
+            finally:
+                gate.release.set()
+                await asyncio.gather(task, return_exceptions=True)
+        assert current_graph_event_sink() is None
+        assert "private fixture constructor detail" not in caplog.text
+        assert "local-fixture-marker" not in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_model_resolution_fingerprint_matches_snapshot_during_concurrent_config_change(monkeypatch):
+    from src.application.models.framework_model_call_policy import model_config_fingerprint
+
+    with _provider("openai_chat_completions") as (url, requests):
+        config = _config("openai_chat_completions", url)
+        original = config.model_copy(deep=True)
+        with _pause_model_construction(monkeypatch) as gate:
+            task = asyncio.create_task(_model_runtime(config).resolve_langchain_chat_model(config.key))
+            try:
+                await asyncio.wait_for(gate.entered.wait(), 10)
+                assert not gate.finished.is_set(), "Model construction blocked the event loop"
+                config.temperature = 0.7
+                config.extra_headers["x-qa-fixture"] = "changed"
+                gate.release.set()
+                model = await task
+                attempt, = gate.attempts
+                assert model.temperature == original.temperature
+                assert model.default_headers == original.extra_headers
+                assert model.metadata["qa_model_config_fingerprint"] == model_config_fingerprint(original)
+                assert model.metadata["qa_model_config_fingerprint"] != model_config_fingerprint(config)
+                assert attempt.config is not config
+                assert attempt.config == original and attempt.released_by_loop
+                assert requests == []
+            finally:
+                gate.release.set()
+                await asyncio.gather(task, return_exceptions=True)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("transport", TRANSPORTS)
+@pytest.mark.parametrize("outcome", ["returned", "failed"])
+async def test_cancelled_model_resolution_never_continues_or_retries_construction(
+    monkeypatch, caplog, transport, outcome,
+):
+    from src.application.models import model_runtime_service
+
+    loop, failure_logged = asyncio.get_running_loop(), asyncio.Event()
+    warning = model_runtime_service.logger.warning
+
+    def observe_warning(message, *args, **kwargs):
+        warning(message, *args, **kwargs)
+        if message == "framework_chat_model_construction_failed":
+            loop.call_soon_threadsafe(failure_logged.set)
+
+    monkeypatch.setattr(model_runtime_service.logger, "warning", observe_warning)
+    error = RuntimeError("private late constructor failure") if outcome == "failed" else None
+    with _provider(transport) as (url, requests):
+        config = _config(transport, url)
+        continued = []
+        with _pause_model_construction(monkeypatch, error=error) as gate:
+            async def invoke_after_resolution():
+                model = await _model_runtime(config).resolve_langchain_chat_model(config.key)
+                continued.append(True)
+                await model.ainvoke([HumanMessage(content="must not send")])
+
+            task = asyncio.create_task(invoke_after_resolution())
+            try:
+                await asyncio.wait_for(gate.entered.wait(), 10)
+                assert not gate.finished.is_set(), "Model construction blocked the event loop"
+                task.cancel()
+                with pytest.raises(asyncio.CancelledError):
+                    await task
+                assert not gate.finished.is_set()  # Cancellation cannot stop the constructor thread.
+                record, = [r for r in caplog.records
+                    if r.getMessage() == "framework_chat_model_construction_cancelled"]
+                assert record.model_key == config.key and record.construction_may_continue is True
+                gate.release.set()
+                assert await asyncio.to_thread(gate.finished.wait, 10)
+                if error is not None:
+                    await asyncio.wait_for(failure_logged.wait(), 10)
+                    failed, = [r for r in caplog.records
+                        if r.getMessage() == "framework_chat_model_construction_failed"]
+                    assert failed.model_key == config.key and failed.error_type == "RuntimeError"
+                assert continued == [] and requests == []
+                attempt, = gate.attempts
+                assert attempt.released_by_loop
+            finally:
+                gate.release.set()
+                await asyncio.gather(task, return_exceptions=True)
+                assert await asyncio.to_thread(gate.finished.wait, 10)
+        assert "private late constructor failure" not in caplog.text
+        assert "local-fixture-marker" not in caplog.text
 
 
 @pytest.mark.asyncio

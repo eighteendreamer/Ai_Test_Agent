@@ -112,16 +112,39 @@ class ModelRuntimeService:
         harness receives only the already configured model object.
         """
         try:
-            config = self._model_registry.get_runtime_config(model_key)
+            # Authentication and construction may yield. Bind both the model
+            # and its fingerprint to this snapshot, including nested options.
+            config = self._model_registry.get_runtime_config(model_key).model_copy(deep=True)
         except KeyError as exc:
             raise ProviderClientError(f"No active model configuration found for '{model_key}'.") from exc
         api_key = await self._resolve_auth_token(config)
         if not api_key:
             raise ProviderClientError(f"Model '{config.name}' has no usable API key.")
-        model = LangChainModelAdapter(
+        adapter = LangChainModelAdapter(
             timeout_seconds=self._settings.model.llm_request_timeout_seconds,
             max_retries=0,
-        ).build_model(config, api_key)
+        )
+
+        def build_model():
+            try:
+                return adapter.build_model(config, api_key)
+            except Exception as exc:
+                # Log here as well as propagating: cancellation of the awaiter
+                # cannot stop this thread or make a late failure disappear.
+                logger.warning("framework_chat_model_construction_failed", extra={
+                    "model_key": config.key, "transport": config.transport,
+                    "error_type": type(exc).__name__})
+                raise
+
+        try:
+            # Official SDK client construction performs synchronous setup. Do
+            # not block the same loop that must renew the execution leases.
+            model = await asyncio.to_thread(build_model)
+        except asyncio.CancelledError:
+            logger.warning("framework_chat_model_construction_cancelled", extra={
+                "model_key": config.key, "transport": config.transport,
+                "construction_may_continue": True})
+            raise
         from src.application.models.framework_model_call_policy import model_config_fingerprint
 
         # This describes the configuration actually used to build the official

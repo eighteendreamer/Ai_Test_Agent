@@ -11344,3 +11344,70 @@ $files = Get-Content ../.codex-logs/e224-affected-files.txt
 同字节实际live=0、diagnostics=0的两文件 `e224-worker-projection-optout.log` 为 **33 passed、20 skipped、15.16秒、exit0**：33项为纯formatter／schema／预算投影及替身协议，20项因需真实PG／Redis跳过，不称53通过，不抵消上述两个真实失败。`e224-source-after.log` 与冻结src／tests数量、摘要完全一致；用户v3原SHA256未变。原33／红绿／八文件／静态检查／opt-out句柄均已终态，八文件结束后检查固定Agent解释器的pytest／multiprocessing残留为0。
 
 因此本轮**不提交三个源码／测试改动**，保留为可追溯§224草稿，与§219草稿明确区分。只提交本记录的原33终态、缺列TDD与八文件失败证据，不提交日志、环境或用户v3，不push／建PR；实际ID见Git和交付。当前可确认的是缺列定点修复及303项消费验证，尚非整个子步或全系统完成。完整目标继续active，剩余仍粗估4–8周有效开发／验收，环境和人工等待另计。
+
+## §225 共享模型解析的同步构造边界、配置快照与取消（2026-11-04）
+
+### 从原强杀失败继续取证，不改TTL
+
+续接§224／`9823d5c57aa118d9b02be4ed21fd1b3215f09e0b`，对应v4 §6.1／§6.3、§8及§11。原两个强杀窗口失败仍保留，不能因为单次重跑通过而结案。此步不修改monitor、2秒资源TTL、强杀门或断言，不安装依赖、不调用UV、不再次写时钟或停止根chronyd，不重启PG／Redis、开启生产路由或调用真实付费供应商。
+
+先沿 `agent_task_dispatcher._monitor → controlled_case_adapter._execute → ModelRuntimeService.resolve_langchain_chat_model → LangChainModelAdapter.build_model → OfficialChatModelFactory._create` 阅读现有路径。异步resolver在资源领取后直接同步构造官方客户端，和资源续租协程共用事件循环；这是共享异步边界缺失，不在受控图上叠加另一个monitor或通过预热／加长TTL掩盖。
+
+临时诊断仅替换一次性Worker的顶层spawn入口；按原顺序先导入fixture，再包四个现有同步阶段，并在相同loop运行50ms异步心跳。最多120秒，仅记录固定阶段标签、PID、perf时间、耗时、异常类型；不输出参数／凭据／异常正文，不用采样线程、faulthandler或内核观测。保留§107原native watchdog导致CPython导入崩溃的边界，不重走该路线。包装器先验证结果／异常身份、私密对象不格式化和心跳／asyncio.run清理。忽略制品为 `e225_child.py`、`e225_run.py`、`e225-phase-observation.log`、`e225-phase-summary.json`。
+
+本次原两个节点 **2 passed、149.34秒、exit0**，不是产品修复，也不抹去§224原2 failed。实际同步构造／loop gap如下：
+
+| producer PID | 官方factory构造 | adapter完整构造 | 图构建 | 异步心跳gap |
+| --- | --- | --- | --- | --- |
+| 43872 | 1.3346979秒 | 1.3349955秒 | 0.0049143秒 | 1.3884059秒 |
+| 61732 | 1.5096367秒 | 1.5098721秒 | 0.0038822秒 | 1.5588932秒 |
+
+四阶段均安装成功，没有不可用阶段。该结果证实官方模型同步构造占用loop；**未证明所有历史2秒失租都完全同源**，不撤销§222–223的真实时钟倒退证据，也不把根chronyd身份确认说成永久环境修复。
+
+### 依据、最小实现与边界
+
+- 项目已有 `LangSmithObservabilityAdapter.flush` 的 `asyncio.to_thread` 及本机Python3.11 `Lib/asyncio/threads.py` → 在共享resolver中将同步构造放到标准库线程执行器，保留ContextVars；不新增依赖、调度层、重试或自建线程池。[Python官方说明](https://docs.python.org/3.11/library/asyncio-task.html#asyncio.to_thread)与本机源码均明确复制当前context。
+- 固定安装 `langchain_openai/chat_models/base.py` 的 `validate_environment` 及现有OfficialChatModelFactory → 保持官方同步构造、timeout／max_retries=0、四传输原生参数和HTTP生命周期，不改供应商选项；由现有本地HTTP契约验证构造所得对象能在事件循环实际调用。
+- 现有 `model_config_fingerprint`／配置变更HTTP前拒绝契约与Pydantic `model_copy(deep=True)` → 取配置时深拷贝一次，认证、线程构造与返回指纹均绑定同一快照，包含嵌套headers；不将异步让出期间的新配置伪装成原始准入配置。
+- v4 §11和现有模型调用策略 → 取消原样传播，后继图／HTTP不继续、不自动重跑；**取消await不能停止已启动的构造线程**。新增结构化 `framework_chat_model_construction_cancelled`，只记录model_key／transport及保守的construction_may_continue=true。构造异常在同步边界记录 `framework_chat_model_construction_failed` 的error_type后原样抛出，使取消后的晚到异常也可检索；不记录凭据或异常正文。
+- 固定OpenAI／Anthropic／Google SDK的client构造及析构代码 → 不假定取消能中断线程，不引入未经验证的跨provider close反射或声称已关闭全部资源。本步取消发生在纯构造、任何HTTP之前；未证明已经发送请求后的流／连接清理，仍由既有调用生命周期及后续集成验收负责。
+- 本地《Agent轨迹与协议鲁棒性.html》结果＋轨迹、状态迁移、超时恢复要求 → 门控的是实测同步构造方法，检查构造仍未返回时loop协程可执行、context不丢、取消后不继续／不重试；5／10秒只用于防止测试挂死，不是放宽资源TTL或依赖耗时阈值判断性能。
+
+只修改 `src/application/models/model_runtime_service.py`、`tests/test_framework_chat_models.py` 和本记录；§224三文件仍单独保留归属，§219草稿、用户v3原字节均不改／不暂存。无公共API／DTO／DDL／资产格式或路由变更，调用方符号已全局检索，后续跑两类Harness消费方；不重复环境迁移。
+
+### TDD原红、配置竞态红与首轮绿色
+
+先补11项测试而不改生产，`e225-model-resolution-red.log` 实际 **11 failed、40 deselected、72.86秒、exit1**，全部在“构造仍被门控时事件循环应可运行”处失败：同步等待只能由5秒安全上限释放，loop无法主动释放门，不是模型／HTTP错误。
+
+先仅移入线程并保留异常／取消日志，`e225-model-resolution-snapshot-red.log` 为 **1 failed、10 passed、40 deselected、23.13秒、exit1**；配置快照用例仍失败。随后将断言顺序改为先核真实模型行为而非对象身份，原样复跑该节点 `e225-model-resolution-config-red.log`：**1 failed、14.33秒、exit1**，实际官方模型temperature=0.7而解析开始时为0.2，headers亦变成changed。未以对象身份差异冒充用户可见行为缺陷。
+
+再补深快照，完整官方传输文件 `e225-model-resolution-green.log` 实际 **51 passed、39.74秒、exit0，无skip／deselect**。包含四种真实官方SDK＋127.0.0.1 HTTP协议、原有请求参数／重试／工具绑定／流式用例，以及11项新边界用例；不是真实供应商或领域Runner。之后增强取消晚到失败的日志断言，新的冻结版本由下述完整矩阵重新验证，不用早一版51通过替代新字节结果。
+
+### 冻结后完整模型消费矩阵：已启动，等待终态
+
+七个完整文件为chat_models、model_policy、execution_deadline、model_positions、model_admission、controlled_case_graph、controlled_case_adapter，清单 `e225-model-matrix-files.txt`，日志 `e225-model-matrix.log`。cwd=Agent_Server，每条pytest前执行 `../scripts/clear_uv_environment.ps1 -ProcessOnly`；固定Agent解释器，PG=1、其他实际live开关=0、diagnostics=1、UTF8：
+
+~~~powershell
+$files = Get-Content ../.codex-logs/e225-model-matrix-files.txt
+& E:\MiniConda3\envs\Agent\python.exe -u -m pytest @files -q -rs --tb=short
+~~~
+
+原session80807正在运行，不启动重复pytest、不在运行中修改src／tests。`e225-source-frozen.log` 为src **881个py，cc8611273b65c5f3acf1b776fa4cd3b2ee3e9a87c688d2211862c20075f75f14**；tests **696个py，337a99ae7efb778a427f771c8ad72c1e8b05ecb62fcc2240989e4865e3425371**。用户v3 SHA256仍为8a43e94160767a0de20740f2cb30782f06322cbc3467076dfcb120d4efdf1ad4。一次临时PowerShell摘要编排语法错误exit1且没有执行Python，修正后实际摘要命令exit0；没有用失败编排当作校验通过。
+
+接下来必须收七文件实际终态、原两个强杀窗口及§224完整八文件，再核字节／compileall／pip check，按归属提交已验证子步；ruff／mypy当前查证未安装，不安装或冒称独立lint／typecheck通过。修复后的原33文件尚未执行，§219不提交；schema8后继仍pre-repark，未释放B／让A领取，没有正式结果或唯一结算。re-park、A领取、terminal／新批次、结果谱系、新格式独立进程及完整v4其他出口继续保留，整体目标保持active，剩余仍粗估 **4–8周有效开发／验收**，环境和人工等待另计。
+
+### 七文件真实终态及八文件消费回归
+
+原session80807已取终态，`e225-model-matrix.log` 实际 **266 passed、1039.92秒（17:19）、exit0，无skip／deselect**。覆盖增强后的取消晚到失败日志断言、四种官方模型本地HTTP、真实PG模型账本／预算／所有权、原配置漂移HTTP前拒绝、截止时间、调用位置／准入，以及DeepAgent和受控LangGraph的完整模型消费文件。没有真实付费供应商、真实领域Runner或生产路由验收，不将该矩阵外的系统功能算作通过。
+
+之后才启动 `e225-projection-consumers.log`／session50823，命令仍为固定Agent解释器读取 `e224-affected-files.txt` 的完整八文件，PG=1、其余实际live=0、diagnostics=1、每条pytest前清UV。包括原两个失败及另外两个独立Worker强杀窗口；没有去掉失败节点、延长TTL或换成协程取消。当前仍在运行，无最终计数，不用266通过替代八文件结果；运行中继续保持src／tests冻结。
+
+### 八文件真实终态、静态检查与本步提交
+
+原session50823已取终态，`e225-projection-consumers.log` 实际 **305 passed、1776.83秒（29:36）、exit0，无skip／deselect**。原两个强杀窗口和另外两个窗口均在原独立Python Worker、真实PG／Redis、2秒资源租约下通过；原缺id四项及根活动预算／ToolJob／消息诊断消费方也通过。测试没有安装临时阶段wrapper或预热构造，没有降低断言；这证明本轮实际窗口，不是长期时钟健康保证或schema8新格式全恢复验收。
+
+`e225-source-after.log` 与冻结src／tests数量和摘要完全一致，用户v3 SHA256仍原值。全src／tests `python -m compileall -q src tests` **exit0**；`python -m pip check` **exit0、No broken requirements found**，见 `e225-static-checks.log`。相关文件 `git diff --check` exit0；ruff／mypy未安装，未运行独立lint／typecheck，不用compileall替代二者。两个pytest及静态检查句柄均已终态，固定Agent解释器的pytest／multiprocessing／本步探针残留为0。
+
+本步只提交共享resolver、官方模型测试及本记录，提交信息 `【fix】移出模型同步构造并绑定解析配置快照`，实际ID见Git。§224三文件另按归属提交；§219全部草稿和用户v3不暂存，忽略日志／临时诊断不入Git，不push／PR。没有公共契约／配置／数据库迁移或额外权限要求；取消后线程可能继续这一限制已在实现、日志和四传输测试中显式保留。
+
+下一步用同一冻结字节执行§219原33文件，而不是沿用§223旧字节的1704通过；schema8 re-park、A领取、terminal／新批次、结果谱系／唯一结算、独立进程新格式以及完整v4剩余阶段仍未完成。全量后端、前端build／typecheck／浏览器、真实供应商／领域Runner、完整main lifespan、双制品／备份恢复、E3／E4及性能基线未在本步执行。整体goal保持active，剩余仍粗估4–8周有效开发／验收，环境和人工等待另计。
