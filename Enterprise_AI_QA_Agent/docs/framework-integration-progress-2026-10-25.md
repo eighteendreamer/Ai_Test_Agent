@@ -11421,3 +11421,18 @@ $files = Get-Content ../.codex-logs/e225-model-matrix-files.txt
 验证依据是§225同字节的完整八文件 **305 passed、1776.83秒、exit0，无skip／deselect**，日志 `e225-projection-consumers.log`。包括原缺id四项、Worker／ToolJob／模型根预算与消息诊断，以及原2秒TTL下四个独立强杀窗口；另七模型消费文件266通过、compileall／pip check通过、字节前后相同，详见§225，不把重述计为又执行了一次回归。独立ruff／mypy、修复后的原33文件与全系统其他验收仍未执行。
 
 提交前重新核Git status、diff及暂存范围，仅这三文件和本记录；提交信息 `【fix】补齐根活动预算的持久事件来源列`，实际ID见Git。§219草稿、用户v3、日志／探针不暂存，不push／PR。没有API／DTO／DDL／路由或迁移变更；后续仍须在当前字节执行原33文件，才能决定§219是否可提交，未授予re-park／A领取或新格式恢复权限。完整goal继续active，剩余粗估4–8周有效开发／验收，等待另计。
+
+## §227 修复后原33文件回归启动，§219保持未提交（2026-11-04）
+
+续接§225／`a8b5f02fa0eba64d63898997c3540c9c8cf3ca2b` 与§226／`6e5ac7274e2a961ed912eb06f325f5c18af6d04a`，对应v4 §8–§10和§219后继材料的原消费矩阵。两个修复按归属提交后，`e227-source-before.log` 与§225冻结的src881／tests696及两个SHA256完全一致；用户v3原SHA256未变，固定Agent解释器pytest／multiprocessing／本步探针残留为0。
+
+随后核原 `e219-affected-files.txt` 恰为33项且全部存在，未增删清单或剔除历史失败，实际启动：
+
+~~~powershell
+$files = Get-Content ../.codex-logs/e219-affected-files.txt
+& E:\MiniConda3\envs\Agent\python.exe -u -m pytest @files -q -rs --tb=short
+~~~
+
+cwd=Agent_Server，每条pytest前清UV ProcessOnly，PG=1、其余实际live=0、diagnostics=1、UTF8；日志 `e227-original-33-regression.log`，**session68642正在运行，没有最终计数**。本次不是§223旧字节的1704通过，也不以§225的266／305通过代替原33文件结果。保留原句柄，禁止重复启动或在运行中修改src／tests；终态后核字节，按真实失败决定下一步。
+
+本记录提交仅跟踪已实际启动的验收，不提交§219草稿、用户v3、忽略日志或临时诊断；不push／PR。§219仍pre-repark，未释放B／让A领取，无正式结果或唯一结算；schema8后续及完整v4其他出口未缩小。整体goal继续active，剩余粗估4–8周有效开发／验收，环境与人工等待另计。
