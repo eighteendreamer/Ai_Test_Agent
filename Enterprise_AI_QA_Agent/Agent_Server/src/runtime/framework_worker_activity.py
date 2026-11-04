@@ -7,6 +7,8 @@ timer/scheduler or lease-expiry inference. Missing history stays missing.
 """
 from __future__ import annotations
 
+import logging
+
 from src.schemas.framework_worker_activity import (
     FrameworkWorkerActivity, WorkerActivityBoundary, WorkerActivityEvent,
 )
@@ -14,6 +16,7 @@ from src.schemas.runtime_binding import RuntimeBinding
 
 
 ACTIVITY_KEY = "framework_worker_activity"
+logger = logging.getLogger(__name__)
 
 
 def _identity(task, attempt):
@@ -39,6 +42,7 @@ def read_worker_activity(task, attempts, events):
     journals = {attempt["id"]: None for attempt in attempts}
     identities = {attempt["id"]: _identity(task, attempt) for attempt in attempts}
     points = {attempt["id"]: [] for attempt in attempts}
+    boundaries = {attempt["id"]: [] for attempt in attempts}
     for row in events:
         raw = row["payload"].get(ACTIVITY_KEY)
         if raw is None:
@@ -58,12 +62,29 @@ def read_worker_activity(task, attempts, events):
             or (row["payload"].get("_harness_context") or {}).get("attempt_id") != boundary.attempt_id):
             raise ValueError("Worker activity differs from its durable event or attempt identity")
         points[boundary.attempt_id].append(point)
+        boundaries[boundary.attempt_id].append(dict(event_id=row["id"], event_sequence=row["event_sequence"],
+            status=point.status, observed_at=point.observed_at.isoformat(), execution_returned=point.execution_returned))
     for attempt in attempts:
         observed = points[attempt["id"]]
         if attempt["id"] == task["attempt_id"] and attempt["status"] != task["status"]:
             raise ValueError("Worker activity task and current attempt states disagree")
         if observed:
-            journal = FrameworkWorkerActivity(**identities[attempt["id"]], events=observed)
+            try:
+                journal = FrameworkWorkerActivity(**identities[attempt["id"]], events=observed)
+            except ValueError as exc:
+                logger.warning("framework_worker_activity_originals_rejected", extra={
+                    "binding_id": identities[attempt["id"]]["binding_id"], "task_id": task["id"],
+                    "attempt_id": attempt["id"], "activity_event_count": len(observed),
+                    "activity_boundaries": boundaries[attempt["id"]], "error_type": type(exc).__name__,
+                    "automatic_replay": False})
+                for index, boundary in enumerate(boundaries[attempt["id"]], 1):
+                    logger.warning("framework_worker_activity_original_boundary", extra={
+                        "binding_id": identities[attempt["id"]]["binding_id"], "task_id": task["id"],
+                        "attempt_id": attempt["id"], "activity_boundary_index": index,
+                        "activity_event_id": boundary["event_id"], "activity_event_sequence": boundary["event_sequence"],
+                        "activity_status": boundary["status"], "activity_observed_at": boundary["observed_at"],
+                        "activity_execution_returned": boundary["execution_returned"], "automatic_replay": False})
+                raise
             if journal.events[-1].status != attempt["status"]:
                 raise ValueError("Worker activity differs from its durable attempt state")
             journals[attempt["id"]] = journal

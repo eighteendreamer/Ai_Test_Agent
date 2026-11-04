@@ -25,6 +25,59 @@ def activity_events(h):
         return [row for row in cur.fetchall() if row["type"].startswith("agent_task.")]
 
 
+def test_worker_activity_diagnostics_render_only_approved_scalar_fields():
+    from src.core.log_format import ContextFilter, ContextFormatter, LOG_FORMAT
+
+    class PrivateValue:
+        def __str__(self):
+            raise AssertionError('must not format arbitrary activity input')
+
+        __repr__ = __str__
+
+    expected = dict(task_id='task', activity_event_count=2, activity_boundary_index=1,
+        activity_event_id='event', activity_event_sequence=42, activity_status='running',
+        activity_observed_at='2026-11-04T00:00:00+00:00', activity_execution_returned=False, automatic_replay=False)
+    record = logging.makeLogRecord(dict(name='test', levelno=logging.WARNING, msg='controlled_activity_boundary',
+        **expected, private_payload=PrivateValue(), activity_boundaries=PrivateValue()))
+    ContextFilter().filter(record)
+    rendered = ContextFormatter(LOG_FORMAT).format(record)
+    assert json.loads(rendered.split(' diagnostics=', 1)[1]) == expected
+
+
+@pytest.mark.asyncio
+async def test_rejected_clock_order_logs_original_sequence_without_repair(model_calls_harness, caplog):
+    h = model_calls_harness
+    await begin(h)
+    claimed, running = activity_events(h)
+    backwards = claimed['timestamp'] - timedelta(seconds=1)
+    with postgres_connect(h.settings) as conn, conn.cursor() as cur:
+        cur.execute(f"UPDATE {h.settings.database.postgres_event_table} SET timestamp=%s, "
+            "payload=jsonb_set(payload,'{framework_worker_activity,event,observed_at}',to_jsonb(%s::text)) WHERE id=%s",
+            (backwards, backwards.isoformat(), running['id']))
+    before = activity_events(h)
+    with pytest.raises(ValueError, match='Worker activity observations are out of order'):
+        await h.tasks.get_framework_worker_activity(h.task.id, session_id=h.session_id)
+    rejected, = [r for r in caplog.records if r.message == 'framework_worker_activity_originals_rejected']
+    assert (rejected.task_id, rejected.attempt_id, rejected.binding_id) == (h.task.id, h.task.attempt_id, h.binding.binding_id)
+    assert rejected.automatic_replay is False and rejected.activity_event_count == 2
+    assert rejected.activity_boundaries == [dict(event_id=row['id'], event_sequence=row['event_sequence'],
+        status=row['payload']['framework_worker_activity']['event']['status'], observed_at=row['timestamp'].isoformat(),
+        execution_returned=row['payload']['framework_worker_activity']['event']['execution_returned']) for row in before]
+    assert activity_events(h) == before and rejected.activity_boundaries[1]['observed_at'] < rejected.activity_boundaries[0]['observed_at']
+    assert all(set(point) == {'event_id', 'event_sequence', 'status', 'observed_at', 'execution_returned'}
+        for point in rejected.activity_boundaries)
+    from src.core.log_format import ContextFilter, ContextFormatter, LOG_FORMAT
+
+    logged = [r for r in caplog.records if r.message == 'framework_worker_activity_original_boundary']
+    assert len(logged) == len(before)
+    for index, (record, row) in enumerate(zip(logged, before), 1):
+        ContextFilter().filter(record)
+        value = json.loads(ContextFormatter(LOG_FORMAT).format(record).split(' diagnostics=', 1)[1])
+        assert (value['activity_boundary_index'], value['activity_event_id'], value['activity_event_sequence'],
+            value['activity_observed_at']) == (index, row['id'], row['event_sequence'], row['timestamp'].isoformat())
+        assert value['task_id'] == h.task.id and value['automatic_replay'] is False
+
+
 @pytest.mark.asyncio
 async def test_worker_activity_excludes_resource_admission_and_survives_rebuild(model_calls_harness):
     h = model_calls_harness

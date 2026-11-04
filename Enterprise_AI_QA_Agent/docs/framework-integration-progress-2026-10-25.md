@@ -2,7 +2,7 @@
 
 日期：2026-10-25 起。当前实施依据：[完整 v4 方案](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/docs/langgraph-deepagents-integration-plan-v4-2026-10-27.md)；[v3 方案](langgraph-deepagents-integration-plan-v3-2026-10-26.md)及[v2 方案](langgraph-deepagents-integration-plan-v2-2026-10-25.md)保留历史。
 
-**当前子步：v4 §7.3.1–2／§12.1 的正式审批运行中受理兄弟决定（§218），承接 §216 原等待材料与 §217 单项 Runtime 应用。复用原 active-Turn／原件／双归属规则，当前 B claimed／running 时，A 只原子入队、不并发领取或推进图；A 入队后原 B 仍可继续。B 返回仍为 pre-repark，正式后继重新停车、完整状态谱系、后继结果／唯一结算及独立强杀仍待后续。顶部旧 §202 快照同步到最新子步，历史记录不改写；§215 两项未定位账本失败保留。验证范围及剩余出口见 §218，不代替全系统验收；完整 v4 及 H01–H12／E3／E4 仍按实际依赖推进，生产默认关闭。**
+**当前子步：§219 正式后继状态材料仍为未提交草稿，44项专项通过，但33文件消费者回归实际3 failed／1699 passed。三项均在原初次停车遭 Worker 活动时序倒序拒绝，尚未定位根因；不能称33文件全绿或将草稿交付。§220 先补共享 Worker 原始边界诊断，保持拒绝规则、不排序／钳制／重写时间。§219 仍为 pre-repark，不释放 B、不让 A 领取；专用重新停车、完整多步继续、后继结果／唯一结算及独立强杀仍待后续。§215 两项账本风险另行保留，未证明与本次同源。完整 v4 及 H01–H12／E3／E4 范围不缩减，生产默认关闭，整体 goal active。**
 
 2026-10-26 附件再复核见 §37；冻结请求恢复见 §38，语义输入冻结见 §39，结算响应绑定及已结算 DTO 只读导入见 §40，语义服务消费原结算见 §41，冻结语义输入的应用编排消费见 §42，orchestrating 安全后继与代码制品指纹见 §43，Deep Agents 图输入资产见 §44。各阶段记录保留当时结果，以本页顶部快照及最新阶段的限定范围为准。
 
@@ -10940,3 +10940,137 @@ B执行期间A可受理，但不能并发推进同图；A在B claimed时入队�
 对应关系：v4 §7.3.1–2／§12.1 → §218 → 复用 active-Turn／专用原件／租约内核的 owned-sibling intent 受理＋精确单兄弟 native 观察 → 真实目标红绿、44项专项、冻结后15文件703通过、opt-out／静态 → 上述重新停车／谱系／唯一结算和完整v4／H01–H12／E3／E4仍待完成。整体 goal 保持active，完整范围不缩减；剩余仍粗估 **4–8周有效开发／验收**，环境、授权及人工发布等待另计，不承诺完成日期。
 
 最终仅拟本地提交上述5文件；新测试单文件 force-add，不改 ignore，用户v3／原日志／缓存／锁／环境制品排除。提交前核 status、完整相关 diff、暂存范围、cached diff --check 和高置信度敏感新增行；采用“【feat】受理正式审批运行中的兄弟决定”，实际ID见 Git／交付，不推送或建PR。
+
+
+## §219 正式后继不可变状态材料，保留初次停车原件（2026-11-04）
+
+### 续接、依据与范围
+
+基线 §218／`f04f64b0d496a83dbc748b2dce10b1da303cbd66`。续接正在运行的原句柄、核 active goal、v4、较新记录和实际源码；未重启专项或使用旧绿色冒充当前结果。用户 v3 SHA256 仍为 `8a43e94160767a0de20740f2cb30782f06322cbc3467076dfcb120d4efdf1ad4`，不改／不暂存。固定解释器 `E:\MiniConda3\envs\Agent\python.exe`；§184 Conda＋pip 迁移不重复，不调用 UV、不升级依赖。PG／Redis 沿原授权使用，不重启。
+
+本步对应 v4 E／§12.1 的审批后继及 §7.3、§9.2 的原件／状态材料契约。最初拟继续 re-park，查证原 checkpoint 7 只保存初次等待；直接替换会破坏 root receipt 与已 queued 的兄弟 admission。因此先完成不可变后继材料这一必要子步，已向用户明确范围：**不释放 B、不完成 B、不让 A 领取、不声称已经重新停车**。
+
+依据 → 采用方式：
+
+- 原 `ControlledCaseApprovalStateCheckpoint`／admission、§216 原等待材料 → schema 8 完整嵌入 schema 7 并追加 hash-linked suffix；root 的 binding／producer／正式 Attempt／input／预算／hygiene 不变。
+- 原专用 continuations 的捕获 owner／同连接原件锁核、共享 decision／applied tool reader 与 `_worker_fact` → 不构造普通 Task 或新 owner，不重投影已应用工具材料，不运行图／模型／工具。
+- 原 Runtime 单项应用及 `tool_messages` 原槽位投影 → 提取 `project_controlled_approval_progress`，Runtime 与持久化／历史读回共用；完整 state／messages 严格相等，不加忽略字段。
+- 原 `wait_native_messages` 与固定官方 checkpoint／pending writes 读者 → 区分基础消息和已完成 pending task result；历史只取该材料实际保留的结果。
+- 本地《Agent轨迹与协议鲁棒性.html》04／04.5 → 核幂等、原件／效果次数、半成功、并发、超时和未知回执，而非只验返回值。
+
+仅12文件：8生产 Python（2新增，6修改）、2测试（1新增）、路由说明及本记录。无公共 HTTP／DTO、DDL、依赖、原生格式或生产选路变更。专用 claim／prepare_runtime 仍不授 schema 8 新继续资格；main／CLI／Dispatcher 未安装本端口。
+
+### 材料、写入与历史读回
+
+新增 `ControlledCaseApprovalProgressAsset`，scope=`controlled_case_approval_progress_material_only`。保存原 admission、delivered＋applied receipt、物理 task／attempt／epoch、parent hash、原剩余 natives、精确基础 native messages、累计工具材料、原根预算／hygiene、完整事件引用和 pre-repark state，retained_at 使用实际 DB clock。新 `ControlledCaseApprovalProgressCheckpoint` 为 schema 8：原 schema 7 完整嵌入，suffix 非空，核 parent hash、epoch 递增、时间、task 唯一、只移除 selected native、只追加该单项材料。
+
+兼容 reader 默认 max checkpoint 8；独立 `controlled_case_approval_progress_available` writer 默认 false。旧 max7 遇8延期。admission／初次等待 reader 能读8中的原 root，result reader 仍拒绝8，8不是完成或结算证明。交叉审查发现旧 ACK 的“新等待材料不得匹配 receipt 1”校验仅覆盖7，负例真实复现8会错误接受降级回执；同步为7／8，保留原 receipt 2 与来源核验，不通过 fallback 兼容伪造旧回执。
+
+`ControlledCaseApprovalProgress.retain` 要求捕获 owner 的 ContextVar、已排空事件 sink、原 Task running 与双归属及已应用材料；同事务核原 outbox／admission／root、正式 Attempt、Worker claim、native 和完整根模型账本。只支持原批次仍有兄弟的单项后继，terminal／新批次明确拒绝并留日志。从已核 parent／工具结果／native／ACK events 重算 state，不能传入任意 state 字典。写8、确定性 `test_run.case_approval_progress_retained` 审计、同连接原材料／实际审计行读回核验和 fresh-clock owner fence 同事务；跨租约回滚。checkpoint本身通过原store写入，专项在提交后读取Attempt核完整payload；不把写入前的内存asset称为实际Attempt行读回。相同 task 重试复用原 asset／时间／审计，不创建新 identity，不自动重跑。
+
+`read` 逐项核 suffix 的原 admission／receipt、工具材料、Worker claim、native 基础消息、确定性 state 与审计。事件以该项自己审计的 event_sequence 为历史边界，native pending results 只选该项保留来源，后来 A 的 error／事件不污染 B。失租或 Run 已取消仍允许只读，不续租／接管／给予继续权。材料缺失、重复／丢失 suffix、重算 asset 与外层审计 hash 后改来源／state 均拒绝，不自动补造。日志沿现有设施记录 operation／task／error_type／scope／automatic_replay=false；取消等待者不证明 to_thread 中事务回滚。
+
+### TDD 与真实失败
+
+原日志保留在本机 `.codex-logs/`，不提交，不覆盖失败：
+
+1. `e219-progress-red.log`：真实 B 批准／拒绝 Runtime 已执行，新服务缺失，**2 failed、28.63秒**。
+2. `e219-progress-first-implementation.log`：**2 failed、26.53秒**，错误将 None 传给依赖 task.runtime_binding 的私有 wrapper。直接复用已存在的共享 `inspect_decision_originals_in_transaction`，使用已核 binding／admission，不造 fake Task。
+3. `e219-progress-second-implementation.log`：**2 failed、29.64秒**，asset 与 Runtime state 的61项相同，仅 framework_messages 不同：基础 checkpoint 未归约 B 的 pending ToolMessage。根因是基础消息不等于官方完整结果；复用原 pending result reader，不忽略 messages。`e219-progress-material-green.log` 随后 **2 passed、24.72秒**，完整字典、slots、messages 相等。
+4. 共享 Runtime 纯投影器后 `e219-expanded-runtime.log`：**5 failed、78 passed、526.40秒**。旧46项正式 Runtime 全通过；5项新负例已正确拒绝，但测试只接 ValueError，实际审计设施抛 `FrameworkMessageStageRecoveryRequired`。测试接纳这一既有异常类型，保留无写入／原件／次数断言，未改生产拒绝路径。同时强化负例，连外层审计 hash 一起重算，必须核真实来源。
+5. `e219-progress-expanded-final.log`：**1 failed、42 passed、377.87秒**，新“后续 A error＋后续 step”夹具漏 ExecutionEvent 必填 timestamp，尚未进入目标读回。按实际 DB clock 补齐夹具；`e219-progress-final-specialty.log` 为 **43 passed、365.90秒**。
+6. `e219-root-receipt-red.log`：新8材料形成后，把根 receipt2降为1并同步合法摘要与审计，ACK 未拒绝，**1 failed、43 deselected、22.89秒**。补齐上述跨格式契约；最终 `e219-progress-final-with-root-receipt.log` **44 passed、343.08秒、exit0，无skip／deselect**。之后冻结全部源码／测试，不在扩大回归中编辑。
+
+最终44项包含1项纯格式／默认能力测试和43项真实隔离服务／官方图／本机 HTTP 替身混合项；不是44个真实业务目标。覆盖批准／拒绝、完整 Runtime state、writer／codec／捕获 owner／sink、claimed／unapplied、A执行前或保留后入队的交叉决定且不能并发领取、最后审计跨三项租约、rollback／reply-loss／cancel_waiter、失租／取消后历史只读、14种重算摘要漂移、ACK事件遗漏／乱序、后续 error／step、并发唯一材料／审计、未保留不得读取补造，以及根回执降级。
+
+### 冻结后扩大回归（原句柄待收终态）
+
+`e219-source-frozen.log` 按相对 Agent_Server 的 POSIX 路径UTF8＋NUL＋原文件字节＋NUL聚合：src **881个py，e03d2e64dac71b30cbca4ba6deff56f32230c3bda3d7aeb7075667304ea0fea1**；tests **696个py，fe7748d8c34e258c52cebe280de6378398bdaca6aef7025871d0f7cba61fd761**。冻结时实际全src／tests compileall与pip check均exit0，后者 No broken requirements found。ruff／mypy经find_spec确认缺失，未安装／执行独立lint或typecheck。
+
+每条pytest前实际运行 `../scripts/clear_uv_environment.ps1 -ProcessOnly`；cwd=Agent_Server，RUN_LIVE_POSTGRES_TESTS=1、其他实际RUN_LIVE_*开关=0、QA_FRAMEWORK_WORKER_DIAGNOSTICS=1、PYTHONIOENCODING=utf-8。在§218的15文件组加入新progress、schema8 admission／正式租约／结果资产与应用分项／finalization／assessment／memory／settlement／recovery／dispatch／首次Runtime及Worker契约消费者，共33文件，完整清单 `e219-affected-files.txt`，运行日志 `e219-affected-final.log`：
+
+~~~powershell
+# 固定解释器、清UV及测试开关如上
+$files = Get-Content ../.codex-logs/e219-affected-files.txt
+& E:\MiniConda3\envs\Agent\python.exe -u -m pytest @files -q -rs --tb=short
+~~~
+
+取原句柄终态后另追加结果，不把44专项或上轮703当当前33文件通过。扩大组含§215旧账本失败路径；本轮未放宽或修改该核，原两项根因仍未确认，即使未复现也不关闭风险。
+
+同字节所有实际live=0／diagnostics=0运行新专项，`e219-optout-final.log` 实际 **1 passed、43 skipped、9.41秒、exit0**；skip均因缺真实PG／Redis，不算通过。
+
+### 证据边界、剩余与交付出口
+
+当前支持一次原批次仍有兄弟的材料写入／历史读回；suffix格式可以表达链，不等于已验证完整多步执行。B仍running、state仍resuming／pending_turn={}，正式Attempt仍running，A即使queued也不可领取。未释放B、未新增停车receipt、无Result／Assessment／settlement。下一步原子re-park消费本材料，不能重跑B；后续仍需下一项领取、terminal／新批次、完整结果谱系／唯一正式结算、恢复与新格式独立进程强杀。
+
+未运行全量后端、前端build／typecheck／浏览器、新格式独立进程强杀、真实付费供应商／真实领域Runner、Docker／MySQL／RustFS、完整main lifespan、双制品部署／一致备份恢复、E3／E4和性能基线。证据为UUID隔离PG／Redis、固定官方SDK／图、本机HTTP替身和受控工具混合，不作为上述未验出口的证明。
+
+对应关系：v4 §7.3／§9.2／§12.1 → §219 → 原root＋schema8不可变后继材料、共享纯投影器／完整messages、原件历史读回 → 真实红绿、44专项、冻结后33文件消费者回归、opt-out／静态 → 专用重新停车／多步继续／后继结果／唯一结算与完整v4／H01–H12／E3／E4仍待完成。整体goal保持active，范围不缩减；剩余仍粗估 **4–8周有效开发／验收**，环境、授权和人工发布等待另计，不承诺完成日期。
+
+拟本地精确提交上述12文件，新测试单文件force-add，不改ignore；用户v3、日志、缓存、锁、环境制品排除。提交前核status、完整相关diff、暂存范围、cached diff --check与高置信度敏感新增行；不push／建PR，实际ID以Git／交付为准。
+
+
+### 33文件真实终态：未通过，不提交本步草稿
+
+`e219-affected-final.log` 原进程实际 **3 failed、1699 passed、8990.73秒（2:29:50）、exit1，无skip／deselect**。不是33文件全绿，不能把后续定点重放相加或替换这轮结果。失败分别为：
+
+- progress 的 `test_rehashed_progress_is_not_an_authority_for_changed_originals[drop]`；
+- delivery 的 `test_first_send_rechecks_current_originals_after_running[parent]`；
+- application 的 `test_application_and_material_reader_require_exact_captured_task[reference_id-apply_decision]`。
+
+三项都在初次 park／`_worker_fact(agent_task.completed) → read_worker_activity → FrameworkWorkerActivity` 抛 **Worker activity observations are out of order**，尚未进入各自目标漂移断言。原失败保留，§219源码／测试及路由说明留为**未提交草稿**，不以专项44通过掩盖依赖失败。第三次同类问题达到架构审查阈值，停止补特判，转 §220 取证；未排序、钳制或放宽 Worker 时间核验。
+
+## §220 Worker活动时序拒绝的原始边界诊断，不冒称修复（2026-11-04）
+
+### 依据、取证与边界
+
+对应 v4 §6.3／§8／§9.2 的活动计量、原件和可观测性；承接 §219 的实际消费者失败，而非继续推进依赖该核的 re-park。现有 `PostgresAgentTaskStore._event` 为带binding的AgentAttempt事件取 PostgreSQL `clock_timestamp()`，原事件表按 event_sequence 读取；`FrameworkWorkerActivity` 按传入原事件顺序拒绝倒序。原失败只输出截断的 Pydantic input，缺完整边界，不能凭推测认定是环境时钟、事件读取或与§215账本同根因。
+
+在不改生产／测试字节的情况下，仅对原三项用临时进程内包装器捕获模型校验失败的脱敏边界；`e219-worker-order-diagnostic-replay.log` 实际 **3 passed、2 warnings、75.41秒**，未再现，未输出失败边界。两项 warning 为以 pytest.main 进程内启动时 anyio／langsmith 已导入的 assertion rewrite 提示；该启动签名查证固定安装的pytest源码后使用。临时包装不写入项目、不改变校验或结果；不能用这3通过宣布原失败修复。
+
+另单次、只读、120秒连续采样 PostgreSQL clock_timestamp：`e219-db-clock-probe.log` **9362个样本、120.063秒、0次倒退，最小相邻delta 0.010636秒、exit0**。采样是时间窗口观察，不证明运行环境从未倒退，也不能据此排除间歇故障；没有修改系统／容器时间、服务或路由。
+
+### TDD与最小诊断改动
+
+修改共享 `src/runtime/framework_worker_activity.py`、原 `tests/test_framework_worker_activity.py`、既有 `src/core/log_format.py` 的标量白名单，并同步本记录；不是§219功能提交。沿既有logging，在完整原事件身份已通过、journal模型拒绝时记录结构化 `framework_worker_activity_originals_rejected`：binding／task／attempt、event_count、按读取顺序的 event_id／event_sequence／status／observed_at／execution_returned，以及error_type／automatic_replay=false。只保存明确白名单，不打印 Task input、payload、配置、owner token或异常input全文；异常原样抛出，不改边界、状态、排序、时间或完成规则。白名单消费方与实际输出验证见下文，不能仅给LogRecord添加未渲染的extra就称日志可用。
+
+新增测试在真实UUID隔离数据库中，显式将 running 的实际边界改为比 claimed 早1秒，同时保持行头和event时间一致；这是**诊断契约负例**，不是宣称复现了环境时钟故障。要求原倒序拒绝仍在、日志精确包含原事件序号与时间、前后数据库原件不变、字段只有白名单。沿原同类活动测试／事件设施实现，无新计时或恢复机制。
+
+`e220-worker-order-log-red.log` 实际 **1 failed、21 deselected、21.63秒**：原倒序已拒绝，但缺指定原始边界日志。`e220-worker-order-log-regression.log` 随后 **22 passed、72.37秒、exit0，无skip／deselect**，完整原Worker活动文件通过，包括独立Worker终止后开尾保留；这是已有活动日志协议的进程验收，不是schema8后继／re-park独立强杀验收。
+
+每条pytest仍先执行clear_uv_environment.ps1 -ProcessOnly，固定解释器／隔离服务开关同§219，不重启服务或调用UV。进一步运行完整4文件，而非仅选择三项失败：
+
+~~~powershell
+# cwd=Agent_Server，固定解释器和清UV／开关如§219
+& E:\MiniConda3\envs\Agent\python.exe -u -m pytest tests/test_framework_worker_activity.py tests/test_controlled_case_approval_progress.py tests/test_controlled_case_approval_delivery.py tests/test_controlled_case_approval_application.py -q -rs --tb=short
+~~~
+
+原日志 `e220-worker-order-consumers.log`，终态另追加；不把这一组替代原33文件3 failed。所有live=0／diagnostics=0的同字节原Worker活动专项，`e220-worker-order-optout.log` **4 passed、18 skipped、7.48秒、exit0**；4项为纯schema负例，skip因缺真实PG／Redis，不算22通过。
+
+### 后续与交付范围
+
+未定位、未修复、未关闭§219的间歇Worker时序问题；§215账本拒绝仍另行保留。诊断只为下一次真实失败留下足够事件原件；若再现，按原序号／原时间定位第一个错误发生点，再决定是否为时钟、写入或读取架构问题，不能先假设并重写历史。未反复盲跑33文件或以延迟／重试掩盖问题。
+
+本诊断子步仅拟提交上述3文件及本记录，共4文件；§219的生产／测试／路由草稿不暂存，本记录只如实记录其未提交状态。用户v3／日志／缓存／锁／环境排除。不push／建PR；整体goal active，完整v4仍未完成，剩余仍粗估4–8周有效开发／验收，环境及人工等待另计，间歇问题根因未定位使估算不确定性更高。
+
+
+### 消费者终态、日志输出契约补齐与最终验证
+
+第一版诊断的完整4文件原句柄 `e220-worker-order-consumers.log` 实际 **219 passed、1542.88秒（0:25:42）、exit0，无skip／deselect**，包含原三项失败及完整progress／delivery／application。它是日志第一版字节的结果，不等于最终增加formatter消费方后又重跑了4文件，也不能替代§219原33文件失败。
+
+随后查证既有 `ContextFormatter` 只渲染明确标量白名单，嵌套activity_boundaries虽能被caplog核验但默认生产日志不会输出。遵守跨层契约同步，不把隐形extra当可用证据：保留结构化拒绝原件，并按原顺序逐条发 `framework_worker_activity_original_boundary`，只带明确标量；扩展既有DIAGNOSTIC_FIELDS，不另建logger／formatter，不允许任意payload或对象字符串化。
+
+新增纯formatter用例及实际live拒绝用例的渲染断言，`e220-worker-order-formatter-red.log` **2 failed、21 deselected、15.57秒**：明确复现只渲染task_id、缺单条边界日志。补齐标量白名单和逐条日志后，以最终字节完整运行：
+
+~~~powershell
+# cwd=Agent_Server，清UV／固定开关同前
+& E:\MiniConda3\envs\Agent\python.exe -u -m pytest tests/test_framework_worker_activity.py tests/test_agent_task_monitor.py tests/test_framework_release_startup.py -q -rs --tb=short
+~~~
+
+`e220-worker-order-formatter-regression.log` 原句柄实际 **60 passed、251.00秒（0:04:10）、exit0，无skip／deselect**。包括全部23项Worker活动用例、原monitor／私密非标量不格式化测试、release日志消费方；同时验证实际原边界字段输出，不排序／钳制／改写数据。最终字节opt-out `e220-worker-order-optout-delivery.log` 为 **5 passed、18 skipped、10.85秒、exit0**，新增纯formatter通过，18项依赖真实PG／Redis的skip仍不算通过。
+
+`e220-source-frozen.log` 与最终 `e220-source-verified.log` 全部源码／测试聚合一致：src **881个py，5e79d2c8308f7e332ae5d198bce25ba68eb96ca28e72c3bd682a54e63fe820c1**；tests **696个py，0944728aa20a7be0f1474bd14177fbf6f18415aa2c3612c0825cab8e89c42795**。仅在内存中把本诊断的三个Python文件替换为Git HEAD原字节后，`e219-source-before-diagnostics-reconstructed.log` 精确复现§219冻结src／tests两个摘要；没有改工作区来重造结果。这证明两轮字节差异仅为明确的诊断／formatter及其测试，不能由此将原33文件失败改称通过。
+
+最终实际全src／tests compileall与pip check均exit0，No broken requirements found；ruff／mypy仍经find_spec确认缺失，未安装／运行独立lint或typecheck。所有pytest、只读采样与临时诊断句柄均已取终态，pytest／multiprocessing无本轮残留。用户v3的原SHA256未变。
+
+§219仍保留未提交，§220只提交上述4文件的诊断子步；提交前核完整diff、status、cached diff --check、明确白名单新增行与暂存范围，不提交日志／临时包装／环境／用户v3，不push／建PR。提交说明“【chore】补充Worker活动时序拒绝诊断”，实际ID见Git与交付。三项间歇时序失败及§215风险均未关闭，后续应使用已配置ContextFormatter的诊断启动取得真正失败原件，而不是继续把未复现当修复；整体goal继续active。

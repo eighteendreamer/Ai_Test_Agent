@@ -43,6 +43,8 @@ DIAGNOSTIC_FIELDS = (
     "binding_id", "owner_epoch", "authority_rejections", "authority_observed_at",
     "session_lease_expires_at", "owner_lease_expires_at", "owner_execution_state", "expected_owner_states",
     "authority_lock_seconds", "authority_check_seconds", "recovery_phase", "retry_count", "not_before_ms",
+    "activity_event_count", "activity_boundary_index", "activity_event_id", "activity_event_sequence",
+    "activity_status", "activity_observed_at", "activity_execution_returned", "automatic_replay",
 )
 
 
