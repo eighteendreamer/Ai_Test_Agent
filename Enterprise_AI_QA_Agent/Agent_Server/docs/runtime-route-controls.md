@@ -1152,6 +1152,36 @@ claim／return、根账本、正式Attempt及剩余兄弟batch。它不是旧wai
 完整多步执行、结果谱系／唯一结算及新格式独立进程强杀仍待后续验收，不能将本步
 停车回执或27项专项通过当作完整链路已开放。实际扩大回归见实施记录§228。
 
+### 正式后继当前停车串行消费（§229）
+
+在§228的独立停车端口之上，内部 `read_current_approval_wait` 统一读取当前停车
+basis，供决定受理、claim、Runtime准备、begin、首次交付和下一次re-park消费。
+`controlled_case_approval_successor_available` 独立控制后继消费，默认false；
+理解checkpoint8／re-park codec或允许写材料／停车，不会自动开启它。
+旧checkpoint读者、旧re-park codec继续在领取或执行前延期。
+
+历史 `_locked`／`_existing` 仍只核原root admission／outbox。当前reader复用完整
+progress历史链及各已停车后继的原Worker返回、审计和账本核验，再比较Session发布的
+parking hash；不从Session hash猜测资产，也不把schema8直接当执行权。active owner
+自己的最后一份retained材料可尚未停车，但更早材料必须已原子停车；历史reader不反调
+当前reader，历史ACK不会因owner后来轮换而失效。
+
+A无论在B执行中提前排队，还是B停车后首次受理，仍保存root决定受理身份；claim
+核当前完整Session pending／latest native siblings／未启动ToolJob、正式Run与停车owner，
+沿原FIFO内核轮换物理AgentAttempt、epoch和双租约，同一正式Attempt和schema8原材料不变。
+claim审计同时记录root wait与current wait／state hash及停车producer，便于还原领取来源。
+Runtime准备只读精确后继state，保留B结果、原slot／messages、事件前缀、budget／hygiene；
+begin与决定交付再次沿同一来源核验，不因准备成功授予后续过期执行权。
+
+活跃兄弟受理在current原件读完后重新读取Session／owner／正式租约截止时间，再取DB
+clock做最终核验；原件读前的剩余时间不能覆盖等待耗时。批次尚有C时，A的继续不进入
+下轮模型；后续材料保留和停车仍使用原端口，不重放B决定或工具。
+
+该能力未安装main／CLI／Dispatcher或公共HTTP。原批次闭合后的native terminal只表明
+图已返回，后继结果谱系／应用结果／Assessment／唯一结算与新批次停车仍未据此开放；
+后继独立Worker强杀／双制品部署及真实供应商／领域Runner另需验收。实际测试范围和
+未完成出口以实施记录§229为准，不以内部多步链路代替完整正式运行完成。
+
 ### 原路由与恢复验证
 
 关闭新选路时记录 `deep_agent_new_turn_route_disabled`，带 `session_id`、`turn_id` 和 `recovery_reason=new_turn_admission_disabled`；这是路由决定，不是取消/停止回执。

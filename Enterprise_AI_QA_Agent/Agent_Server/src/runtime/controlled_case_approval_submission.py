@@ -121,6 +121,8 @@ class ControlledCaseApprovalSubmission:
 
     def _require_parked(self, cur, command, case, session, owner, wait, origin, capabilities):
         binding = command.runtime_binding
+        current = self.current_wait_in_transaction(cur, command, case, session, owner, wait, origin, capabilities)
+        parked = current.receipt
         run = case.store._read_run(cur, command.run_id)
         _require(session["project_id"] == command.project_id == run.project_id
             and session["status"] == "waiting_approval" and not session["lease_active"]
@@ -130,18 +132,29 @@ class ControlledCaseApprovalSubmission:
             and (case.item.lease_owner, case.item.lease_token) == (case.attempt.worker_id, case.attempt.lease_token)
             and case.item.lease_expires_at is None
             and (owner["task_id"], owner["attempt_id"], owner["owner_epoch"], owner["execution_state"])
-                == (wait.task_id, wait.attempt_id, wait.owner_epoch, "completed")
-            and (session["metadata"].get("pending_turn") or {}).get("controlled_case_wait_sha256") == wait.receipt_sha256,
+                == (parked.task_id, parked.attempt_id, parked.owner_epoch, "completed"),
             "Formal decision requires its current parked original; dual-owner continuation is separate")
-        self.require_pending_originals_in_transaction(cur, command, case, session, owner, wait, origin, capabilities)
+        self._require_current_pending(cur, command, session, owner, current, origin, capabilities)
+        return current
+
+    def current_wait_in_transaction(self, cur, command, case, session, owner, wait, origin, capabilities):
+        from src.runtime.controlled_case_approval_current import read_current_approval_wait
+
+        return read_current_approval_wait(cur, self, command, case, session, owner, wait, origin, capabilities)
 
     def require_pending_originals_in_transaction(self, cur, command, case, session, owner, wait, origin, capabilities):
         """Shared current pending facts, not parking or owner adoption authority."""
+        current = self.current_wait_in_transaction(cur, command, case, session, owner, wait, origin, capabilities)
+        self._require_current_pending(cur, command, session, owner, current, origin, capabilities)
+        return current
+
+    def _require_current_pending(self, cur, command, session, owner, current, origin, capabilities):
+        wait = current.receipt
         natives = self._pending_scope(cur, command, session, owner, wait, capabilities)
         binding = command.runtime_binding
         from src.application.deep_agents.native_approval_batch import require_pending_tool_interrupts_original
 
-        source = original_checkpoint_source(cur, self._settings, binding, origin, wait.owner_epoch)
+        source = original_checkpoint_source(cur, self._settings, binding, current.producer, wait.owner_epoch)
         original = capabilities.require_case_input_format(origin["input_payload"]["case_execution_input"])
         require_pending_tool_interrupts_original(cur, self._settings, source, original.graph_input, natives)
         self._require_unstarted_jobs(cur, wait.batch)
@@ -190,12 +203,17 @@ class ControlledCaseApprovalSubmission:
             and active_command.case_approval_reference.origin_task_id == command.task_id,
             "Formal sibling admission requires its dedicated approval owner")
         active = shared._locked(cur, active_command, capabilities)
+        current = self.current_wait_in_transaction(cur, command, active.case,
+            active.session, active.owner, wait, active.origin, capabilities)
+        # Current material/return reads may wait. Read all three lease
+        # deadlines only afterwards; an earlier snapshot is not a live fence.
+        session = tasks._lock_session(cur, binding.session_id)
+        owner = lock_owner_row(cur, self._settings, binding)
         row, metadata = active.task, session["metadata"]
         state = row["status"]
         _require(state in {"claimed", "running"} and active.origin_command == command and active.wait == wait
             and session["project_id"] == command.project_id
             and session["status"] == ("running" if state == "running" else "waiting_approval")
-            and (metadata.get("pending_turn") or {}).get("controlled_case_wait_sha256") == wait.receipt_sha256
             and (owner["task_id"], owner["attempt_id"], owner["worker_id"], owner["owner_token"], owner["execution_state"])
                 == (row["id"], row["attempt_id"], row["worker_id"], row["lease_token"], state)
             and metadata.get("turn_lease_token") == row["lease_token"]
@@ -218,12 +236,13 @@ class ControlledCaseApprovalSubmission:
             (metadata.get("turn_lease_expires_at"), now, owner["expires_at"], now))
         clock = cur.fetchone()
         _require(clock["session_active"] and clock["owner_active"], "Formal sibling admission owner lease has expired")
-        return active, source
+        return active, source, current
 
     def _require_owned_sibling(self, cur, command, wait, origin, approval_id, capabilities):
         from src.application.deep_agents.native_approval_batch import read_pending_tool_snapshot_original
 
-        active, source = self._active_sibling(cur, command, wait, capabilities)
+        active, source, current = self._active_sibling(cur, command, wait, capabilities)
+        wait = current.receipt
         _require(active.task["reference_id"] != approval_id, "Formal active decision cannot be admitted as its own sibling")
         natives = self._pending_scope(cur, command, active.session, active.owner, wait, capabilities, approval_id=approval_id)
         consuming, = [e for e in wait.batch if e.approval_id == active.task["reference_id"]]

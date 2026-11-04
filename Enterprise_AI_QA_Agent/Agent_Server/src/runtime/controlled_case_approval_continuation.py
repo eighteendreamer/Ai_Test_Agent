@@ -152,16 +152,14 @@ class ControlledCaseApprovalContinuations:
             task, capabilities)
 
     def _prepare_runtime(self, task, capabilities):
-        from src.schemas.controlled_case_admission import ControlledCaseApprovalStateCheckpoint
-
         with postgres_connect(self._settings) as conn, conn.cursor() as cur:
             configure_runtime_owner_transaction(cur, self._settings)
             saved = self._captured_originals(cur, task, capabilities, states=("claimed",), session_state="waiting_approval")
-            _require(saved.wait.schema_version == 2 and saved.case.attempt.checkpoint_version == 7,
+            current = self._submission.require_pending_originals_in_transaction(cur, saved.origin_command, saved.case,
+                saved.session, saved.owner, saved.wait, saved.origin, capabilities)
+            _require(saved.wait.schema_version == 2 and current.state_asset is not None,
                 "Controlled runtime requires its frozen full application preparation and waiting slots")
-            # _locked already verified this exact state/receipt and every
-            # historical original on this connection, holding their row locks.
-            asset = ControlledCaseApprovalStateCheckpoint.model_validate(saved.case.attempt.checkpoint_payload).state_asset
+            asset = current.state_asset
             prepared = capabilities.require_case_input_format(saved.origin["input_payload"]["case_execution_input"])
             assert_runtime_owner(cur, self._settings, task.runtime_owner, states=("claimed",))
             return prepared, asset
@@ -326,12 +324,14 @@ class ControlledCaseApprovalContinuations:
                 or saved.owner["execution_state"] in {"claimed", "running"}:
                 raise TaskDeferred("Formal approval continuation already owned or requires reconciliation")
             _require(row["result_payload"] is row["attempt_id"] is row["error_code"] is None
-                and not row["interrupt_requested"] and case.attempt.checkpoint_version in {1, 7}
+                and not row["interrupt_requested"] and case.attempt.checkpoint_version in {1, 7, 8}
                 and saved.receipt.state == "queued" and saved.receipt.proof is None
                 and saved.receipt.delivered_at is saved.receipt.applied_at is None,
                 "Formal approval has prior execution or native delivery requiring reconciliation")
-            self._submission._require_parked(cur, saved.origin_command, case, saved.session,
+            current = self._submission._require_parked(cur, saved.origin_command, case, saved.session,
                 saved.owner, saved.wait, saved.origin, capabilities)
+            _require(command.reference_id in {entry.approval_id for entry in current.receipt.batch},
+                "Formal approval is outside its current parked batch")
             cur.execute(f"SELECT id FROM {tasks._tasks} WHERE session_id=%s AND sequence<%s "
                 "AND status IN ('queued','waiting_resource','claimed','running') "
                 "AND NOT (operation='message' AND turn_id<>%s AND status IN ('queued','waiting_resource')) LIMIT 1",
@@ -356,6 +356,9 @@ class ControlledCaseApprovalContinuations:
             tasks._event(cur, row, "test_run.case_approval_claimed", {"origin_task_id": saved.origin["id"],
                 "origin_attempt_id": saved.wait.attempt_id, "execution_id": attempt.id,
                 "admission_sha256": saved.admission.admission_sha256, "wait_sha256": saved.wait.receipt_sha256,
+                "current_wait_sha256": current.receipt.receipt_sha256,
+                "parked_task_id": current.receipt.task_id, "parked_owner_epoch": current.receipt.owner_epoch,
+                "state_asset_sha256": current.state_asset.asset_sha256 if current.state_asset else None,
                 "previous_case_lease_sha256": approval_value_hash(case.lease.model_dump(mode="json")),
                 "case_lease_sha256": approval_value_hash(lease.model_dump(mode="json"))})
             assert_runtime_owner(cur, self._settings, row["runtime_owner"], states=("claimed",))

@@ -94,9 +94,9 @@ async def test_repark_closes_only_original_b_and_preserves_root_and_queued_a(pen
     assert len(p.requests) == 1 and len(p.effects) == (decision == "approved")
     assert all(word not in json.dumps(receipt.model_dump(mode="json"))
         for word in ("lease_token", "owner_token", "arguments", "b.py"))
-    # Parking alone does not yet install the next-claim/current-wait reader.
-    # Do not accidentally grant A a lease through the initial root proof.
-    with pytest.raises(FrameworkApprovalRecoveryRequired):
+    # Format support/parking alone cannot enable the default-off successor.
+    # An explicitly enabled current-wait reader is exercised separately.
+    with pytest.raises(TaskDeferred, match="case_approval_successor_unavailable"):
         await continuations(p).claim(wire(p, a.id), worker_id="no-old-root-bypass", capabilities=progress_caps())
     assert facts(p) == saved
 

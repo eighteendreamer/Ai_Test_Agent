@@ -59,6 +59,7 @@ class FrameworkWorkerCapabilities:
     controlled_case_approval_progress_available: bool = False
     controlled_case_approval_repark_available: bool = False
     controlled_case_approval_repark_max_version: int = 1
+    controlled_case_approval_successor_available: bool = False
 
     @classmethod
     def from_artifact(cls, *, deepagents_available: bool):

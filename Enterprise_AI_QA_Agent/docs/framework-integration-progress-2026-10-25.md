@@ -11512,3 +11512,61 @@ $files = Get-Content ../.codex-logs/e228-affected-files.txt
 提交仅7文件：新repark runtime／schema／测试、原wait共享规则、Worker capabilities、runtime-route-controls及本记录；新测试单文件force-add，不改ignore。提交信息 `【feat】原子重新停车正式审批后继`，实际ID见Git；不提交用户v3、日志／探针／缓存／环境，不push／PR。writer仍默认false，main／CLI／Dispatcher未安装端口，无公共API、DDL、依赖或生产选路变更。
 
 下一步必须将原queued兄弟admission与当前后继停车证明分开：claim／prepare_runtime复用同一current-wait来源，在完整核验后串行领取A并从progress state恢复，不改写root／B，不重发B决定、不再执行B工具；批次未闭合不得调用下轮模型。不能把本步旧claim拒绝A当作最终目标，也不能直接放行schema8绕过停车证明。完整v4目标仍active，其他未验出口如前保留，剩余粗估4–8周有效开发／验收，环境与人工等待另计。
+
+## 229. E／正式审批：分离 root 受理身份与当前停车来源，串行领取／Runtime 继续（2026-11-05，实施中）
+
+对应 v4 §7.3／§9.2／§12.1，基线 `342d552788166dcdbb784632aa5c83c51b4ef986`。本轮先核 active 完整目标、Git 与 v4／§52／最新 §228。只有用户 v3 modified，其 SHA256 仍为 `8a43e94160767a0de20740f2cb30782f06322cbc3467076dfcb120d4efdf1ad4`，不修改／暂存。没有旧 pytest 句柄需续取；没有新时钟、服务或路由操作。
+
+### 来源、问题与采用做法
+
+- `controlled_case_approval_continuation._locked`／`submission._existing` 的原 root receipt、入队 admission／outbox → 保持历史根身份校验，不以当前停车回执覆盖 queued A 的既有决定受理材料。
+- `ControlledCaseApprovalProgress._read_chain`／`ControlledCaseApprovalReparks._read_receipt` → 复用同连接历史材料／Worker return／审计／账本原件，独立解析当前停车 basis；不复制原生解析，不在历史 reader 内调用当前 resolver，避免递归／历史 ACK 绑定当前 owner。
+- 原 `_require_parked`／`require_pending_originals_in_transaction`、`_active_sibling`、claim／begin／delivery → 共用唯一 current-wait 来源和既有 complete pending/native/job／owner 内核，重领双租约但保留同一正式 Attempt。仅 active owner 自己的最后一个 retained asset 可以尚未 re-park；更早 suffix 必须有原子停车证明，不能把材料存在当释放 owner。
+- 原 Runtime 的统一 progress projector／工具 slot 合并 → 只切换真实输入资产到最新停车 state，保持原 ordinal、messages、B 已应用材料、事件前缀、root budget 与 hygiene，不新增恢复 Runtime 或调度层。
+- 本地课程 `项目借鉴/llm-testing-course/Agent轨迹与协议鲁棒性.html` 的轨迹／动作、观察及工具选择序列 → 测试核实际工具轨迹、请求次数和状态迁移，不以文本输出代替证据。
+
+变更范围仅当前停车 reader、上述消费方、default-off 后继能力、真实 PG／固定框架隔离测试与说明。不启 main／CLI／Dispatcher，不改 schema8／root／B／A 的历史身份，不加付费调用、DDL 或依赖；原终态／新批次结果谱系和正式唯一结算另有待验出口。
+
+### TDD 与首轮事实
+
+`.codex-logs/e229-current-wait-red.log`：4 个真实 PG／官方框架用例 **4 failed、67.35秒、exit1**。提前 queued A 在 claim 被 checkpoint 只允许 1／7 拒绝；停车后首次提交 A 在 `_require_parked` 的 root owner／receipt 断言拒绝。两种失败均发生在产品边界，未通过 mock 伪造。
+
+引入 `controlled_case_approval_current.read_current_approval_wait` 和 `controlled_case_approval_successor_available=False`，claim／Runtime准备／begin／delivery／活跃兄弟受理及后续 re-park 读取同一来源。原 root admission 校验未动，历史读者仍无执行权限。
+
+第一次扩成8项，`e229-current-wait-first-green.log` 实际 **4 failed、4 passed、139.23秒、exit1**：四项 A 批准／拒绝 × B 批准／拒绝的实际继续已通过，模型只在原批次闭合后出现下一请求，未重跑 B，也未进入首次 finalizer。其余四项是小怪测试断言误把公开 `AgentTaskRecord` 当 `AgentTaskExecution` 读取 `.input`；已查真实 schema，改为保存入队数据库 `input_payload` 再核 claim，不能把整体称绿。该日志保留。
+
+新增三兄弟、连续两次 re-park 与活跃 A 下受理 C 的实际链路，以及四个边界的原生错误／旧root指针／Worker返回漂移、default-off／旧codec、跨租约及并发／取消负例。`e229-current-wait-matrix.log` 当前运行中，未有最终结果；运行期间不改 src／tests。全消费回归、静态、字节与精确提交仍待执行，当前全部为未提交草稿，不沿用 §228 的1001通过代表新字节。
+### 扩大专项的实际结果与新增等待后活性缺口
+
+`e229-current-wait-matrix.log`：**1 failed、32 passed、582.49秒、exit1**。四项领取／只读状态核验、四项A实际继续及三兄弟两次停车／C最后闭合均通过；原生错误／root指针／Worker返回漂移和旧reader负例通过。唯一失败是小怪并发测试把整个Run的两个夹具条目Attempt数当成本条目的Attempt数：查 `formal_case` 确认原fixture一次领取多个正式条目，已改为按原 `run_item_id` 精确断言仍仅一个，不改产品领取逻辑、不删断言。同时查真实cancel_run签名，取消调用显式提供DB clock，没有沿用臆造默认参数。
+
+提交前审查新增 `e229-current-clock-red.log`：**3 failed、51.90秒、exit1**。在活跃A受理C事务的最后一次current原件读取后，分别令Session／owner／正式租约跨期，三项均DID NOT RAISE，暴露新current读者放在旧活性核验之后的真实排序缺口。根因不是需要再加fallback：把共享current原件读取移到租约读取／最终DB clock之前，并在该读取后重新锁读Session／owner与正式条目，避免旧截止时间快照。最后检查继续使用原 `_active_sibling` 活性内核，不新增调度／续租或重试。
+
+修订三项正运行 `e229-current-clock-green.log`；增加取消未claimed条目的受理／领取拒绝、checkpoint7旧读者和更精确并发范围，待重新运行全部新专项及消费者。之前32通过不是最终字节绿色，所有失败日志保留。
+### 新专项最终终态与17完整文件消费回归启动
+
+等待后活性三项的第一次修订运行 `e229-current-clock-green.log` 实际 **1 failed、2 passed、57.35秒、exit1**：三项产品行为均已拒绝跨期并回滚，正式租约正确抛出既有 `ContinuationLeaseLostError(RuntimeError)`，小怪测试却只捕获ValueError。查 `runtime/store.py` 后改为按租约种类精确捕获，不削弱未抛错／回滚／原件不变断言。
+
+最终整个新文件 `e229-current-wait-final.log` 实际 **42 passed、539.20秒、exit0，无skip／deselect**：包括两种入队时机、B批准／拒绝后精确state读取、四种A/B决定实际继续、三兄弟两次停车、四边界来源漂移／旧reader、并发／取消与最后等待后跨三租约回滚。真实隔离PG／Redis和固定官方框架，供应商是本地HTTP夹具、领域工具是受治理隔离handler；不是main／实际Dispatcher后继路由或后继独立进程强杀验收。终态A/C仍由既有窄契约留running，没产生正式结果／Assessment／结算，不冒称正式用例已完成。
+
+`e229-source-frozen.log`：src **884个py，456007541707df7afa17a202cbc60d2d5fd4274a00da6401fe315f941d8c14f2**；tests **698个py，1cad6d96e841da760615c1e1f7295a978bd9d77ebb224532d481b6ab137c2390**。同字节全src／tests compileall与pip check实际exit0，No broken requirements found，日志 `e229-static.log`；ruff／mypy未安装，未运行独立lint／typecheck，不安装依赖。v3 SHA256仍原值。
+
+17完整文件清单 `e229-affected-files.txt` 为§228原15文件加successor和pending_approvals。cwd=Agent_Server，固定Agent解释器，每条pytest前清UV ProcessOnly，PG=1、其他实际live=0、diagnostics=1、UTF8：
+
+~~~powershell
+$files = Get-Content ../.codex-logs/e229-affected-files.txt
+& E:\MiniConda3\envs\Agent\python.exe -u -m pytest @files -q -rs --tb=short
+~~~
+
+日志 `e229-current-wait-consumers.log` 正运行。保留原句柄，不改src／tests、不沿用前次§228结果、不重复启动回归；当前§229仍未提交，待完整回归终态、前后字节／diff复核与精确暂存。没有改时钟／重启服务／开生产路由／付费调用／UV迁移。本轮及完整v4均未宣称整体完成。
+### 17文件最终验收与交付边界
+
+原session98224已取终态，`e229-current-wait-consumers.log` 实际 **1079 passed、4868.48秒（1:21:08）、exit0，无skip／deselect**。17完整文件包含新42项以及首次停车／ACK／独立进程首次停车强杀、progress／state、claim／受理／delivery／application／Runtime、root budget／Worker契约。不是新后继独立进程强杀、真实供应商、领域Runner或生产路由验收。没有中途重启pytest或运行期间修改src／tests。
+
+`e229-source-after.log` 与冻结src884／tests698及两个SHA256完全一致；用户v3原SHA256仍未变。最终全src／tests compileall与pip check再次实际exit0，No broken requirements found；固定Agent解释器pytest／multiprocessing残留为0。ruff／mypy未安装，独立lint／typecheck未执行。tracked相关diff --check通过；新文件编译与完整专项已实际覆盖。
+
+本步交付映射：v4 §7.3／§9.2／§12.1 → §229 → 唯一当前停车reader、原root身份不变、现有串行claim／Runtime／begin／delivery／活跃兄弟受理／re-park、default-off能力 → 真实产品红4／跨期红3、保留测试自身失败、新专项42与最终1079完整消费者、字节／静态 → 已验证内部多步当前停车继续；后继结果／新批次、唯一结算及独立Worker验收仍待完成。
+
+拟提交仅10相关文件：current reader、continuation／submission／repark消费、Worker capabilities、新successor专项、原repark契约与pending夹具、路由说明和本记录。新测试单文件force-add，不改ignore；不暂存用户v3、运行日志／探针、环境／缓存，无依赖／公共API／DDL或生产路由变更，不push／PR。提交信息 `【feat】从当前停车串行继续正式审批`，实际ID见Git和交付。
+
+下一步：原批次最后项／下一模型返回native terminal后的后继完整结果材料与唯一投影／Assessment／结算；新审批批次保留与停车；再接实际Worker路由、强杀、双制品与相应发布验收。不能用本步native terminal替代正式结果或把running任务伪装completed。v4完整目标继续active；既有§215历史账本风险与全量后端／前端、完整main lifespan、真实供应商／领域Runner、E3／E4、备份恢复／性能等未验出口继续保留。整个项目剩余粗估 **4–8周有效开发／验收**，环境、授权和人工等待另计。

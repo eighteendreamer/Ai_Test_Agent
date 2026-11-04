@@ -45,6 +45,10 @@ async def pending_formal(formal_case, tmp_path, request):
     other["id"], other["function"]["arguments"] = "B", '{"path":"b.py"}'
     if not options.get("single_tool"):
         calls.append(other)
+    if options.get("third_tool"):
+        third = deepcopy(other)
+        third["id"], third["function"]["arguments"] = "C", '{"path":"c.py"}'
+        calls.append(third)
     with _provider("openai_chat_completions", first_reply=reply) as (url, requests):
         async def prepare_input(models):
             p = assembly(s, tmp_path / "assembly", models)

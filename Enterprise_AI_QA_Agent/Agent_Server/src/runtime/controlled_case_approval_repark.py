@@ -152,12 +152,13 @@ class ControlledCaseApprovalReparks:
             session, root = saved.session, saved.wait
             _require(not saved.task['interrupt_requested'] and saved.task['result_status'] is None
                 and (session['metadata'].get('control') or {}).get('control_state') not in {
-                    'interrupt_requested', 'interrupted', 'cancelled'}
-                and (session['metadata'].get('pending_turn') or {}).get('controlled_case_wait_sha256') == root.receipt_sha256,
+                    'interrupt_requested', 'interrupted', 'cancelled'},
                 "Controlled re-park conflicts with current Session/control state")
             batch = self._batch(saved, asset)
+            current = self._continuations._submission.current_wait_in_transaction(cur, saved.origin_command, saved.case,
+                session, saved.owner, root, saved.origin, capabilities)
             self._continuations._submission._pending_scope(cur, saved.origin_command, session,
-                saved.owner, root, capabilities)
+                saved.owner, current.receipt, capabilities)
             source = self._progress._source(cur, saved, asset.owner_epoch)
             original = capabilities.require_case_input_format(saved.origin['input_payload']['case_execution_input'])
             read_pending_tool_snapshot_original(cur, self._settings, source, original.graph_input, asset.natives)
