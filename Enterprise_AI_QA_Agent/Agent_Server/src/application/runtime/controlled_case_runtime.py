@@ -272,7 +272,8 @@ class ControlledCaseRuntime:
         async def project(prepared, outcome):
             nonlocal state, runtime_result, result_asset, conversation_response, assessment_asset, approval_tool_projection
             if wait_asset is not None:
-                from src.application.runtime.tool_messages import build_runtime_tool_messages, rejection_projector_from_original_slot
+                from src.application.runtime.tool_messages import rejection_projector_from_original_slot
+                from src.application.runtime.controlled_case_wait_projection import project_controlled_approval_progress
                 from src.schemas.framework_approval import framework_approval_id, framework_tool_call_id
 
                 native, = [n for n in wait_asset.natives if framework_approval_id(task.runtime_binding, n) == task.reference_id]
@@ -283,14 +284,6 @@ class ControlledCaseRuntime:
                 await continuation.apply_decision(task, capabilities=capabilities, rejection_projector=projector)
                 approval_tool_projection = await continuation.read_tool_projection(task, capabilities=capabilities)
                 original_materials.append(approval_tool_projection)
-                self._runtime._merge_tool_records(records, [approval_tool_projection.record.model_dump(mode="python")])
-                state["tool_messages"] = build_runtime_tool_messages(state["turn_id"], records,
-                    binding_id=task.runtime_binding.binding_id, previous_records=wait_asset.state["tool_results"],
-                    previous_messages=wait_asset.state["tool_messages"], original_materials=original_materials,
-                    require_original=True)
-                records[:] = TypeAdapter(Any).dump_python(records, mode="json")
-                state["tool_results"] = deepcopy(records)
-                state["framework_messages"] = serialize_messages(outcome.values.get("messages", []))
                 pending = {framework_approval_id(task.runtime_binding, n) for n in outcome.native_interrupts}
                 if not pending.issubset({a["id"] for a in wait_asset.state["pending_approvals"]}):
                     from src.runtime.framework_approval_journal import FrameworkApprovalRecoveryRequired
@@ -299,10 +292,10 @@ class ControlledCaseRuntime:
                         "session_id": task.session_id, "approval_id": task.reference_id,
                         "native_interrupt_count": len(pending), "automatic_replay": False})
                     raise FrameworkApprovalRecoveryRequired("Controlled new native approval batch requires successor parking")
-                state["pending_approvals"] = [a for a in wait_asset.state["pending_approvals"] if a["id"] in pending]
-                state["context_bundle"]["deep_agent_approval_batch"] = deepcopy(state["pending_approvals"])
-                state["model_response_summary"] = {**state["model_response_summary"],
-                    "root_model_budget": deepcopy(outcome.root_model_budget)}
+                state = project_controlled_approval_progress(wait_asset, approval_tool_projection,
+                    outcome.values.get("messages", []), outcome.native_interrupts, state["event_log"], state=state,
+                    records=records, materials=original_materials, root_model_budget=outcome.root_model_budget)
+                records[:] = deepcopy(state["tool_results"])
                 await append_graph_event_durable(state, "runtime.case_approval_applied", "langgraph.hitl",
                     "Formal tool result applied; atomic re-park or finalization remains separate.",
                     approval_id=task.reference_id, tool_job_id=approval_tool_projection.record.job_id,

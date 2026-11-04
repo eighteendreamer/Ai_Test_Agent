@@ -174,7 +174,7 @@ class ControlledCaseApprovalWaits:
 
             scope["original_stage"] = "retained_application_wait_state"
             asset = require_wait_state_in_transaction(cur, settings, case, task, receipt, original, snapshots, natives)
-        _require(receipt.schema_version == 2 or case.attempt.checkpoint_version != 7,
+        _require(receipt.schema_version == 2 or case.attempt.checkpoint_version not in {7, 8},
             "Controlled wait state checkpoint has no matching original receipt")
         if state_only:
             return asset

@@ -1098,6 +1098,34 @@ LangGraph 最新状态自动合入 pending writes 的便捷投影当作不可变
 未安装新路径，writer 默认关闭；无公共 API、DDL、依赖或格式版本变更。实际红绿和
 消费者回归见实施记录 §218；§215 未定位的账本风险继续保留。
 
+### 正式后继不可变状态材料（§219；仍不是重新停车）
+
+兼容读者现在理解原 RunItem Attempt checkpoint **8**：完整嵌入原 checkpoint 7，
+追加带 parent hash 的后继材料，不覆盖初次停车 state／admission。新内部
+`ControlledCaseApprovalProgress.retain`／`read` 只持久化／读核材料；
+`controlled_case_approval_progress_available` 独立控制写入，默认 false。
+旧 max checkpoint 7 的读者遇到 8 延期；8 仍不是 result checkpoint。
+原等待 reader／ACK 同步理解 8，且要求原 receipt 2，不能降级为 receipt 1 绕过原件核验。
+
+写入要求原捕获的 running 双 owner、已排空事件 sink 和实际 delivered＋applied 的单项
+决定。复用原 decision／ToolJob 材料 reader、Worker claim、精确 native checkpoint 和
+事件引用，从原 state 重算后继 state；不接受调用者提交任意 state。Runtime 与材料端口
+共用同一纯投影器，保留原 ordinal、完整展示字符串、messages、根预算和 hygiene。
+基础 messages 与官方 pending task results 分别核验，不忽略 B 的已完成 ToolMessage。
+写 schema 8、确定性审计及原材料／审计读回核验同事务，最后用 DB clock 复核原 owner／租约；相同重试
+返回原 asset／时间／审计，取消等待者或丢回执不证明回滚，不自动重跑工具。
+
+历史读取核整个已保留 suffix 的原 admission／receipt、Worker claim、native／工具材料、
+审计引用与确定性 state。按每项自己的审计序号截取历史事件，只选择该项实际保留的
+native 结果；后来 A 的 task error 或事件不改写 B 的旧材料。失租或 Run 取消后可只读，
+不接管 owner、不续租、不获得执行权。重算 asset 与外层审计 hash 不能替代来源核验。
+
+本步仅支持**原批次仍有待审批兄弟**的材料。Task／正式 Attempt 仍 running、state 仍
+resuming，A 即使 queued 也不能领取；没有释放 B 租约、重新停车、receipt 3 或正式结果。
+terminal／新审批批次与完整多步 suffix 的执行闭环仍需后续实现；格式支持 hash 链不等于
+已验多步继续。main／CLI／Dispatcher 未安装本端口，生产 writer 默认关闭，无公共 HTTP、
+DDL 或依赖变更。实际红绿与消费者回归见实施记录 §219；§215 未定位账本风险继续保留。
+
 ### 原路由与恢复验证
 
 关闭新选路时记录 `deep_agent_new_turn_route_disabled`，带 `session_id`、`turn_id` 和 `recovery_reason=new_turn_admission_disabled`；这是路由决定，不是取消/停止回执。

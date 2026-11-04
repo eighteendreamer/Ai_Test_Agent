@@ -46,7 +46,7 @@ class FrameworkWorkerCapabilities:
     model_budget_max_version: int = 2
     controlled_case_available: bool = False
     controlled_case_input_max_version: int = 4
-    controlled_case_checkpoint_max_version: int = 7
+    controlled_case_checkpoint_max_version: int = 8
     controlled_case_settlement_admission_available: bool = False
     controlled_case_settlement_max_version: int = 1
     controlled_case_settlement_available: bool = False
@@ -56,6 +56,7 @@ class FrameworkWorkerCapabilities:
     controlled_case_approval_claim_available: bool = False
     controlled_case_approval_delivery_available: bool = False
     controlled_case_approval_state_available: bool = False
+    controlled_case_approval_progress_available: bool = False
 
     @classmethod
     def from_artifact(cls, *, deepagents_available: bool):

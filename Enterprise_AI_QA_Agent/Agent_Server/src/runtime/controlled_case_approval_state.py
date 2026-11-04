@@ -11,7 +11,7 @@ from src.runtime.framework_approval_journal import FrameworkApprovalRecoveryRequ
 from src.runtime.framework_event_completion import _event_references, _require_ordered_log
 from src.runtime.framework_tool_materials import read_projected_job_outputs, read_unapproved_tool_materials
 from src.runtime.postgres_tool_job_store import _job_from_row
-from src.schemas.controlled_case_admission import ControlledCaseApprovalStateCheckpoint
+from src.schemas.controlled_case_admission import ControlledCaseApprovalStateCheckpoint, read_wait_checkpoint
 from src.schemas.controlled_case_approval_state import ControlledCaseApprovalStateAsset
 from src.schemas.controlled_case_task_input import parse_controlled_case_task_input
 from src.schemas.framework_approval import NativeToolInterrupt, approval_value_hash
@@ -93,9 +93,9 @@ def require_wait_state_in_transaction(cur, settings, case, task, receipt, origin
     from langchain_core.messages import AIMessage, ToolMessage
     from src.application.models.framework_model_budget_projection import read_model_budget_material
 
-    _require(receipt.schema_version == 2 and case.attempt.checkpoint_version == 7,
+    _require(receipt.schema_version == 2 and case.attempt.checkpoint_version in {7, 8},
         "Controlled waiting state has no original retained material")
-    checkpoint = ControlledCaseApprovalStateCheckpoint.model_validate(case.attempt.checkpoint_payload)
+    checkpoint = read_wait_checkpoint(case.attempt)
     asset = checkpoint.state_asset
     _require((asset.asset_sha256, asset.binding, asset.task_id, asset.attempt_id, asset.owner_epoch,
         asset.retained_at, asset.model_ledger_sha256) == (receipt.state_asset_sha256, original.graph_input.binding,

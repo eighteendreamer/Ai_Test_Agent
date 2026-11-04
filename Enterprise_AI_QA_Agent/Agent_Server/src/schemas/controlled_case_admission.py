@@ -19,6 +19,7 @@ from src.schemas.framework_observation_projection import FrameworkObservationAss
 from src.schemas.controlled_case_assessment import ControlledCaseAssessmentAsset
 from src.schemas.controlled_case_settlement import ControlledCaseSettlementReceipt
 from src.schemas.controlled_case_approval_state import ControlledCaseApprovalStateAsset
+from src.schemas.controlled_case_approval_progress import ControlledCaseApprovalProgressAsset
 
 
 CONTROLLED_CASE_ADMISSION_KEY = "controlled_case_admission"
@@ -218,6 +219,54 @@ class ControlledCaseApprovalStateCheckpoint(BaseModel):
         return self
 
 
+class ControlledCaseApprovalProgressCheckpoint(BaseModel):
+    """Append successor materials, retaining the initial checkpoint verbatim."""
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    schema_version: Literal[8]
+    initial_wait: ControlledCaseApprovalStateCheckpoint
+    progress_assets: tuple[ControlledCaseApprovalProgressAsset, ...] = Field(min_length=1)
+
+    @model_validator(mode="before")
+    @classmethod
+    def require_version(cls, value):
+        if isinstance(value, dict) and type(value.get("schema_version")) is not int:
+            raise ValueError("Controlled progress checkpoint requires its explicit integer version")
+        return value
+
+    @model_validator(mode="after")
+    def verify(self):
+        from src.schemas.framework_approval import framework_approval_id
+
+        root = self.initial_wait.state_asset
+        parent, tasks = root, set()
+        for asset in self.progress_assets:
+            selected = [n for n in parent.natives if framework_approval_id(root.binding, n) == asset.admission.approval_id]
+            material = [m for m in asset.tool_materials if m.record.approval_id == asset.admission.approval_id]
+            if (len(selected) != 1 or len(material) != 1 or asset.task_id in tasks
+                or asset.binding != root.binding or asset.origin_task_id != root.task_id
+                or asset.admission.run_item_execution_attempt_id != root.run_item_execution_attempt_id
+                or asset.admission.input_sha256 != root.input_sha256
+                or asset.parent_state_sha256 != parent.asset_sha256 or asset.owner_epoch <= parent.owner_epoch
+                or asset.retained_at < parent.retained_at
+                or asset.root_model_budget != root.root_model_budget or asset.hygiene_metadata != root.hygiene_metadata
+                or {n.interrupt_id: n for n in asset.natives}
+                    != {n.interrupt_id: n for n in parent.natives if n not in selected}
+                or asset.tool_materials != (*parent.tool_materials, material[0])):
+                raise ValueError("Controlled progress checkpoint changed its original state lineage")
+            tasks.add(asset.task_id)
+            parent = asset
+        return self
+
+
+def read_wait_checkpoint(attempt) -> ControlledCaseApprovalStateCheckpoint:
+    if attempt.checkpoint_version == 8:
+        return ControlledCaseApprovalProgressCheckpoint.model_validate(attempt.checkpoint_payload).initial_wait
+    if attempt.checkpoint_version == 7:
+        return ControlledCaseApprovalStateCheckpoint.model_validate(attempt.checkpoint_payload)
+    raise ValueError("RunItem has no original controlled waiting checkpoint")
+
+
 def read_result_checkpoint(attempt) -> ControlledCaseResultCheckpoint | None:
     if attempt.checkpoint_version == 1:
         return None
@@ -231,10 +280,10 @@ def read_result_checkpoint(attempt) -> ControlledCaseResultCheckpoint | None:
 
 def read_admission_checkpoint(attempt) -> ControlledCaseAdmissionCheckpoint:
     """Read the original reservation only; inherited attempts need reconciliation."""
-    if attempt.checkpoint_key != CONTROLLED_CASE_ADMISSION_KEY or attempt.checkpoint_version not in {1, 2, 3, 4, 5, 6, 7}:
+    if attempt.checkpoint_key != CONTROLLED_CASE_ADMISSION_KEY or attempt.checkpoint_version not in {1, 2, 3, 4, 5, 6, 7, 8}:
         raise ValueError("RunItem has no supported original controlled case admission checkpoint")
-    if attempt.checkpoint_version == 7:
-        checkpoint = ControlledCaseApprovalStateCheckpoint.model_validate(attempt.checkpoint_payload).admission
+    if attempt.checkpoint_version in {7, 8}:
+        checkpoint = read_wait_checkpoint(attempt).admission
     else:
         result = read_result_checkpoint(attempt)
         checkpoint = result.admission if result is not None else ControlledCaseAdmissionCheckpoint.model_validate(attempt.checkpoint_payload)

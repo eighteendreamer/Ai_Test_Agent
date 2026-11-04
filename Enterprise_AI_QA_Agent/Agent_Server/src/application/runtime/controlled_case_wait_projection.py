@@ -1,6 +1,9 @@
 """Pure initial waiting projection; persistence/authority stay with atomic park."""
 from copy import deepcopy
 
+from typing import Any
+from pydantic import TypeAdapter
+
 from langchain_core.messages import AIMessage, ToolMessage
 
 from src.application.deep_agents.framework_transcript import serialize_messages
@@ -42,6 +45,40 @@ def wait_native_messages(snapshot, *, retained_sources=None):
             if message not in messages:
                 messages.append(message)
     return messages
+
+
+def project_controlled_approval_progress(parent, material, native_messages, natives, event_log, *,
+                                        state, records, materials, root_model_budget):
+    """One original slot changes; no new ordinal, clock or execution intent.
+
+    No upstream counterpart (checked: formal Runtime single-item projection,
+    original tool-message merge, v4 §9.2): reconstruct from frozen parent and
+    applied material, not mutable ToolJob text or a submitted state dictionary.
+    """
+    binding = parent.binding
+    state, records = deepcopy((state, records))
+    matches = [r for r in parent.state['tool_results'] if r['call_id'] == material.record.call_id]
+    if len(matches) != 1 or matches[0]['status'] != 'waiting_approval':
+        raise ValueError('Controlled progress has no unique original pending tool slot')
+    if event_log[:len(parent.state['event_log'])] != parent.state['event_log']:
+        raise ValueError('Controlled progress changed its original event prefix')
+    by_call = {r['call_id']: r for r in records}
+    by_call[material.record.call_id] = material.record.model_dump(mode='json')
+    records = TypeAdapter(Any).dump_python(list(by_call.values()), mode='json')
+    state['tool_results'] = records
+    state['tool_messages'] = build_runtime_tool_messages(binding.turn_id, records, binding_id=binding.binding_id,
+        previous_records=parent.state['tool_results'], previous_messages=parent.state['tool_messages'],
+        original_materials=materials, require_original=True)
+    state['framework_messages'] = serialize_messages(native_messages)
+    pending = {framework_approval_id(binding, n) for n in natives}
+    if not pending.issubset({a['id'] for a in parent.state['pending_approvals']}):
+        raise ValueError('Controlled progress requires original sibling pending identities')
+    state['pending_approvals'] = [a for a in parent.state['pending_approvals'] if a['id'] in pending]
+    state['context_bundle']['deep_agent_approval_batch'] = deepcopy(state['pending_approvals'])
+    state['model_response_summary'] = {**state['model_response_summary'], 'root_model_budget': deepcopy(root_model_budget)}
+    state['event_log'] = deepcopy(event_log)
+    state.update(pending_turn={}, termination_reason='', control_state='resuming', continue_loop=True)
+    return state
 
 
 def project_controlled_case_wait(original, native_messages, natives, approvals, waiting_records,

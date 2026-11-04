@@ -11436,3 +11436,13 @@ $files = Get-Content ../.codex-logs/e219-affected-files.txt
 cwd=Agent_Server，每条pytest前清UV ProcessOnly，PG=1、其余实际live=0、diagnostics=1、UTF8；日志 `e227-original-33-regression.log`，**session68642正在运行，没有最终计数**。本次不是§223旧字节的1704通过，也不以§225的266／305通过代替原33文件结果。保留原句柄，禁止重复启动或在运行中修改src／tests；终态后核字节，按真实失败决定下一步。
 
 本记录提交仅跟踪已实际启动的验收，不提交§219草稿、用户v3、忽略日志或临时诊断；不push／PR。§219仍pre-repark，未释放B／让A领取，无正式结果或唯一结算；schema8后续及完整v4其他出口未缩小。整体goal继续active，剩余粗估4–8周有效开发／验收，环境与人工等待另计。
+
+### 原33文件真实终态与§219提交（2026-11-05）
+
+本轮只接续原session68642，逐次确认它仍live才等待；没有因无新输出或等待超时重启pytest。只读审阅了后续re-park相关现有入口，没有在回归中修改src／tests。原 `e227-original-33-regression.log` 已终态：**1708 passed、10999.70秒（3:03:19）、exit0，无skip／deselect**。完整包含§219新材料44项及原33文件，不以局部选择或后续重放拼成全绿。§219原3失败、§223原4失败和§224原2强杀失败仍保留，不回写历史；§215两项原账本拒绝此次未重现，仍不能单凭未重现认定已查清全部根因。
+
+`e227-source-after.log` 与回归前逐字一致：src881／cc8611273b65c5f3acf1b776fa4cd3b2ee3e9a87c688d2211862c20075f75f14，tests696／337a99ae7efb778a427f771c8ad72c1e8b05ecb62fcc2240989e4865e3425371。用户v3原SHA256未变，固定Agent解释器pytest／multiprocessing残留为0。该同字节版本的compileall／pip check已在§225实际通过；本次未运行独立ruff／mypy，它们仍未安装。
+
+审阅§219原12文件及完整diff后，现按原归属提交不可变后继材料，提交信息 `【feat】保留正式审批后继不可变状态材料`，实际ID见Git。包含原被ignore的新测试单文件force-add，不改ignore；不包含用户v3、日志／探针／环境。没有新增实现或将先前草稿静默覆盖。此提交只证明材料写入／历史核验、共享Runtime投影与相应消费矩阵，不证明重新停车、A领取、正式结果或唯一结算；writer仍默认关闭，main／CLI／Dispatcher未安装该端口。
+
+下一子步继续v4 §7.3／§9.2／§12.1的专用原子re-park：必须消费原后继材料、保留root回执及已queued兄弟admission，原事务闭合B与双租约后才能逐项继续。先新增失败测试，不延长TTL、不重跑已应用B、不用简单将schema8放行替代当前停车证明。terminal／新批次、完整结果谱系／唯一结算、新格式独立进程及完整v4其他验收仍未完成；整体goal保持active，剩余粗估4–8周有效开发／验收，等待另计。
