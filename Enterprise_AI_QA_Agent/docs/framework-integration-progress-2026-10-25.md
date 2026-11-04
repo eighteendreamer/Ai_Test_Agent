@@ -11152,3 +11152,59 @@ Task=`56fafbed-57c4-44e4-9bc7-8b0775924c17`、binding=`binding-10c6d12eaa4240099
 本诊断不解决Worker时间倒序根因，也不关闭setup租约失效与§215账本风险；§219仍不提交。下一出口须在更接近原失败负载的**有界写入侧观测**中取得倒退那一刻的DB返回／pid／monotonic边界，区分writer与reader；租约下一次拒绝则用新增原值确定是否真正到期。未授权改系统／容器时间或重启服务，不能先动这些环境条件来“获绿”。之后才收口§219、专用re-park、A领取、terminal／新批次、结果谱系／唯一结算与独立进程验收。
 
 未运行全量后端、前端build／typecheck／浏览器、新格式独立强杀、真实付费供应商／领域Runner、Docker／MySQL／RustFS、完整main lifespan、双制品部署／一致备份恢复、E3／E4和性能基线。仅拟提交本步3个Python文件和本记录，共4文件；临时脚本／日志、§219全部草稿与用户v3排除，不push／建PR。完整v4目标继续active，剩余仍粗估 **4–8周有效开发／验收**，环境及人工等待另计；间歇故障根因未定使估算不确定性增大。
+
+## §222 写入边界确认数据库时间倒退与共享WSL时钟取证（2026-11-04）
+
+### 范围、原句柄与验证终态
+
+基线§221／`f4f70dec89b6f9baca87d0e9f95b4fe043c68de0`，对应v4 §6.3／§8／§9.2。续接既有验收句柄，不重新启动同一测试。此步不修改产品源码／测试，不安装依赖、不调用UV、不重复§184迁移；§219完整草稿和用户v3保持原样，不因本轮绿色而提前提交后继功能。
+
+临时脚本 `.codex-logs/e222_writer_consumers.py` 沿§221包装原 `_event`：记录原 `clock_timestamp()` 返回、INSERT参数、同事务读回事件行头和活动JSON时间，以及原连接backend PID、宿主机 `perf_counter_ns／time.time_ns` 和pytest nodeid；不替换SQL／时钟／异常。附加自身事件只读SELECT会增加耗时，不能作为无探针性能基线。同步观察原正式租约检查和夹具耗时，不延长租约、不额外心跳。
+
+测试入口为固定 `E:\MiniConda3\envs\Agent\python.exe` 执行该临时脚本，cwd=`Agent_Server`、PYTHONPATH指向该目录；每条pytest前先执行 `../scripts/clear_uv_environment.ps1 -ProcessOnly`，PG=1、其他实际live开关=0、diagnostics=1、UTF8。脚本实际调用：
+
+~~~python
+pytest.main([
+    "tests/test_controlled_case_approval_progress.py",
+    "tests/test_controlled_case_approval_delivery.py",
+    "tests/test_controlled_case_approval_application.py",
+    "-q", "-s", "-rs", "--tb=short", "--maxfail=1"
+], plugins=[WriterDiagnostic()])
+~~~
+
+原日志 `e222-writer-consumers.log` 实际终态 **197 passed、2 warnings、1357.56秒（22:37）、exit0，无skip／deselect**。两项warning仍为临时pytest.main启动时anyio／langsmith已导入的assertion rewrite提示，非新产品warning。此结果仅限完整progress／delivery／application三文件，不覆盖§219原33文件 **3 failed、1699 passed**，不关闭§221真实时序失败、首次setup租约失效或§215两项原模型账本拒绝。
+
+最终结构化分析 `e222-writer-summary.json`：969条原事件、3个backend，DB返回／INSERT／持久行／活动JSON四处时间全部一致；同task倒序0，跨task的原返回倒序1。195次正式领取、390次夹具观测，无夹具setup失败；formal_case最大0.8449433秒，pending_formal最大2.7986254秒。9271次租约接受、11次拒绝；逐一核对11个node均为既有显式失效／跨期限负例，保留其异常及回滚断言，不能把这些有意负例当作首次setup故障再现。
+
+### 关键事实：倒退已经存在于原数据库返回
+
+同一backend **572168**、同一用例 `test_rehashed_progress_is_not_an_authority_for_changed_originals[native]` 中，按调用顺序记录：
+
+| 边界 | Task | event_id／sequence | 原DB时间（UTC） |
+| --- | --- | --- | --- |
+| completed | `3ffcb6ac-4009-412b-8930-e90fcda09c30` | `15b3351c-4671-4fdd-93f8-d4fec0c81b1e`／12 | `2026-11-04T07:32:35.468957+00:00` |
+| claimed | `2ae320c1-3f33-5353-a478-e5c7bf3d69e3` | `ae60bef3-a069-42a9-a5ec-a2c9334cb4e5`／16 | `2026-11-04T07:32:35.182839+00:00` |
+
+原DB返回倒退 **0.286118秒**；宿主机单调时钟前进 **0.6276685秒**，宿主机wall clock前进 **0.6278057秒**；两次原查询分别约0.715／0.796ms。四处时间逐项一致，已排除“此样本仅由reader排序、INSERT参数改写或持久化后改写制造倒退”的解释。两个不同Task不构成同task活动校验的失败，因此197项通过与捕获此环境异常并不矛盾；不冒称本轮再现了§221同task失败或所有历史失败均为同一根因。
+
+1348.7655813秒事件观察跨度内，DB相对宿主机perf的残差为 **-3.1101939～+1.4123437秒**，宿主机wall相对perf仅 **-0.0015166～+0.0002081秒**；原时钟查询最大耗时0.0072006秒。保留全部原件，不排序、钳制、重写或放宽时序验证。
+
+### 只读环境核查：速率异常与双同步并存，仍需干预验证
+
+测试PG为 **PostgreSQL 18.6／Ubuntu构建**，在既有 `bigdata-major` 容器中；PG／Redis保持运行。实际Docker Desktop 4.67.0、Engine 29.3.1，Linux内核 **6.18.33.1-microsoft-standard-WSL2**；WSL 2.7.8.0。已运行的Ubuntu 24.04、docker-desktop和PG容器读到相同kernel boot_id，证明不能把容器里的系统时间修复当作仅影响该数据库的局部操作。只查询白名单版本、进程名与时间状态，未读取认证文件或导出环境凭据。
+
+- 当前clocksource=`tsc`；可用列表还有Hyper-V／acpi_pm。容器dmesg读取被拒绝，未提权或绕过。
+- 临时进程CPU affinity采样 `e222-cross-cpu-clocks.log`：24 CPU、100000样本、2.906565936秒，REALTIME／MONOTONIC／MONOTONIC_RAW均未观察到倒退。只代表此窗口，不能据此断言tsc无问题或已找出clocksource故障。
+- 容器同进程两秒sleep观测：REALTIME增2.000070021秒、MONOTONIC增2.000072142秒、MONOTONIC_RAW增2.222302356秒，调整后计时相对raw约 **0.9倍速**。
+- 依据容器实际glibc头文件及[adjtimex官方手册](https://man7.org/linux/man-pages/man2/adjtimex.2.html)，ctypes仅调用 `adjtimex(modes=0)`，不设置任何参数。`e222-clock-adjustment-readonly.log`记录result=0、errno=0、结构208字节、**tick=9000μs**、freq=0、status=8192、offset=0、tai=37；实测 `CLK_TCK=100`。速率与tick高度相关，但尚未确定谁设置了tick，不能把systemd-timesyncd直接说成tick写入者。
+- Ubuntu的 `systemd-timesyncd.service` 为 **enabled／active／running**，systemd 255；chrony／ntp无活动服务。timedatectl显示NTP=yes、NTPSynchronized=yes、poll=32秒、Frequency=0；既有journal存在NTP超时／重新联络记录。Ubuntu与Docker侧均读到 `hv_utils.timesync_implicit=Y`。仅凭服务并存尚不能证明其造成了本次倒退。
+
+[Ubuntu官方WSL时间说明](https://ubuntu.com/wsl/docs/stable/explanation/time-sync/)提示Ubuntu 24.04及以前的NTP服务可能与Hyper-V隐式同步冲突。另查[微软WSL内核6.18分支hv_util.c](https://raw.githubusercontent.com/microsoft/WSL2-Linux-Kernel/linux-msft-wsl-6.18.y/drivers/hv/hv_util.c)：该分支隐式SAMPLE仅在guest落后至少5秒时调度同步，不是“所有样本都无条件后退”；[systemd v255原实现](https://raw.githubusercontent.com/systemd/systemd/v255/src/timesync/timesyncd-manager.c)的大偏差分支可调用ADJ_SETOFFSET，但没有据此证明安装制品在捕获时执行了该分支。上游分支／基版用于解释机制，不冒称与本机二进制逐字节核验。当前收敛为**共享guest时钟速率异常＋双同步冲突的待验证环境假设**，不是完整根因结案。
+
+### 验证字节、变更边界与下一出口
+
+`e222-source-before.log`与实际最终 `e222-source-after.log`完全相同：src **881个py，38dbc7f89ae202c3c9cb67d4e9dd4f0ffb55527753b0f70eb79933f30c01f3f9**；tests **696个py，5529faf3e09ef1449803b9b97c37da51168399d08f69173b8c2529261355f74b**。实际全src／tests `python -m compileall -q src tests` 与 `python -m pip check`均exit0，No broken requirements found；find_spec确认ruff／mypy缺失，未安装或运行独立lint／typecheck。原pytest与本步检查句柄均已终态，固定Agent解释器的pytest／multiprocessing／本步探针残留为0；用户v3原SHA256未变。
+
+不再通过重复扩大回归、增加生产诊断补丁、换时间源、延长租约或改变历史原件来获取绿色。已向用户一次说明并请求**最小可回滚干预验证**：仅临时停止Ubuntu systemd-timesyncd（不禁用开机启动），按实测CLK_TCK=100将共享tick从9000恢复10000，再做有界观察与原回归；明确影响所有共享该内核的WSL／Docker进程，不手设日期、不改Windows时钟或clocksource、不重启WSL／容器／PG／Redis、不改生产路由。**本节记录时尚未获答复、未执行干预**；原PG／Redis启动及隔离Docker验收授权不扩展为系统时钟修改授权。
+
+本步只提交本记录的证据追加；临时脚本／日志、§219全部草稿、用户v3和环境配置均不提交，不push／建PR。后续获授权才进行环境干预与同字节验收；未授权则保留原件和待验证结论，不宣称修复。环境稳定并收口历史失败后，才推进§219、专用re-park、A领取、terminal／新批次、结果谱系／唯一结算及独立进程验收。完整v4目标保持active，剩余仍粗估 **4–8周有效开发／验收**，环境与人工等待另计。
