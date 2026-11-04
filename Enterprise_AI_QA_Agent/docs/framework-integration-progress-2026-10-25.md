@@ -11264,3 +11264,83 @@ $files = Get-Content ../.codex-logs/e219-affected-files.txt
 日志 `e223-original-33-regression.log`，**session52608正在运行**，没有最终passed／failed／skip计数，不用120秒观察或§222的197通过代替本次完整结果。运行期间不修改src／tests、租约、断言、排序或历史原件。原§219的3 failed／1699 passed、§221时序失败及§215两项模型账本拒绝仍保留，未因短窗口无倒退而结案。
 
 后续先接续原句柄、核终态和字节，再决定§219草稿是否具备提交条件；仍未释放B／让A领取，re-park、terminal／新批次、结果谱系／唯一结算、新格式独立进程验收及完整v4后续阶段仍待完成。全量后端、前端build／typecheck／浏览器、真实付费供应商／真实领域Runner、完整main lifespan、双制品部署／备份恢复、E3／E4及性能基线均未在本步执行。整体goal保持active，剩余仍粗估 **4–8周有效开发／验收**，环境和人工等待另计。本步仅拟提交本记录，排除§219草稿、用户v3及忽略日志，不push／建PR；完整回归实际结果另追加，不覆写历史。
+
+### 原33文件真实终态：四项SQL投影失败，不提交§219
+
+本节前半记录已以 `bb1f5ed63f7c3ab65082496fd00969d7dd588a14` 文档提交；之后仅接续原session52608，未重启测试。原 `e223-original-33-regression.log` 现已终态：**4 failed、1704 passed、10053.62秒（2:47:33）、exit1，无skip／deselect**。本轮1708项与§219原1702项的差别为§221新增6项纯租约诊断用例，不以增加计数冒充旧失败修复。四项失败均为 `read_worker_activity` 读取事件行id时抛 `sqlalchemy.exc.NoSuchColumnError: Could not locate column in row for column 'id'`：
+
+- claim：`test_begin_commits_formal_running_before_new_owner_can_write`；
+- wait：`test_formal_running_worker_is_charged_until_its_actual_return`；
+- wait：`test_complete_batch_parks_all_business_owners_and_retains_scoped_receipt`；
+- wait：`test_prior_real_tool_return_is_distinct_from_an_unconfirmed_terminal_label[returned_failed]`。
+
+四项都经 `root_activity_seconds／root_activity_intervals → root_activity_intervals_in_transaction → read_worker_activity`，不是本轮又捕获到Worker时间倒退。§220诊断扩大了事件读者依赖的列，但根活动预算SQL未同步，属于本次实测暴露的确定性软件回归，转§224修复。§219原三项时序失败未在此轮重现，不等于已证明环境故障唯一根因或长期修复；§215两项历史模型账本拒绝仍不能仅凭本轮未重现结案。
+
+`e223-source-after.log` 核src／tests数量和摘要与本节回归前完全一致；用户v3 SHA256未变，源文件没有在原运行中修改。之后才进入§224源码修改。运行期间单次额外只读 `e223-during-regression-clock-readonly.log`：modes0、tick10001、freq_scaled_ppm=-2633647；3秒REALTIME／MONOTONIC／RAW增量3.000165300／3.000167566／3.000053621秒，相对RAW约1.0000372／1.0000380。Ubuntu timesyncd仍inactive／dead、enabled；该短读不是整段回归的连续时钟保证，没有再次写时间或重启服务。所有trace实例早已清理。
+
+## §224 修复根活动预算读取遗漏Worker诊断来源列（2026-11-04）
+
+### 范围、根因与依据
+
+对应v4 §6.3根预算及§8审批等待／§9.2原材料消费，基线§223／`bb1f5ed63f7c3ab65082496fd00969d7dd588a14`。此步只修改 `src/runtime/postgres_framework_model_calls.py`、`tests/test_framework_worker_activity.py`、`tests/test_framework_model_budget_projection.py` 与本记录。§219全部草稿和用户v3不改／不暂存；不升级依赖、不调用UV、不重复§184环境迁移、不改生产路由、不开付费或真实目标测试，不重启PG／Redis或修改时钟。
+
+依据 → 采用做法：
+
+- §223原四项真实失败及当前三个 `read_worker_activity` 调用方 → `PostgresAgentTaskStore.get_framework_worker_activity` 与正式wait的 `_worker_fact` 均取 `SELECT *`，只有根预算事件投影未取id／event_sequence。同步这一个查询的实际列，不给读者加 `.get`、伪造ID／顺序或吞掉NoSuchColumnError。
+- §220现有诊断原边界与实际formatter契约 → 同一真实PG夹具参数化覆盖task读者和root预算读者，保留拒绝原因、原事件不变、逐项id／sequence／时间和日志标量断言；不以是否出现日志代替原异常断言。
+- 原根活动预算的Worker／ToolJob journal与REPEATABLE READ只读快照 → SQL仅补 `id, event_sequence`，原WHERE、事件顺序、操作集合、预算合并、旧历史兼容、open tail与审批等待不计时规则全部不变。
+- 本地《Agent轨迹与协议鲁棒性.html》的结果＋轨迹和恢复证据要求 → 正例核原running到显式as_of、真实returned后闭合且不再累计等待；预算／事件前后不变。负例用隔离夹具显式倒序验证拒绝链，不冒充捕获了新的自然时钟故障。
+
+纯预算投影测试的事件替身同步提供固定id／sequence，并核实际SELECT包含两列，避免无约束Cursor替身掩盖SQL契约；这些测试身份只属于夹具，不生成生产历史事实。无公共API／DTO／DDL／资产格式或新日志字段变更，不修改 §219 新格式准入。
+
+### TDD真实红绿与静态验证
+
+先只扩展测试，未改SQL。`e224-worker-projection-red.log` 实际 **6 failed、1 passed、75.93秒、exit1，无skip／deselect**：task原读者通过，root诊断、root正常区间和原四项全部为同一缺id异常，证明不是用理想替身掩盖真实失败。
+
+生产仅一条SELECT补齐两列，随后 `e224-worker-projection-green.log` 实际 **35 passed、56.97秒、exit0，无skip／deselect**。范围为上列7项（含2个读者参数）及完整 `test_framework_model_budget_projection.py`，不是完整33文件通过。实际入口：
+
+~~~powershell
+& E:\MiniConda3\envs\Agent\python.exe -u -m pytest `
+  tests/test_framework_worker_activity.py::test_rejected_clock_order_logs_original_sequence_without_repair `
+  tests/test_framework_worker_activity.py::test_root_activity_projection_preserves_original_worker_boundaries `
+  tests/test_framework_model_budget_projection.py `
+  tests/test_controlled_case_approval_claim.py::test_begin_commits_formal_running_before_new_owner_can_write `
+  tests/test_controlled_case_approval_wait.py::test_formal_running_worker_is_charged_until_its_actual_return `
+  tests/test_controlled_case_approval_wait.py::test_complete_batch_parks_all_business_owners_and_retains_scoped_receipt `
+  'tests/test_controlled_case_approval_wait.py::test_prior_real_tool_return_is_distinct_from_an_unconfirmed_terminal_label[returned_failed]' `
+  -q -rs --tb=short
+~~~
+
+cwd=Agent_Server，每条pytest前清UV ProcessOnly，固定Agent解释器、PG=1、其他实际live开关=0、diagnostics=1、UTF8。随后冻结 `e224-source-frozen.log`：src **881个py，d9626dce59bbe4c3ffba57ee6ca1c1a62ce9a180cabe7679bab039698e236e45**；tests **696个py，3b483b506caccbd03025463efef1d9dd595eba3c93b819fc5dbc276099ebab2a**。实际全src／tests compileall与pip check均exit0，No broken requirements found；ruff／mypy仍缺失，未安装或运行独立lint／typecheck。
+
+### 完整消费方回归已启动，原句柄待收终态
+
+八文件清单 `e224-affected-files.txt` 为worker_activity、model_budget_projection、tool_activity、message_diagnostics、model_calls、approval_claim、approval_wait、approval_wait_process的完整文件。初次编排在compileall／pip检查脚本仍运行、尚未创建清单时就尝试读取，Get-Content报缺文件，**没有启动pytest**；取该前置句柄exit0并核八文件存在后才实际启动，未制造第二个并行测试进程。运行日志 `e224-worker-projection-consumers.log`，**session30205正在运行**，不是通过结果：
+
+~~~powershell
+$files = Get-Content ../.codex-logs/e224-affected-files.txt
+& E:\MiniConda3\envs\Agent\python.exe -u -m pytest @files -q -rs --tb=short
+~~~
+
+运行期间不编辑冻结源码／测试。八文件包括原真实PG／Redis和独立Python Worker强杀消费方，但其实际结果必须等终态；不能沿用35项定点绿色证明它们通过。此步不需要真实付费供应商／业务目标／领域Runner或新增Docker容器；尚未跑修复后的原33文件，全量后端、前端、完整main lifespan、双制品／一致备份恢复、E3／E4及性能基线仍未验收。
+
+八文件收口及字节复核后，仅考虑提交本步4文件；§219仍待修复后的完整原33文件，不混入本次缺列修复提交。后续继续schema8原子re-park、A领取、terminal／新批次、结果谱系／唯一结算及新格式独立进程验收。完整v4目标保持active，未缩小为诊断或材料端口；剩余仍粗估 **4–8周有效开发／验收**，环境和人工等待另计。
+
+### 八文件真实终态：303通过、两个强杀前资源失租失败
+
+原session30205已取终态，`e224-worker-projection-consumers.log` 实际 **2 failed、303 passed、2204.29秒（36:44）、exit1，无skip／deselect**。不是八文件全绿，35定点绿色也不能覆盖这次失败。本轮没有再报缺id的NoSuchColumnError，原四个失败、两个读者诊断／正例、预算／模型／ToolJob／message diagnostics消费方在完整组中已通过；但两个正式独立进程窗口未到达，整步验收不能宣称完成。
+
+失败均为 `test_killed_formal_worker_only_acks_committed_wait_and_never_replays_native_work` 的 `before_transaction-pending_formal0`、`inside_transaction-pending_formal0`。父进程没有收到目标门信号；子进程先因资源续租失败被取消，随后抛 `Original Worker missed its hard-kill window`，exit1。日志的两个 `agent_task_resource_renew_failed` 分别记录：
+
+| 目标窗口 | resource_lease_seconds | since_resource_renew_seconds | monitor_seconds | resource续租调用耗时 |
+| --- | --- | --- | --- | --- |
+| before_transaction | 2 | 2.0310000000172295 | 2.594000000040978 | 0.015000000013969839 |
+| inside_transaction | 2 | 2.7339999999967404 | 3.702999999979511 | 0.0 |
+
+原测试确实将 `resource_default_lease_seconds=2`，以真实TTL／reaping清理强杀后的资源；本轮不改这项设置、monitor间隔、租约或失败断言。两次fixture导入分别14.671／19.563秒，导入在资源领取之前，不能直接把整个导入时间当作已消耗资源TTL。原日志显示在图输入／模型工厂／图构建附近出现迟续租，但尚没有连续调度轨迹，**不能凭日志位置就认定某个同步函数是根因**，也不能把它归入已查到的时钟故障。它们发生在停车前资源监控，不是§210原提交后正常停车被误判为失租的同一证据，不重复应用旧修复。
+
+其余独立强杀窗口的通过仅限本轮实际选择／断言，不授予schema8新格式恢复资格。不得删除两个失败项或通过延长TTL让整组变绿。下一步须沿原monitor和受控图初始化做有界调度／阶段耗时取证，定位迟续租来源，再决定必要的架构修复及回归；未启动新的33文件长回归，避免未收口就盲目重跑。
+
+同字节实际live=0、diagnostics=0的两文件 `e224-worker-projection-optout.log` 为 **33 passed、20 skipped、15.16秒、exit0**：33项为纯formatter／schema／预算投影及替身协议，20项因需真实PG／Redis跳过，不称53通过，不抵消上述两个真实失败。`e224-source-after.log` 与冻结src／tests数量、摘要完全一致；用户v3原SHA256未变。原33／红绿／八文件／静态检查／opt-out句柄均已终态，八文件结束后检查固定Agent解释器的pytest／multiprocessing残留为0。
+
+因此本轮**不提交三个源码／测试改动**，保留为可追溯§224草稿，与§219草稿明确区分。只提交本记录的原33终态、缺列TDD与八文件失败证据，不提交日志、环境或用户v3，不push／建PR；实际ID见Git和交付。当前可确认的是缺列定点修复及303项消费验证，尚非整个子步或全系统完成。完整目标继续active，剩余仍粗估4–8周有效开发／验收，环境和人工等待另计。
