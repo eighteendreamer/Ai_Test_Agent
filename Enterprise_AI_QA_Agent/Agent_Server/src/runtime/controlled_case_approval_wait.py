@@ -310,11 +310,19 @@ class ControlledCaseApprovalWaits:
         _require(expected == task["input_hash"] == case.checkpoint.submission_sha256
             and snapshot.calls and all(call.phase == "completed" and call.settled_at is not None for call in snapshot.calls),
             "Controlled wait has changed input/budget or unsettled model calls")
+        self._require_settled_tool_activity(cur, binding, {item.job.id for item in projected})
+        for item in projected:
+            _require(item.approval.status.value == "pending" and item.approval.resolved_at is None
+                and self._projection._journal.get_receipt_in_transaction(cur, item.approval.id) is None,
+                "Controlled wait cannot overwrite a prior human decision or delivery")
+        return snapshot
+
+    def _require_settled_tool_activity(self, cur, binding, batch_ids):
+        settings = self._tasks._settings
         # Lock every original Turn job, not only the candidates: a native wait
         # cannot turn an unrelated still-running/unknown effect into idle time.
         cur.execute(f"SELECT * FROM {settings.database.postgres_tool_job_table} WHERE session_id=%s AND turn_id=%s "
             "ORDER BY id FOR UPDATE", (binding.session_id, binding.turn_id))
-        batch_ids = {item.job.id for item in projected}
         for job in cur.fetchall():
             _require(job["metadata"].get("framework_binding_id") == binding.binding_id,
                 "Controlled wait has a foreign business ToolJob")
@@ -338,11 +346,17 @@ class ControlledCaseApprovalWaits:
             if journal is not None:
                 # No as_of is supplied: an unclosed external tail must reject.
                 journal.activity_intervals()
-        for item in projected:
-            _require(item.approval.status.value == "pending" and item.approval.resolved_at is None
-                and self._projection._journal.get_receipt_in_transaction(cur, item.approval.id) is None,
-                "Controlled wait cannot overwrite a prior human decision or delivery")
-        return snapshot
+
+    def _publish_parked_session(self, cur, task, session, receipt, binding):
+        pending = dict(turn_id=binding.turn_id, stage="waiting_approval", source="test_run_agent_execution",
+            context_bundle={"runtime_binding": binding.model_dump(mode="json")},
+            pending_approval_ids=[item.approval_id for item in receipt.batch],
+            controlled_case_wait_sha256=receipt.receipt_sha256)
+        control = {**(session["metadata"].get("control") or {}), "control_state": "waiting_approval"}
+        cur.execute(f"UPDATE {self._tasks._session_table} SET status='waiting_approval', "
+            "metadata=metadata || %s::jsonb, state_revision=state_revision+1, updated_at=clock_timestamp() WHERE id=%s",
+            (json.dumps({"pending_turn": pending, "control": control}), binding.session_id))
+        self._tasks._clear_lease(cur, task)
 
     def _worker_fact(self, cur, owner, task, attempt, event_type):
         cur.execute(f"SELECT * FROM {self._tasks._settings.database.postgres_event_table} "
@@ -422,15 +436,7 @@ class ControlledCaseApprovalWaits:
             cur.execute(f"UPDATE {tasks._tasks} SET result_payload=%s::jsonb WHERE id=%s AND result_payload IS NULL",
                 (json.dumps({WAIT_KEY: receipt.model_dump(mode="json")}), owner.task_id))
             _require(cur.rowcount == 1, "Controlled wait original task receipt already exists")
-            pending = dict(turn_id=binding.turn_id, stage="waiting_approval", source="test_run_agent_execution",
-                context_bundle={"runtime_binding": binding.model_dump(mode="json")},
-                pending_approval_ids=[item.approval_id for item in receipt.batch],
-                controlled_case_wait_sha256=receipt.receipt_sha256)
-            control = {**(session["metadata"].get("control") or {}), "control_state": "waiting_approval"}
-            cur.execute(f"UPDATE {tasks._session_table} SET status='waiting_approval', "
-                "metadata=metadata || %s::jsonb, state_revision=state_revision+1, updated_at=clock_timestamp() WHERE id=%s",
-                (json.dumps({"pending_turn": pending, "control": control}), binding.session_id))
-            tasks._clear_lease(cur, task)
+            self._publish_parked_session(cur, task, session, receipt, binding)
             event = approval_wait_event(receipt, binding)
             _require(tasks._sessions.append_event_in_transaction(cur, binding.session_id, event),
                 "Controlled wait audit exists without its original task receipt")

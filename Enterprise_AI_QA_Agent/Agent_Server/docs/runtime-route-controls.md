@@ -1126,6 +1126,32 @@ terminal／新审批批次与完整多步 suffix 的执行闭环仍需后续实�
 已验多步继续。main／CLI／Dispatcher 未安装本端口，生产 writer 默认关闭，无公共 HTTP、
 DDL 或依赖变更。实际红绿与消费者回归见实施记录 §219；§215 未定位账本风险继续保留。
 
+### 正式后继原子重新停车（§228）
+
+`ControlledCaseApprovalReparks.repark` 消费已保留的schema8后继材料，复用首次停车的
+ToolJob活动核验、正式RunItem等待转换、Task／Worker返回内核和Session停车投影。
+同事务完成原物理B、闭合其活动时间、将同一正式Attempt设为waiting_approval并释放双租约。
+不覆盖初次root回执、schema8的initial_wait或progress材料，不重跑图／模型／工具。
+
+原B的result_payload保存独立 `controlled_case_approval_repark` 回执：schema1、scope为
+`controlled_case_atomic_approval_repark_only`，关联root wait hash、progress hash、原B
+claim／return、根账本、正式Attempt及剩余兄弟batch。它不是旧wait receipt3或结果资产，
+旧root ACK／已queued A的admission保持不变，不能用新停车覆盖旧的决定受理身份。
+独立writer `controlled_case_approval_repark_available` 默认false，兼容读者上限
+`controlled_case_approval_repark_max_version=1`；上限0延期，不把scope相近的回执混读。
+
+`acknowledge_delivery` 是只读历史核验：同连接复核原outbox／admission、完整后继材料、
+原Worker返回、账本和确定性停车审计，不分配owner／续租／执行。丢回复或取消等待者
+不证明事务回滚；重试精确捕获的原B返回同一回执，不产生新身份或自动重跑。
+最后审计后以最终核验时锁读的三项截止时间再查DB clock，跨租约整笔回滚。
+新停车写入还须复核当前Session完整待审批范围和latest native pending batch，
+不能用仍可历史读取的旧progress材料证明后来出现原生错误的兄弟仍可停车。
+
+本端口未接入main／CLI／Dispatcher，也未安装A的当前停车领取／Runtime准备入口；
+原claim仍不能拿初次root proof跳过B的后继停车核验。下一项领取、terminal／新批次、
+完整多步执行、结果谱系／唯一结算及新格式独立进程强杀仍待后续验收，不能将本步
+停车回执或27项专项通过当作完整链路已开放。实际扩大回归见实施记录§228。
+
 ### 原路由与恢复验证
 
 关闭新选路时记录 `deep_agent_new_turn_route_disabled`，带 `session_id`、`turn_id` 和 `recovery_reason=new_turn_admission_disabled`；这是路由决定，不是取消/停止回执。

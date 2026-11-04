@@ -11446,3 +11446,69 @@ cwd=Agent_Server，每条pytest前清UV ProcessOnly，PG=1、其余实际live=0�
 审阅§219原12文件及完整diff后，现按原归属提交不可变后继材料，提交信息 `【feat】保留正式审批后继不可变状态材料`，实际ID见Git。包含原被ignore的新测试单文件force-add，不改ignore；不包含用户v3、日志／探针／环境。没有新增实现或将先前草稿静默覆盖。此提交只证明材料写入／历史核验、共享Runtime投影与相应消费矩阵，不证明重新停车、A领取、正式结果或唯一结算；writer仍默认关闭，main／CLI／Dispatcher未安装该端口。
 
 下一子步继续v4 §7.3／§9.2／§12.1的专用原子re-park：必须消费原后继材料、保留root回执及已queued兄弟admission，原事务闭合B与双租约后才能逐项继续。先新增失败测试，不延长TTL、不重跑已应用B、不用简单将schema8放行替代当前停车证明。terminal／新批次、完整结果谱系／唯一结算、新格式独立进程及完整v4其他验收仍未完成；整体goal保持active，剩余粗估4–8周有效开发／验收，等待另计。
+
+## §228 消费不可变后继材料的专用原子重新停车（2026-11-05）
+
+### 范围、根因与采用依据
+
+基线§219已以 `0490028a2fe5c970755e7e4750227f866b3d1eb0` 提交，实际原33文件1708通过见§227。对应v4 §7.3／§9.2／§12.1：已应用B的材料只保存在schema8，尚未闭合B的物理Worker活动、正式RunItem与Session／图owner。本步补专用原子停车事务，而不是普通finish、重新执行B或把schema8笼统视为继续资格。下一项领取／Runtime接续需另消费当前停车证明，不拿初次root证明绕过后继核验。
+
+依据 → 做法：
+
+- 原 `ControlledCaseApprovalWaits._park`、`PostgresTestRunStore._mark_waiting_approval_in_transaction`、Task／Worker状态内核及fresh-clock双owner核验 → 复用同一正式Attempt和物理B，原事务转换waiting_approval、写Worker真实returned边界、更新Session剩余审批并清原租约，最后用持锁截止时间再查DB clock。没有新调度器／owner或重复执行分支。
+- schema8／`ControlledCaseApprovalProgress._read_chain`、正式continuation的 `_locked`／`_captured_originals` → 同连接核原outbox／admission、root wait、全部保留材料、B原claim、已应用决定、工具材料、native及完整模型账本。只允许最新B且原批次仍有待审批兄弟，terminal／新批次没有在此实现。
+- 原首次wait的完整Turn ToolJob活动和Session停车投影 → 提取 `_require_settled_tool_activity`、`_publish_parked_session` 两个已有规则，首次与后继停车共用；不复制RunStore转换或用假projected对象强行调用旧接口。未改首次审批必须pending／无决定的准入规则，后继允许A已经有queued决定但ToolJob仍未执行。
+- 原root receipt／已queued A的admission身份与v4不可变谱系 → B保存独立schema1、scope=`controlled_case_atomic_approval_repark_only` 的回执，result key=`controlled_case_approval_repark`，关联原root wait hash、progress hash、B claim／return、根账本与剩余兄弟。不是旧wait receipt3，不修改原root、schema8 checkpoint或已受理决定身份，不扩展旧wait parser混读scope。后续当前停车读者将消费此独立证明。
+- 现有FrameworkWorkerCapabilities读者／writer拆分 → 新 `controlled_case_approval_repark_available` 默认false，独立codec上限1；0延期。main／CLI／Dispatcher未安装新端口，无公共HTTP／DTO／DDL／依赖或生产路由变更。
+- 现有历史wait ACK／immutable progress reader → 专用 `acknowledge_delivery` 只核原B回执／审计和材料，不续租／重领／执行；取消Run后仍可历史读取。重复精确捕获B返回同一回执，未知提交回执不自动重跑。
+- 本地《Agent轨迹与协议鲁棒性.html》结果＋轨迹／半成功／恢复要求 → 真实UUID隔离PG／Redis、官方受控图、本机HTTP与受控工具夹具核原件、活动时长闭合、次数、并发、回滚／丢回复／取消及跨租约。不是仅检验返回字典，更不是付费供应商／真实业务目标验收。
+
+新增 `src/runtime/controlled_case_approval_repark.py`、`src/schemas/controlled_case_approval_repark.py`、`tests/test_controlled_case_approval_repark.py`，修改原wait共享规则、Worker能力、路由说明与本记录。用户v3不改／不暂存；不安装／升级依赖、不调用UV、不改时钟、不停止根chronyd、不重启PG／Redis、不启生产选路或付费目标调用。
+
+### TDD红绿与已暴露的实现缺陷
+
+1. 先补批准／拒绝＋已queued A的真实链路，未写新服务：`e228-repark-red.log` **2 failed、28.81秒、exit1**，新模块缺失。最小实现后 `e228-repark-first-green.log` **2 passed、31.38秒、exit0**，完整核原root／A／native／预算不变、B和同一正式Attempt停车、剩余batch、活动时间停止累计、无Result和无额外模型／工具。
+2. 新增提交后篡改捕获reference_id的负例：`e228-repark-capture-red.log` **1 failed、34.00秒、exit1**，实际DID NOT RAISE。根因是幂等已提交分支只比物理attempt而漏了原envelope；同步与既有captured契约相同的ENVELOPE／parent／reference／priority／binding／input核验，不放宽正确重试。
+3. 扩展专项 `e228-repark-specialty.log` **1 failed、23 passed、210.64秒、exit1**。失败为末次审计跨Session截止时间未拒绝；owner／formal同类用例已过。最终owner核验读取了新Session期限，但提交后fence保存的仍是较早Session快照。根因修复为在最后核验后重新锁读Session，保存这次核验的三项截止时间；不延长TTL、不降低pg_sleep／原断言。
+4. 增强旧codec、取消Run后历史ACK不允许调度／状态写入的断言，最终 `e228-repark-specialty-green.log` **25 passed、215.64秒、exit0，无skip／deselect**。包括1纯codec项和24真实隔离服务／官方图混合项；批准／拒绝、queued与未queued兄弟、精确重试、writer／codec／owner／sink／serialized／未retain、三项预过期、三项末次审计跨界、rollback／reply_loss／cancel_waiter、并发唯一回执、四项重算receipt＋audit后的原件漂移。保留上述失败日志，不以25绿色回写历史。
+
+re-park会改变B和Session等正式停车事实，但完整progress checkpoint保持原字节，正式Attempt身份／次数不变，没有Result、Assessment或唯一结算；原claim仍拒绝用root证明直接领取A。这是尚未接入的下一契约，不是将拒绝作为完整系统目标。完整多步链、terminal／新批次以及实际Dispatcher／独立进程后继强杀另待实现。
+
+### 冻结后的15文件消费回归：运行中
+
+冻结 `e228-source-frozen.log`：src **883个py，ce85863a27b93902d991cc930bf8697c545bdfb5f63683df1e3c17a919f5fea7**；tests **697个py，82b0aa1b6e69c33a49b123a7e1ece6d00f2da6566c1f02ff4470424181e3163e**。全src／tests compileall与pip check实际exit0，后者No broken requirements found，日志 `e228-static.log`；ruff／mypy未安装，不冒称独立lint／typecheck。相关tracked文件diff --check exit0，用户v3 SHA256仍原值。
+
+15完整文件为repark、progress、state、wait、wait_ack、wait_process、claim、busy_submission、submission、delivery、application、runtime、worker_activity、model_budget_projection、agent_v2_worker_contract，清单 `e228-affected-files.txt`。cwd=Agent_Server，每条pytest前清UV ProcessOnly，固定Agent解释器、PG=1、其他实际live=0、diagnostics=1、UTF8：
+
+~~~powershell
+$files = Get-Content ../.codex-logs/e228-affected-files.txt
+& E:\MiniConda3\envs\Agent\python.exe -u -m pytest @files -q -rs --tb=short
+~~~
+
+日志 `e228-repark-consumers.log`、**session70971正在运行**。保留原句柄，运行中不修改src／tests，不沿用25专项或修改前1708通过代表当前消费者全绿。静态检查原句柄36650已终态；本轮re-park源码／测试及说明仍未提交，待完整消费回归、字节复核、精确暂存再决定。§219已提交与§228草稿明确区分，不提交用户v3或忽略日志／探针，不push／PR。
+
+下一项领取／Runtime接续、未闭合批次的模型阻止、terminal／新批次、完整结果谱系／唯一结算、后继独立进程及v4其他阶段仍待完成；全量后端／前端、真实领域Runner／供应商、完整main lifespan、双制品／备份恢复、E3／E4及性能基线未在本步执行。整体goal保持active，剩余粗估 **4–8周有效开发／验收**，环境与人工等待另计。
+
+### 首轮消费矩阵终态与提交前发现的当前／历史边界遗漏
+
+原session70971实际 **999 passed、3829.62秒（1:03:49）、exit0，无skip／deselect**，`e228-repark-consumers.log`；`e228-source-after.log` 与首次冻结src／tests完全一致。此时固定Agent解释器pytest／multiprocessing残留为0。该结果属于首次字节，不代替下述修订后的回归。
+
+提交前复核发现：`_asset → _read_chain` 是历史核验，设计上允许后来A的原生错误存在；新re-park写入却只复核它，未再查当前latest pending或Session完整pending IDs。补真实源漂移负例 `e228-repark-current-red.log`：**2 failed、41.03秒、exit1**，分别为retain之后向原生A写入 `__error__` 和Session pending IDs改空；历史progress读回仍正确通过，但新停车两项都DID NOT RAISE。不是用纯替身假设缺陷。
+
+根因修复复用原 `ControlledCaseApprovalSubmission._pending_scope` 的当前完整Session／Turn／账本核与 `read_pending_tool_snapshot_original` 的latest原生任务读者，同连接、原source、原graph input及progress剩余natives，不造owner或重复原生解析。历史ACK和精确已提交重试仍只核历史，不因后来兄弟状态变化抹掉已提交停车事实。此处新增的是当前写入资格检查，不将历史材料降级成可改写副本。
+
+修订后完整新专项 `e228-repark-current-green.log` 实际 **27 passed、242.95秒（4:02）、exit0，无skip／deselect**。新增两项与旧25项都通过，没削弱前次失败断言。重新冻结 `e228-source-refrozen.log`：src883／**7c908d07d1a3e0f81008089d5e0ff046653eeb9df588fedb4978cf8ffc62423d**，tests697／**f78367ac312bb831dcb09022112eff399f9e64d0c67cd97c3245c41f58a4a475**；新的全src／tests compileall／pip check均exit0，日志 `e228-static-final.log`。
+
+之后才以相同原15文件清单和清UV／PG／diagnostics开关重跑完整消费矩阵，日志 `e228-repark-consumers-final.log`，原句柄见工具记录，当前仍运行、暂无终态。不用首轮999通过替代最终字节结果，运行中不改src／tests；§228继续未提交。保持v4完整范围和后续出口，当前仍不安装A的继续链路，不push／PR。
+
+### 最终15文件真实终态与提交范围
+
+原session6583已取终态，`e228-repark-consumers-final.log` 实际 **1001 passed、4028.54秒（1:07:08）、exit0，无skip／deselect**。27项新专项及原首次停车、历史ACK、immutable progress／state、claim／submission／delivery／application／Runtime、budget／Worker和独立进程首次停车强杀消费方在同轮通过；不是后继re-park新格式独立强杀或A完整继续验收。首轮999与最终1001之差为新增两项当前／历史边界负例，不算额外扩大业务能力。
+
+`e228-source-final-after.log` 与重新冻结src883／tests697及两个SHA256完全相同；用户v3原SHA256未变，固定Agent解释器pytest／multiprocessing残留为0。最终字节全src／tests compileall／pip check均exit0，No broken requirements found；ruff／mypy再次查证未安装，未运行独立lint／typecheck。所有本步pytest／静态句柄均已终态，未因中途无输出重启pytest或并行改文件。
+
+交付对应：v4 §7.3／§9.2／§12.1 → §228 → 独立后继停车／ACK、现有共享ToolJob和Session停车规则、default-off能力／codec／路由说明 → 2红2绿、捕获身份红、跨Session租约红、当前／历史两红、最终27专项和1001消费者／字节／静态 → A当前停车领取／Runtime继续、terminal／新批次、完整谱系／唯一结算与后继独立进程仍待完成。
+
+提交仅7文件：新repark runtime／schema／测试、原wait共享规则、Worker capabilities、runtime-route-controls及本记录；新测试单文件force-add，不改ignore。提交信息 `【feat】原子重新停车正式审批后继`，实际ID见Git；不提交用户v3、日志／探针／缓存／环境，不push／PR。writer仍默认false，main／CLI／Dispatcher未安装端口，无公共API、DDL、依赖或生产选路变更。
+
+下一步必须将原queued兄弟admission与当前后继停车证明分开：claim／prepare_runtime复用同一current-wait来源，在完整核验后串行领取A并从progress state恢复，不改写root／B，不重发B决定、不再执行B工具；批次未闭合不得调用下轮模型。不能把本步旧claim拒绝A当作最终目标，也不能直接放行schema8绕过停车证明。完整v4目标仍active，其他未验出口如前保留，剩余粗估4–8周有效开发／验收，环境与人工等待另计。
