@@ -313,10 +313,12 @@ class ControlledCaseRuntime:
                         runtime_result=projected, native=outcome.native_terminal,
                         approval_continuations=continuation, capabilities=capabilities)
                     runtime_result, state = projected, deepcopy(projected.state)
-                # Do not pass a successor to the FIRST-execution finalizer or
-                # initial park writer. The exact tool application is durable;
-                # Result retention is still not Session application/settlement;
-                # a pending outcome remains only the pre-repark step.
+                    if self._sessions is not None and capabilities.controlled_case_approval_finalization_available:
+                        conversation_response = await self._sessions.finalize_controlled_case_result(owner,
+                            native=outcome.native_terminal, controlled_case_reader=ControlledCaseResultReader(
+                                executor._tasks, approval_continuations=continuation, capabilities=capabilities))
+                # A pending outcome still needs its explicit re-park port.
+                # Session application alone is not Assessment/settlement.
                 return
             if not isinstance(prepared, ControlledCaseResultTaskInputAsset) or outcome.native_interrupts:
                 # Historical preparation is not silently upgraded. Native wait

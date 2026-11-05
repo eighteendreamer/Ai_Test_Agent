@@ -1219,6 +1219,28 @@ claim／begin／重执行权。未新增HTTP、DDL、格式或生产开关，也
 本步只是唯一Session收尾清除旧标记后的读取前置条件；Session投影／Assessment／结算
 仍待接入并保留完整谱系，不以模型化的Session字段转换测试冒充实际finalizer验收。
 
+### 审批后继唯一Session收尾（§232）
+
+`finalize_controlled_case_result`显式接收运行时配置好的`controlled_case_reader`，沿现有
+`FrameworkProjectionWrite`、应用提交读者和派生Memory writer传递；该端口不序列化，
+不通过ContextVar暗中授予能力，也不把物理approval Task伪装为首次case_execute。
+投影来源使用该共享reader取得真实producer及原root输入，仍核完整结果、native及三租约。
+
+checkpoint10继承原结果谱系和原分项回执契约；checkpoint11再继承原应用提交／Memory
+计划和执行回执契约。每次共享writer推进格式都保留完整7／8历史、最后admission／决定
+及原结果asset，不降回3–6。原wait／progress／re-park读者理解10／11中的历史原件，
+格式支持不授予新的claim或执行权。
+
+独立`controlled_case_approval_finalization_available`默认false；兼容读者上限11。
+显式开启却缺result能力或max小于11时，Runtime在begin／交付前延期；仅注入Session
+服务不启用本writer。启用后terminal进入同一`_finalize_runtime_result`，有完整提交时
+只核原件并ACK，不重建Verification或补派生Memory。Session完成仍不代表Assessment、
+RunItem或最后Task完成，后继正式结算、新批次和独立Worker出口仍待后续实现／验收。
+
+新行为先红后绿，最终专项41项通过；完整72文件2829通过、2项内存后端不适用跳过，
+对应PostgreSQL场景实际通过。命令、历史失败与证据边界见实施记录§232；不能以本步
+Session收尾代替Assessment／唯一结算或完整v4验收。
+
 ### 原路由与恢复验证
 
 关闭新选路时记录 `deep_agent_new_turn_route_disabled`，带 `session_id`、`turn_id` 和 `recovery_reason=new_turn_admission_disabled`；这是路由决定，不是取消/停止回执。

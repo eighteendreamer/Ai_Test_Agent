@@ -48,6 +48,7 @@ class FrameworkProjectionWrite:
     output_message_id: str | None
     runtime_result_asset_sha256: str | None = None
     controlled_case_native: object | None = field(default=None, repr=False, compare=False)
+    controlled_case_reader: object | None = field(default=None, repr=False, compare=False)
 
 
 def _require(condition, message):
@@ -505,7 +506,8 @@ def require_application_commit(cur, settings, session, binding, stage):
     return proof
 
 
-async def load_committed_projection(settings_or_tasks, owner, *, controlled_case_native=None, allow_uncommitted=False):
+async def load_committed_projection(settings_or_tasks, owner, *, controlled_case_native=None, controlled_case_reader=None,
+    allow_uncommitted=False):
     """Read the exact proven output, never the latest snapshot or assistant text."""
     from src.runtime.postgres_agent_task_store import PostgresAgentTaskStore
 
@@ -524,7 +526,8 @@ async def load_committed_projection(settings_or_tasks, owner, *, controlled_case
                 (owner.binding.session_id,))
             session = cur.fetchone()
             if owner.binding.runtime_kind == "langgraph":
-                stage, task = lock_result_source(cur, settings, owner, controlled_case_native=controlled_case_native)
+                stage, task = lock_result_source(cur, settings, owner, controlled_case_native=controlled_case_native,
+                    controlled_case_reader=controlled_case_reader)
                 if allow_uncommitted and COMMIT_KEY not in stage.source_manifest:
                     return None
             else:

@@ -260,9 +260,13 @@ async def test_monitor_finishes_only_after_verifying_its_own_committed_return(as
     monkeypatch.setattr(service, material_name, committed_gate)
     monkeypatch.setattr(service, public_name, observed_park)
     monkeypatch.setattr(dispatcher, "_monitor", observed_monitor)
-    running = asyncio.create_task(worker(p, dispatcher, queue).run_once())
+    runner = worker(p, dispatcher, queue)
+    running = asyncio.create_task(runner.run_once())
     try:
-        assert await asyncio.to_thread(entered.wait, 10)
+        # Reaching this gate includes the whole real model/tool/finalization
+        # path, not the monitor race under test. Use the existing Worker's
+        # deadline; retain the separate ten-second monitor assertion below.
+        assert await asyncio.to_thread(entered.wait, runner._task_timeout_seconds)
         await asyncio.wait_for(monitor_done.wait(), 10)
         assert bool(monitor_errors) is (drift is not None), monitor_errors
         if drift is None:

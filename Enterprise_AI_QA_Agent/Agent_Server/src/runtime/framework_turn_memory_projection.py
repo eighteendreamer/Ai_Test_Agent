@@ -52,6 +52,7 @@ class FrameworkTurnMemoryExecutionWrite:
     owner: "RuntimeExecutionOwner"
     request_id: str
     controlled_case_native: object | None = field(default=None, repr=False, compare=False)
+    controlled_case_reader: object | None = field(default=None, repr=False, compare=False)
 
 
 def _save_stage(cur, settings, stage, values):
@@ -121,11 +122,12 @@ def _plan_from_stage(stage, owner) -> FrameworkTurnMemoryPlan:
     return plan
 
 
-def _lock_stage_and_plan(cur, settings, owner, *, controlled_case_native=None):
+def _lock_stage_and_plan(cur, settings, owner, *, controlled_case_native=None, controlled_case_reader=None):
     if owner.binding.runtime_kind == "langgraph":
         from src.runtime.framework_projection_source import lock_result_source
 
-        source, _ = lock_result_source(cur, settings, owner, controlled_case_native=controlled_case_native)
+        source, _ = lock_result_source(cur, settings, owner, controlled_case_native=controlled_case_native,
+            controlled_case_reader=controlled_case_reader)
         return source, _plan_from_stage(source, owner)
     # Post-commit Memory may run before or after the stage ACK.  The generic
     # runtime-result lock intentionally accepts only runtime_submitted; this
@@ -344,7 +346,8 @@ async def read_turn_memory_reconciliation_async(owner, settings) -> FrameworkTur
 def prepare_memory_row_projection(cur, settings, execution: FrameworkTurnMemoryExecutionWrite,
     request: "MemoryWriteRequest", memory_id: str):
     """Validate the immutable request and lock its physical row before writing."""
-    stage, plan = _lock_stage_and_plan(cur, settings, execution.owner, controlled_case_native=execution.controlled_case_native)
+    stage, plan = _lock_stage_and_plan(cur, settings, execution.owner, controlled_case_native=execution.controlled_case_native,
+        controlled_case_reader=execution.controlled_case_reader)
     item = _request_by_id(plan, execution.request_id)
     normalized = request.model_copy(update={
         "turn_lease_token": None,
@@ -406,9 +409,10 @@ def record_memory_row_projection(cur, settings, execution: FrameworkTurnMemoryEx
     return updated
 
 
-def read_turn_memory_execution(owner, settings, *, controlled_case_native=None) -> FrameworkTurnMemoryExecution | None:
+def read_turn_memory_execution(owner, settings, *, controlled_case_native=None, controlled_case_reader=None) -> FrameworkTurnMemoryExecution | None:
     with postgres_connect(settings) as conn, conn.cursor() as cur:
-        stage, plan = _lock_stage_and_plan(cur, settings, owner, controlled_case_native=controlled_case_native)
+        stage, plan = _lock_stage_and_plan(cur, settings, owner, controlled_case_native=controlled_case_native,
+            controlled_case_reader=controlled_case_reader)
         receipt = _execution(stage, plan)
         if receipt is not None and receipt.row_receipts:
             ids = [item.memory_id for item in receipt.row_receipts]
@@ -420,14 +424,16 @@ def read_turn_memory_execution(owner, settings, *, controlled_case_native=None) 
         return receipt
 
 
-async def read_turn_memory_execution_async(owner, settings, *, controlled_case_native=None):
-    return await asyncio.to_thread(read_turn_memory_execution, owner, settings, controlled_case_native=controlled_case_native)
+async def read_turn_memory_execution_async(owner, settings, *, controlled_case_native=None, controlled_case_reader=None):
+    return await asyncio.to_thread(read_turn_memory_execution, owner, settings, controlled_case_native=controlled_case_native,
+        controlled_case_reader=controlled_case_reader)
 
 
-def ensure_empty_turn_memory_execution(owner, settings, *, controlled_case_native=None):
+def ensure_empty_turn_memory_execution(owner, settings, *, controlled_case_native=None, controlled_case_reader=None):
     """Persist a completed receipt for a valid empty requested plan."""
     with postgres_connect(settings) as conn, conn.cursor() as cur:
-        stage, plan = _lock_stage_and_plan(cur, settings, owner, controlled_case_native=controlled_case_native)
+        stage, plan = _lock_stage_and_plan(cur, settings, owner, controlled_case_native=controlled_case_native,
+            controlled_case_reader=controlled_case_reader)
         _require(not plan.requests, "Only an empty Memory plan can be completed without rows")
         current = _execution(stage, plan)
         if current is not None:

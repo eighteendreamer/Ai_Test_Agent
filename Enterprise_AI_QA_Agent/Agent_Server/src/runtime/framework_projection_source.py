@@ -14,6 +14,7 @@ from src.schemas.controlled_case_admission import (
     ControlledCaseProjectionCheckpoint, ControlledCaseProjectionReceipts, read_result_checkpoint,
     ControlledCaseApplicationCheckpoint, ControlledCaseApplicationReceipts,
     ControlledCaseAssessmentCheckpoint, ControlledCaseSettlementCheckpoint,
+    ControlledCaseApprovalResultCheckpoint, ControlledCaseApprovalProjectionCheckpoint, ControlledCaseApprovalApplicationCheckpoint,
 )
 from src.schemas.framework_approval import approval_value_hash
 
@@ -37,10 +38,11 @@ class ControlledCaseProjectionSource:
 
 
 def lock_projection_source(cur, settings, write):
-    return lock_result_source(cur, settings, write.owner, controlled_case_native=write.controlled_case_native)
+    return lock_result_source(cur, settings, write.owner, controlled_case_native=write.controlled_case_native,
+        controlled_case_reader=write.controlled_case_reader)
 
 
-def lock_result_source(cur, settings, owner, *, controlled_case_native=None):
+def lock_result_source(cur, settings, owner, *, controlled_case_native=None, controlled_case_reader=None):
     from src.runtime.framework_runtime_results import lock_runtime_result_stage, _require
 
     if owner.binding.runtime_kind != "langgraph":
@@ -48,7 +50,7 @@ def lock_result_source(cur, settings, owner, *, controlled_case_native=None):
     from src.runtime.controlled_case_result_reader import ControlledCaseResultReader
     from src.runtime.controlled_case_results import require_retained_case_asset
     from src.runtime.postgres_agent_task_store import PostgresAgentTaskStore
-    from src.schemas.controlled_case_task_input import ControlledCaseFinalizationTaskInputAsset, parse_controlled_case_task_input
+    from src.schemas.controlled_case_task_input import ControlledCaseFinalizationTaskInputAsset
     from src.schemas.framework_runtime_result import FrameworkRuntimeResult
 
     _require(controlled_case_native is not None, "Formal projection requires its exact native original")
@@ -59,11 +61,16 @@ def lock_result_source(cur, settings, owner, *, controlled_case_native=None):
     cur.execute(f"SELECT * FROM {tasks._tasks} WHERE id=%s FOR UPDATE", (owner.task_id,))
     task = cur.fetchone()
     _require(task is not None, "Formal projection original task is missing")
-    original = parse_controlled_case_task_input((task["input_payload"] or {}).get("case_execution_input"))
+    reader = controlled_case_reader if controlled_case_reader is not None else ControlledCaseResultReader(tasks)
+    _require(isinstance(reader, ControlledCaseResultReader) and reader._tasks._settings == settings,
+        "Formal projection requires its explicit original storage reader")
+    if task['operation'] == 'case_approval':
+        reader.require_approval_finalization_available()
+    original, _, _, _, _ = reader.original_input_in_transaction(cur, owner, locked, task)
     _require(isinstance(original, ControlledCaseFinalizationTaskInputAsset), "Formal projection has no original result preparation")
     checkpoint = read_result_checkpoint(locked.attempt)
     _require(checkpoint is not None, "Formal projection has no retained original result")
-    result = ControlledCaseResultReader(tasks).read_in_transaction(cur, owner, original, controlled_case_native)
+    result = reader.read_in_transaction(cur, owner, original, controlled_case_native)
     require_retained_case_asset(cur, settings, owner, original, checkpoint,
         FrameworkRuntimeResult.from_result(result).model_dump(mode="json"))
     return ControlledCaseProjectionSource(locked, owner, checkpoint), task
@@ -99,9 +106,13 @@ def save_projection_manifest(cur, settings, source, manifest, *, message_version
             "Formal projection cannot replace its retained result")
         completed = "application_projection_commit" in values
         parts = (ControlledCaseApplicationReceipts if completed else ControlledCaseProjectionReceipts).model_validate(values)
-        reader = (ControlledCaseAssessmentCheckpoint if isinstance(source.checkpoint, ControlledCaseAssessmentCheckpoint)
-            else ControlledCaseApplicationCheckpoint if completed else ControlledCaseProjectionCheckpoint)
-        version = 5 if reader is ControlledCaseAssessmentCheckpoint else 4 if completed else 3
+        if isinstance(source.checkpoint, ControlledCaseApprovalResultCheckpoint):
+            reader, version = ((ControlledCaseApprovalApplicationCheckpoint, 11) if completed
+                else (ControlledCaseApprovalProjectionCheckpoint, 10))
+        else:
+            reader = (ControlledCaseAssessmentCheckpoint if isinstance(source.checkpoint, ControlledCaseAssessmentCheckpoint)
+                else ControlledCaseApplicationCheckpoint if completed else ControlledCaseProjectionCheckpoint)
+            version = 5 if reader is ControlledCaseAssessmentCheckpoint else 4 if completed else 3
         checkpoint = reader.model_validate({
             **source.checkpoint.model_dump(mode="json"), "schema_version": version,
             "projection_receipts": parts.model_dump(mode="json")})

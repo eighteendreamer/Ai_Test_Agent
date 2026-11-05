@@ -93,7 +93,7 @@ def require_wait_state_in_transaction(cur, settings, case, task, receipt, origin
     from langchain_core.messages import AIMessage, ToolMessage
     from src.application.models.framework_model_budget_projection import read_model_budget_material
 
-    _require(receipt.schema_version == 2 and case.attempt.checkpoint_version in {7, 8, 9},
+    _require(receipt.schema_version == 2 and case.attempt.checkpoint_version in {7, 8, 9, 10, 11},
         "Controlled waiting state has no original retained material")
     checkpoint = read_wait_checkpoint(case.attempt)
     asset = checkpoint.state_asset

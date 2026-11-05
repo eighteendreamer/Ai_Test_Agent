@@ -261,11 +261,11 @@ class FrameworkRuntimeResults:
         return await ControlledCaseResults(self._tasks, approval_continuations=approval_continuations,
             capabilities=capabilities).freeze(owner, runtime_result=runtime_result, native=native)
 
-    async def load_controlled_case(self, owner, *, native, approval_continuations=None, capabilities=None):
+    async def load_controlled_case(self, owner, *, native, approval_continuations=None, capabilities=None, reader=None):
         from src.runtime.controlled_case_results import ControlledCaseResults
 
         return await ControlledCaseResults(self._tasks, approval_continuations=approval_continuations,
-            capabilities=capabilities).load(owner, native=native)
+            capabilities=capabilities, reader=reader).load(owner, native=native)
 
     async def read_completed_message(self, binding, task_id, *, native_reader):
         """Read the original ordinary message; no asset or successor is saved."""

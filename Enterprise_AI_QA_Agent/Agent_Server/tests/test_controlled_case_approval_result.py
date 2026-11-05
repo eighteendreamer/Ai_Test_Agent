@@ -158,7 +158,7 @@ async def test_two_serial_parents_survive_last_sibling_result_retention(pending_
 
 def test_result_writer_stays_default_off_independent_of_historical_codec():
     caps = FrameworkWorkerCapabilities.from_artifact(deepagents_available=True)
-    assert caps.controlled_case_checkpoint_max_version == 9 and not caps.controlled_case_approval_result_available
+    assert caps.controlled_case_checkpoint_max_version == 11 and not caps.controlled_case_approval_result_available
 
 
 @pytest.mark.asyncio
@@ -310,7 +310,7 @@ async def test_retained_successor_reentry_is_read_only_and_cannot_use_first_exec
         results.freeze_controlled_case(t.a.runtime_owner, runtime_result=t.outcome.runtime_result, **kwargs))
     assert first == second == t.outcome.result_asset and facts(p) == before
     with postgres_connect(p.h.settings) as conn, conn.cursor() as cur:
-        with pytest.raises(ValueError):
+        with pytest.raises(TaskDeferred, match="case_approval_finalization_unavailable"):
             lock_result_source(cur, p.h.settings, t.a.runtime_owner, controlled_case_native=native)
         cur.execute(f"SELECT count(*) AS n FROM {p.h.settings.database.postgres_event_table} WHERE id=%s", (asset_event_id(p.s.binding),))
         assert cur.fetchone()["n"] == 1

@@ -32,7 +32,7 @@ def read_current_approval_wait(cur, submission, command, case, session, owner, r
     The historical continuation reader deliberately never calls this reader.
     """
     receipt, producer, state = root, origin, None
-    if case.attempt.checkpoint_version in {7, 8, 9}:
+    if case.attempt.checkpoint_version in {7, 8, 9, 10, 11}:
         initial = read_wait_checkpoint(case.attempt)
         state = initial.state_asset
     history = read_approval_history_checkpoint(case.attempt) if state is not None else None

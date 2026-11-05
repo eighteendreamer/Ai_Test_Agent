@@ -11680,3 +11680,94 @@ $files = Get-Content ../.codex-logs/e231-affected-files.txt
 本子步只允许精确暂存4相关文件：产品reader、新历史专项、路由说明、本实施记录。新测试被既有tests ignore覆盖，单文件force-add，不改ignore；用户v3、日志／探针／环境／缓存均不暂存。不push／PR，不新增HTTP／DDL／依赖／格式／生产路由。提交信息`【fix】从完整历史原件读取已保留审批结果`，实际ID以Git及交付为准。
 
 下一子步继续显式接入已配置结果读者和保留审批谱系的共享分项writer／唯一Session finalizer，再推进Assessment与唯一结算。新批次停车、新后继独立进程强杀、真实供应商／领域Runner、main lifespan、全量前后端、双制品／备份恢复及全v4其余模式／E3／E4／性能出口未在本步完成；§215风险仍保留。完整goal保持active，剩余粗估仍 **4–8周有效开发／验收**，环境与人工等待另计。
+
+## §232　审批后继进入原唯一Session finalizer并保留完整谱系（v4 §9.4／§12.1；本子步验收通过）
+
+续接`2688a04c871ea02b2660179a794b03ecc16dcb98`。上一目标轮有权威进展：§231产品／测试及记录已提交，完整46文件2085通过；所有上一轮测试／静态句柄已终态，本轮不重新轮询或重启它们。Git仅有用户v3未提交改动，本轮不修改／暂存它。不改时钟或chronyd、不重启PG／Redis、不调用真实供应商／付费模型、不改生产路由；完整v4目标继续active。
+
+### 依据、边界与方案落点
+
+来源边界已由§231修正。本轮进一步消除首次Task身份假设：`framework_projection_source.lock_result_source`原硬从真实Task读取`case_execution_input`，而审批后继只有自己的admission；原writer又固定推进3／4而无法保留9中的谱系。不能伪造Task或复制finalizer来规避。
+
+现有`ControlledCaseResultReader`、`FrameworkProjectionWrite.controlled_case_native`、`load_committed_projection`、原Session finalizer及同一派生Memory source_options → 增加显式运行时`controlled_case_reader`透传，source同连接核真实producer、根输入和原结果，使用原snapshot／event／observation／Session／Memory算法与分项回执。reader须对应原存储，不能同时提供另一套ports；不新增隐式ContextVar权限或调度器。
+
+原结果、分项和应用checkpoint继承机制 → checkpoint10／11通过继承复用原完整result谱系及原Projection／ApplicationReceipts校验。先用当前固定Pydantic实测MRO、字段和validator集合：10同时保留require_original／require_original_approval／require_part_identities；11还保留require_application_identity，projection_receipts确为ApplicationReceipts。实际业务断言仍须随真实专项验证，不以该局部探针替代行为回归。共享writer区分审批家族，保留9的所有字段；原历史wait／progress／re-park读者同步理解10／11，不授予claim／图执行。
+
+`controlled_case_approval_finalization_available`独立默认false，checkpoint读者max11。显式启用但result能力关闭或max不足11，prepare_runtime在begin／交付前延期；仅安装Session服务不启用writer。Runtime的terminal分支在显式开启时调用原同一finalizer并透传reader；原结果保留、完整提交ACK、分项复用、三租约和rebase规则不变。当前不接后继Assessment／唯一结算，最后Task和正式Attempt仍running，不能把Session completed当作正式测试通过。
+
+### TDD实际结果与本轮验证状态
+
+固定Agent解释器，cwd=Agent_Server；每条pytest前ProcessOnly清UV，PG=1、其余实际live=0、diagnostics=1、UTF8，不安装依赖或执行UV：
+
+~~~powershell
+& E:\MiniConda3\envs\Agent\python.exe -u -m pytest tests/test_controlled_case_approval_finalization.py -q -rs --tb=short
+~~~
+
+`e232-finalization-red.log`实际 **1 failed、31.68秒、exit1**：真实已保留审批结果到达原finalizer入口，报`unexpected keyword argument 'controlled_case_reader'`，明确缺少该来源接线。新增独立能力后，测试reader按新契约显式启用它（不删除断言、不把默认关闭改成默认开放）。最小实现后的`e232-finalization-green.log`实际 **1 passed、114.23秒、exit0，无skip／deselect**：真实PG观察／派生Memory、Session bulk commit、checkpoint11、原谱系与物理producer、历史ACK及已有提交只ACK均通过，原Verification未重建、无伪造用户消息／正式结果；模型2次、工具1次，属于本地HTTP／隔离handler，不是真实供应商或领域Runner验收。
+
+随后补充单审批7、串行8的批准／拒绝组合、两级前序、部分snapshot格式10及原分项复用、继承校验、独立default-off／旧codec／缺result能力、精确owner／native／三租约、应用事务回滚／丢ACK／取消等待者、最后提交跨租约回滚、提交后原件漂移、并发Session rebase、派生Memory失败／丢行／空计划等。原session88736，`e232-finalization-full.log`运行中，**尚无最终计数**；src／tests冻结，不在运行中修改、不并发重启pytest。旧三处max版本断言同步为11；原“不能用首次finalizer读取后继”的负例改为精确默认关闭TaskDeferred，未授予无端口投影。
+
+此时仅核心1项已验证，不以它代表全专项或完整消费矩阵通过。下一出口为专项终态、受影响全部消费文件／静态／前后摘要／精确提交，再推进Assessment与唯一结算等v4剩余阶段；整体剩余粗估仍 **4–8周有效开发／验收**，人工与环境等待另计。
+
+### 首轮41项结果与测试自身假设修正
+
+原session88736已终态，`e232-finalization-full.log`实际 **3 failed、38 passed、1947.64秒（32:27）、exit1，无skip／deselect**。单／多审批真实Runtime到唯一finalizer、两级历史、默认关闭／旧codec、事务失败和三租约、提交漂移、rebase及真实派生Memory失败等38项通过，但不将其当作最终源码的完整绿色。
+
+两项失败发生在新继承校验辅助断言：它改动receipt决策ID后仍期待晚一步的`original approval lineage`文本；真实共享`require_original`会先发现asset的source hash已不再匹配完整谱系，正确报`original admission`。第三项测试把requested=true却requests=[]的Memory plan误当合法；实际`FrameworkTurnMemoryPlan.verify`明确定义requested必须与requests是否非空一致，产品按既有契约拒绝，bulk应用事务未提交。这些均不是改写产品／放宽schema的依据。
+
+读取现有validator和Memory plan契约后，仅修订新测试：显式检查10／11各自继承的完整validator集合，并精确断言更早的原件hash拒绝；把不一致空计划保留为负例，断言checkpoint10原分项／Session未提交，再恢复原纯policy，验证重入完成11且复用snapshot原件。未删除拒绝／回滚断言、未跳过测试、未修改产品源码以迎合测试，也不再声称该不合法fixture验收了“合法空计划”的formal路径。
+
+修订后完整41项正在`e232-finalization-final.log`（原session60482）运行；此处不预填最终结果。src／tests再次冻结，随后仍需完整消费矩阵和静态／摘要／精确提交。
+
+### 第二轮专项终态、真实心跳协议与再验证
+
+原session60482已终态，`e232-finalization-final.log`实际 **1 failed、40 passed、2179.83秒（36:19）、exit1，无skip／deselect**。唯一失败在不一致空Memory计划负例后的第二次完整finalization：派生Memory末尾重新核验正式RunItem租约，报`Controlled case original RunItem lease is no longer active`。该测试在真实PG上连续运行两次收尾，却没有真实Worker的配对心跳，超过现有120秒租约；产品正确拒绝，不是扩大租约、改时钟或吞掉错误的依据。
+
+先读现有`renew_framework_execution`和Worker续租协议，仅在该测试的重试边界调用真实配对续租，使用原`turn_execution_lease_seconds`配置并要求返回True；它不能复活过期owner，不改变产品TTL、schema或任何失租断言。`e232-memory-retry-heartbeat.log`实际 **1 passed、163.53秒、exit0，无skip／deselect**，证明原负例回滚、snapshot回执复用与后续Memory完成。
+
+带该心跳的完整41项在`e232-finalization-heartbeat-final.log`（原session36747）运行；此处仍不预填最终计数。之后完整消费回归清单已冻结为`e232-affected-files.txt`的72个完整文件，但尚未启动，不沿用§231绿色代表当前源码。运行期间不改src／tests、不并发重启pytest；静态、前后摘要、契约引用和精确提交仍待完成。
+
+### 专项绿色与完整消费回归启动
+
+原session36747已终态，`e232-finalization-heartbeat-final.log`实际 **41 passed、2342.76秒（39:02）、exit0，无skip／deselect**。本轮最终专项全部通过，不删除前述失败，不把隔离HTTP／handler当成真实供应商／领域Runner。固定解释器pytest残留0，随后才启动扩大回归。
+
+`e232-source-before.log`冻结：src884个Python文件，SHA256=`850d5bc9a06395ee9869b2b312bcb84594538d147533a10f174b4f29d69cc916`；tests701个Python文件，SHA256=`fd92e01656f1fcdc696b561842be44f92210ad1624f4fc079b2eca3138798c5f`。聚合算法仍为排序相对路径＋NUL＋原始字节＋NUL。全src／tests的`compileall -q`实际exit0；`pip check`实际exit0，No broken requirements found；Python3.11.18。ruff／mypy未安装，独立lint／typecheck未执行，不安装依赖，见`e232-static.log`。
+
+依据§231原46文件及本轮全局契约引用搜索，纳入正式用例全链、共享普通消息snapshot／事件／observation／Memory／部分恢复／路由、Session热Memory／投递／并发／owner等直接消费者，验证72个唯一完整测试路径均存在后执行：
+
+~~~powershell
+$files = Get-Content ../.codex-logs/e232-affected-files.txt
+& E:\MiniConda3\envs\Agent\python.exe -u -m pytest @files -q -rs --tb=short
+~~~
+
+仍每条pytest前ProcessOnly清UV，PG=1、其余实际live=0、diagnostics=1、UTF8。原session55537、日志`e232-all-consumers.log`正在运行，**尚无最终结果**。测试期间src／tests保持上述冻结，不并发另起pytest或更改源码。完整消费终态、前后摘要、用户v3及精确暂存提交仍待核验。
+
+### 首轮72文件终态、消费测试契约核对（2026-11-06）
+
+原session55537已终态，`e232-all-consumers.log`实际 **2 failed、2825 passed、2 skipped、25038.54秒（6:57:18）、exit1，无deselect**。`e232-source-after-first-consumers.log`与上述src／tests冻结摘要完全一致；原运行未中途改源码或重启。两个skip为`test_session_event_delivery`内存后端的事务排序／独立进程投递变体；同两个测试的PostgreSQL变体均执行通过。不得把内存skip算作PG验收或说整组无skip。
+
+失败一：`test_monitor_finishes_only_after_verifying_its_own_committed_return[None-assessment_case1]`在到达提交后故障gate前等待10秒超时，尚未到目标监控竞态；日志显示取消仍发生在finalization。失败二：`test_partial_successor_ack_does_not_require_memory_after_application_commit`删除该Session全部Memory后期望ACK；真实共享application proof正确拒绝`Original observation rows changed or disappeared before application commit`，后继保持recovery_required。
+
+先不改代码，精确重跑两条原失败node，`e232-consumer-failures-repro.log`实际 **1 failed、1 passed、26.76秒、exit1**。monitor原样通过，call8.76秒，说明原10秒把整段真实模型／工具／收尾准备误当性能门；partial样本再次稳定失败。按§200已有修复与`test_framework_observation_projection.test_ack_only_recovery_does_not_require_current_derived_memory_rows`，必需观察即使与派生行同表，也必须按原scope核验；不能削弱产品检查。
+
+仅修消费测试：monitor到达提交gate的准备阶段使用现有测试Worker本来就配置的deadline，独立10秒monitor断言、漂移拒绝／取消及Redis pending断言全部保留，不延长产品租约或Worker截止。partial样本精确删除冻结plan的派生request IDs，断言不与必需观察IDs交叉、确实删除且不补写、必需观察原行不变。另加missing／content两种在后继最终提交后、projected ACK前的观察漂移反例，必须拒绝且不修复、不重跑；这是原失败窗口，不是删掉负例获取绿色。产品src未改。
+
+随后须实际验证这两个完整消费文件、相关观察与新专项，并对最终tests字节重新冻结／完整回归；此处不预填结果。完整goal仍active，Assessment／唯一结算等剩余出口不变。
+
+### 消费范围修正专项绿色与最终矩阵冻结
+
+`e232-consumer-scope-green.log`实际 **9 passed、85.73秒、exit0，无skip／deselect**：6种原monitor批准／等待及审计／回执漂移组合、精确派生行删除的partial后继ACK，以及missing／content两种提交后观察漂移拒绝。保留原completion／消息／stage／Redis pending和模型／工具次数断言；不改产品源码，不让原始观察变为可选派生副本。
+
+`e232-source-final-before.log`冻结src884及SHA256仍`850d5bc9a06395ee9869b2b312bcb84594538d147533a10f174b4f29d69cc916`；tests701，最终SHA256=`54016a828eef75b2aa649683e8d38e8e46850c000ec4d55c43250d79b46552a0`。全src／tests的compileall和pip check再次实际exit0，见`e232-static-consumer-fix.log`；无pytest残留后重跑同72个完整文件，保留原失败日志，新的出口日志为`e232-all-consumers-final.log`，不使用-k／-x或选择性排除。最终计数待真实终态，内存后端两项不适用skip仍需明确报告、PG对应出口不得skip。
+
+### 最终72文件终态、静态与交付范围
+
+原session31013已终态，`e232-all-consumers-final.log`实际 **2829 passed、2 skipped、18386.49秒（5:06:26）、exit0，无failed／deselect**。同72个完整文件均运行，新增两项提交后观察漂移负例也在本次矩阵内；原两项失败现已通过。两个skip仍仅为内存后端不适用的PostgreSQL专属事务排序／跨进程投递变体；相应PostgreSQL变体实际执行并通过，不称整组无skip。包括官方框架＋真实隔离PG／Redis、既有独立Worker故障窗口与新后继唯一Session收尾；本轮新后继场景仍为进程内调用，不冒充该新格式独立Worker强杀或真实供应商／领域Runner验收。
+
+`e232-source-final-after.log`与最后冻结的src884／tests701及两个SHA256完全一致。全src／tests的compileall、pip check再次实际exit0，No broken requirements found；ruff／mypy仍未安装，独立lint／typecheck未执行。固定Agent解释器pytest／multiprocessing残留0，用户v3 SHA256仍原值，见`e232-static-final.log`。契约搜索逐项核对reader、共享projection／commit／Memory传播、10／11读者和独立默认关闭能力；本轮相关diff --check通过。按本地课程`Agent轨迹与协议鲁棒性.html`的轨迹／权限／幂等及`评测工程化与CICD.html`的版本化／失败可追溯要求，保留全部红测、环境边界和最终摘要，不覆盖原失败结果。
+
+交付对应：v4 §9.4／§12.1 → §232 → 显式原件reader贯穿现有Session finalizer及Memory，checkpoint10／11保留完整审批谱系和共享分项／提交校验，独立finalization writer默认关闭 → 1项红／1项绿、最终41项绿、消费范围9项绿、最终72文件2829通过及上述两项不适用skip、静态和前后摘要 → **仅审批后继的唯一Session应用收尾已验证**。最终Task及正式Attempt仍running，不接Assessment／正式结算，不把Session completed解释为测试通过。
+
+精确提交范围为23个本轮相关文件：15个产品文件、6个测试文件（新41项专项及5个既有契约消费测试）、路由说明和本实施记录；新测试仅单文件force-add，不改ignore。用户v3、日志／探针／缓存／环境均不暂存，不push／PR。提交信息`【feat】将审批后继接入唯一Session收尾`，实际ID以Git与交付为准。
+
+下一子步推进后继Assessment及唯一原子结算，继续复用已有评估／结算内核并保留全部审批谱系；新批次停车、新后继独立Worker强杀、真实供应商／领域Runner、main lifespan、全量前后端、双制品／备份恢复和全v4其余模式／E3／E4／性能出口仍未完成。§215风险不删除，不新增HTTP／DDL／依赖或生产路由，不改时钟／chronyd。完整goal保持active，整体剩余仍粗估 **4–8周有效开发／验收**，环境和人工等待另计，不作固定完成日期承诺。

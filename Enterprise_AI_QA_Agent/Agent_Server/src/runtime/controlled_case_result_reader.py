@@ -41,6 +41,14 @@ class ControlledCaseResultReader:
         self._tasks = tasks
         self._approval_continuations, self._capabilities = approval_continuations, capabilities
 
+    def require_approval_finalization_available(self):
+        """Explicit projection port availability, not an execution admission."""
+        caps = self._capabilities
+        if caps is None or not caps.controlled_case_approval_finalization_available:
+            raise TaskDeferred("framework_case_approval_finalization_unavailable")
+        if caps.controlled_case_checkpoint_max_version < 11:
+            raise TaskDeferred("framework_case_checkpoint_format_unavailable")
+
     def original_input_in_transaction(self, cur, owner, locked, task):
         """Resolve the real producer and frozen root; never fabricate a Task.
 
@@ -65,7 +73,7 @@ class ControlledCaseResultReader:
         _require(saved.task == task and saved.case.attempt.id == locked.attempt.id,
             "Controlled approval result changed its original physical producer")
         progress = ControlledCaseApprovalProgress(continuation)
-        retained = read_result_checkpoint(locked.attempt) if locked.attempt.checkpoint_version == 9 else None
+        retained = read_result_checkpoint(locked.attempt) if locked.attempt.checkpoint_version in {9, 10, 11} else None
         if retained is None:
             current = continuation._submission.current_wait_in_transaction(cur, saved.origin_command, saved.case,
                 saved.session, saved.owner, saved.wait, saved.origin, caps)

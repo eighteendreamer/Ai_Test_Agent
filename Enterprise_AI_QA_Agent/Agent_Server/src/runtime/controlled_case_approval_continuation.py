@@ -152,6 +152,11 @@ class ControlledCaseApprovalContinuations:
             task, capabilities)
 
     def _prepare_runtime(self, task, capabilities):
+        if capabilities.controlled_case_approval_finalization_available:
+            if not capabilities.controlled_case_approval_result_available:
+                raise TaskDeferred("framework_case_approval_result_unavailable")
+            if capabilities.controlled_case_checkpoint_max_version < 11:
+                raise TaskDeferred("framework_case_checkpoint_format_unavailable")
         if capabilities.controlled_case_approval_result_available and capabilities.controlled_case_checkpoint_max_version < 9:
             raise TaskDeferred("framework_case_checkpoint_format_unavailable")
         with postgres_connect(self._settings) as conn, conn.cursor() as cur:

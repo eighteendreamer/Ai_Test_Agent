@@ -53,7 +53,7 @@ def test_progress_readers_are_not_writers_or_completed_result_readers():
     from src.schemas.controlled_case_approval_progress import ControlledCaseApprovalProgressAsset
 
     caps = FrameworkWorkerCapabilities.from_artifact(deepagents_available=True)
-    assert caps.controlled_case_checkpoint_max_version == 9 and not caps.controlled_case_approval_progress_available
+    assert caps.controlled_case_checkpoint_max_version == 11 and not caps.controlled_case_approval_progress_available
     with pytest.raises(ValueError, match="no supported controlled result"):
         read_result_checkpoint(SimpleNamespace(checkpoint_version=8))
     with pytest.raises(ValueError, match="explicit integer version"):

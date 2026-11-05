@@ -311,9 +311,20 @@ class ControlledCaseApprovalResultCheckpoint(ControlledCaseResultCheckpoint):
         return self
 
 
+class ControlledCaseApprovalProjectionCheckpoint(ControlledCaseApprovalResultCheckpoint, ControlledCaseProjectionCheckpoint):
+    """Same part receipts, retaining the complete approval result source."""
+    schema_version: Literal[10]
+
+
+class ControlledCaseApprovalApplicationCheckpoint(ControlledCaseApprovalProjectionCheckpoint, ControlledCaseApplicationCheckpoint):
+    """Session commit only; neither approval Assessment nor settlement."""
+    schema_version: Literal[11]
+    projection_receipts: ControlledCaseApplicationReceipts
+
+
 def read_approval_history_checkpoint(attempt):
-    if attempt.checkpoint_version == 9:
-        return ControlledCaseApprovalResultCheckpoint.model_validate(attempt.checkpoint_payload).approval_history
+    if attempt.checkpoint_version in {9, 10, 11}:
+        return read_result_checkpoint(attempt).approval_history
     if attempt.checkpoint_version == 8:
         return ControlledCaseApprovalProgressCheckpoint.model_validate(attempt.checkpoint_payload)
     if attempt.checkpoint_version == 7:
@@ -331,7 +342,8 @@ def read_result_checkpoint(attempt) -> ControlledCaseResultCheckpoint | None:
         return None
     reader = {2: ControlledCaseResultCheckpoint, 3: ControlledCaseProjectionCheckpoint,
         4: ControlledCaseApplicationCheckpoint, 5: ControlledCaseAssessmentCheckpoint,
-        6: ControlledCaseSettlementCheckpoint, 9: ControlledCaseApprovalResultCheckpoint}.get(attempt.checkpoint_version)
+        6: ControlledCaseSettlementCheckpoint, 9: ControlledCaseApprovalResultCheckpoint,
+        10: ControlledCaseApprovalProjectionCheckpoint, 11: ControlledCaseApprovalApplicationCheckpoint}.get(attempt.checkpoint_version)
     if reader is None:
         raise ValueError("RunItem has no supported controlled result checkpoint")
     return reader.model_validate(attempt.checkpoint_payload)
@@ -339,7 +351,7 @@ def read_result_checkpoint(attempt) -> ControlledCaseResultCheckpoint | None:
 
 def read_admission_checkpoint(attempt) -> ControlledCaseAdmissionCheckpoint:
     """Read the original reservation only; inherited attempts need reconciliation."""
-    if attempt.checkpoint_key != CONTROLLED_CASE_ADMISSION_KEY or attempt.checkpoint_version not in {1, 2, 3, 4, 5, 6, 7, 8, 9}:
+    if attempt.checkpoint_key != CONTROLLED_CASE_ADMISSION_KEY or attempt.checkpoint_version not in {1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11}:
         raise ValueError("RunItem has no supported original controlled case admission checkpoint")
     if attempt.checkpoint_version in {7, 8}:
         checkpoint = read_wait_checkpoint(attempt).admission

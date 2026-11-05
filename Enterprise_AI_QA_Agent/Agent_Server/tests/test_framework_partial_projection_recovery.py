@@ -367,18 +367,64 @@ async def test_partial_successor_ack_does_not_require_memory_after_application_c
     await expire(h, h.task)
     successor = await h.tasks.ensure_framework_message_recovery(h.task.id)
     cleanup = h.sessions._cleanup_session_resources_if_terminal
+    original, removed = memory_rows(h), []
     async def remove_derived_rows(*args, **kwargs):
-        # Required application facts have committed. Derived memory is outside
-        # the A1 scope, even when that commit was produced by a successor.
+        # Same scope as §200's original-owner ACK: only derived requests are
+        # outside A1, never the required observations in the same physical table.
+        manifest = (await stage(h, h.task)).source_manifest
+        ids = [item["request_id"] for item in manifest["post_commit_memory_plan"]["requests"]]
+        assert ids and not set(ids).intersection(row["id"] for row in original)
         with postgres_connect(h.settings) as conn, conn.cursor() as cur:
-            cur.execute(f"DELETE FROM {h.settings.database.postgres_memory_table} WHERE session_id=%s", (h.session_id,))
+            cur.execute(f"DELETE FROM {h.settings.database.postgres_memory_table} WHERE id=ANY(%s)", (ids,))
+            assert cur.rowcount == len(ids)
+        removed.extend(ids)
         return await cleanup(*args, **kwargs)
     monkeypatch.setattr(h.sessions, "_cleanup_session_resources_if_terminal", remove_derived_rows)
     forbid_reexecution(h, monkeypatch)
     await dispatch(h, successor)
     assert (await h.tasks.get(successor.id)).status == "completed"
-    assert memory_rows(h) == []
+    assert removed and memory_rows(h) == original
+    with postgres_connect(h.settings) as conn, conn.cursor() as cur:
+        cur.execute(f"SELECT id FROM {h.settings.database.postgres_memory_table} WHERE id=ANY(%s)", (removed,))
+        assert cur.fetchall() == []
     assert (await stage(h, h.task)).phase == "projected"
+    assert h.native_runs == 1 and len(h.runtime.calls) == 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("changed", ["missing", "content"])
+async def test_partial_successor_ack_rejects_required_observation_drift_after_commit(observation_result, monkeypatch, changed):
+    """Actual §232 failure boundary: application committed, stage not ACKed."""
+    h = observation_result
+    await stop_after_snapshot(h, monkeypatch)
+    original = memory_rows(h)
+    terminal = await expire(h, h.task)
+    successor = await h.tasks.ensure_framework_message_recovery(h.task.id)
+    cleanup, observed = h.sessions._cleanup_session_resources_if_terminal, []
+    async def drift_required_row(*args, **kwargs):
+        saved = await stage(h, h.task)
+        assert "application_projection_commit" in saved.source_manifest and saved.phase == "runtime_submitted"
+        with postgres_connect(h.settings) as conn, conn.cursor() as cur:
+            if changed == "missing":
+                cur.execute(f"DELETE FROM {h.settings.database.postgres_memory_table} WHERE id=%s", (original[0]["id"],))
+            else:
+                cur.execute(f"UPDATE {h.settings.database.postgres_memory_table} SET content='changed required observation' "
+                    "WHERE id=%s", (original[0]["id"],))
+            assert cur.rowcount == 1
+        observed.append(memory_rows(h))
+        return await cleanup(*args, **kwargs)
+    monkeypatch.setattr(h.sessions, "_cleanup_session_resources_if_terminal", drift_required_row)
+    forbid_reexecution(h, monkeypatch)
+    await dispatch(h, successor)
+    assert (await h.tasks.get(successor.id)).status == "recovery_required"
+    assert len(observed) == 1 and memory_rows(h) == observed[0]
+    assert await h.tasks.get(h.task.id) == terminal
+    saved = await stage(h, h.task)
+    assert saved.phase == "runtime_submitted" and "application_projection_commit" in saved.source_manifest
+    assert await h.tasks.ensure_framework_message_recovery(successor.id) is None
+    assert memory_rows(h) == observed[0] and await stage(h, h.task) == saved
+    assert len([event for event in await h.store.list_events(h.session_id) if event.type == "turn.completed"]) == 1
+    assert h.native_runs == 1 and len(h.runtime.calls) == 1
 
 
 @pytest.mark.asyncio

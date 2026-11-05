@@ -411,7 +411,7 @@ class MemoryRuntimeService:
         return write_ids
 
     async def execute_turn_memory_plan(self, framework_owner, *, turn_lease_token: str | None = None,
-        controlled_case_native=None) -> list[str]:
+        controlled_case_native=None, controlled_case_reader=None) -> list[str]:
         """Execute only the immutable framework plan and persist row receipts.
 
         The plan is read from the fenced original source; caller-provided turn
@@ -424,6 +424,8 @@ class MemoryRuntimeService:
         )
 
         source_options = {"controlled_case_native": controlled_case_native} if controlled_case_native is not None else {}
+        if controlled_case_reader is not None:
+            source_options["controlled_case_reader"] = controlled_case_reader
         execution = await read_turn_memory_execution_async(framework_owner, self._memory_store._settings, **source_options)
         # The read helper also validates the owner/stage/plan.  Importing the
         # plan here keeps the immutable source in one place and avoids a

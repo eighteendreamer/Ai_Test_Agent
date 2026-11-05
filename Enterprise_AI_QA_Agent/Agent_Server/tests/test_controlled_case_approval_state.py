@@ -256,7 +256,7 @@ def test_wait_material_writer_stays_default_off_and_is_not_a_result_checkpoint()
 
     caps = FrameworkWorkerCapabilities.from_artifact(deepagents_available=True)
     assert not caps.controlled_case_approval_state_available
-    assert caps.controlled_case_checkpoint_max_version == 9 and caps.controlled_case_approval_wait_max_version == 2
+    assert caps.controlled_case_checkpoint_max_version == 11 and caps.controlled_case_approval_wait_max_version == 2
     from src.schemas.controlled_case_admission import read_result_checkpoint
 
     with pytest.raises(ValueError, match='no supported controlled result'):

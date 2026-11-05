@@ -44,9 +44,12 @@ def _retention_event(checkpoint):
 
 
 class ControlledCaseResults:
-    def __init__(self, tasks, *, approval_continuations=None, capabilities=None):
+    def __init__(self, tasks, *, approval_continuations=None, capabilities=None, reader=None):
         self._tasks = tasks
-        self._reader = ControlledCaseResultReader(tasks, approval_continuations=approval_continuations,
+        _require(reader is None or (isinstance(reader, ControlledCaseResultReader)
+            and reader._tasks._settings == tasks._settings and approval_continuations is capabilities is None),
+            "Controlled result reader differs from its explicit original storage/ports")
+        self._reader = reader if reader is not None else ControlledCaseResultReader(tasks, approval_continuations=approval_continuations,
             capabilities=capabilities)
 
     async def freeze(self, owner, *, runtime_result, native):
