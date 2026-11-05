@@ -11570,3 +11570,58 @@ $files = Get-Content ../.codex-logs/e229-affected-files.txt
 拟提交仅10相关文件：current reader、continuation／submission／repark消费、Worker capabilities、新successor专项、原repark契约与pending夹具、路由说明和本记录。新测试单文件force-add，不改ignore；不暂存用户v3、运行日志／探针、环境／缓存，无依赖／公共API／DDL或生产路由变更，不push／PR。提交信息 `【feat】从当前停车串行继续正式审批`，实际ID见Git和交付。
 
 下一步：原批次最后项／下一模型返回native terminal后的后继完整结果材料与唯一投影／Assessment／结算；新审批批次保留与停车；再接实际Worker路由、强杀、双制品与相应发布验收。不能用本步native terminal替代正式结果或把running任务伪装completed。v4完整目标继续active；既有§215历史账本风险与全量后端／前端、完整main lifespan、真实供应商／领域Runner、E3／E4、备份恢复／性能等未验出口继续保留。整个项目剩余粗估 **4–8周有效开发／验收**，环境、授权和人工等待另计。
+
+## §230 审批后继终态的完整结果材料（2026-11-05，未提交）
+
+对应v4 §9.2／§9.4／§12.1，续接§229／`949c2a5a0492b8df0cfafefc8d0e64f788d36d5d`。本步只补最后原批次审批到正式结果材料的必要子步，不启生产路由、不把native terminal当正式Assessment／唯一结算。原root／中间B历史、最后A的物理producer和原正式Attempt各自保留，不冒充首次case_execute；用户v3不修改或暂存。
+
+依据位置 → 本项目采用：`ControlledCaseResultReader`／`ControlledCaseResults` 的原件、双租约、Verification及资产构造 → 同一读者明确接收专用审批continuation；`framework_approval_continuation._applied_tool_projection_in_transaction` 的拒绝原件读取 → 从已应用journal取展示材料并比较真实native拒绝消息；`turn_projection`／`controlled_case_projection` 的纯投影 → 从已核验parent保留slot／ordinal／事件前缀，完整原生终态与根预算仍逐项核验。不复制finalizer、调度器或重跑已知工具。
+
+新checkpoint9属于原结果家族，但完整嵌入原checkpoint7／8历史、最后approval admission和真实delivered＋applied receipt；source摘要绑定整个谱系，asset.task_id仍为最后物理producer，根admission不改。历史wait／progress／re-park读者理解9内嵌历史，不因此取得写入／执行权。新增`controlled_case_approval_result_available=False`独立默认关闭，codec max为9；显式启用却max8的Runtime在begin／delivery前延期。现有首次投影／Assessment／settlement消费者尚未支持完整谱系，不把9降成3–6或送进首次finalizer。
+
+TDD原日志全部保留：`e230-approval-result-red.log` **4 failed、53.52秒、exit1**（缺新能力）；补字段后的`e230-approval-result-behavior-red.log` **4 failed、70.10秒、exit1**（真实native terminal却无result asset）。首版`e230-approval-result-first.log` **3 failed、1 passed、72.70秒、exit1**：双批准通过，含拒绝的三项因collector只遍历带artifact的ToolMessage而漏掉拒绝材料。查现有审批读者确认拒绝材料在application proof，原生拒绝消息不带该artifact，不能伪造native消息或省略拒绝。共享材料比较现明确分离已核验拒绝材料与native消息，批准／普通结果仍要求原artifact。修复后四种决定组合`e230-approval-result-denial.log` **4 passed、93.14秒、exit0，无skip／deselect**。
+
+扩大专项正在`e230-approval-result-expanded.log`运行：新增schema7单项直接终态、三兄弟两次停车、拒绝native内容／身份／状态／重复／缺失、default-off／旧codec、root／历史receipt／事件／budget／Job／三租约漂移、Verification不重建、首次finalizer拒绝、最后审计后跨租约回滚及取消／ACK丢失。尚无最终计数，src／tests冻结，不沿用四项通过代表扩展字节通过。后续完整消费矩阵、静态检查、摘要和精确提交均待实际完成。
+
+环境仍使用固定Agent解释器、每条pytest前ProcessOnly清UV、真实UUID隔离PG／Redis、固定官方框架；供应商为本地HTTP，工具为受治理隔离handler。不改时钟／chronyd／服务，不运行trace，不安装依赖、付费或测试真实目标。完整v4保持active；后继Session唯一投影／Assessment／结算、新批次停车、实际Worker独立进程、双制品与其他模式验收仍未完成，整体剩余粗估4–8周有效开发／验收，环境与人工等待另计。
+
+### 扩大专项首轮结果与测试适配修正
+
+原session11115已取终态，`e230-approval-result-expanded.log` 实际 **5 failed、32 passed、587.94秒、exit1**。三兄弟两次停车和schema7直接终态、所有谱系／租约漂移与取消／ACK丢失均通过。五项失败来自测试本身：缺失／重复native消息被既有协议检查正确拒绝，抛出的是`FrameworkMessageStageRecoveryRequired`而非测试写的ValueError；另外三项最后审计注入wrapper只收三个位置参数，而真实共享事件sink传八个，导致未到目标窗口便报TypeError。查真实`_append_event_sync`签名后保留完整参数转发，并对两类协议错误精确断言，不改产品、删节点或放宽未抛错／回滚断言。保留该失败日志。
+
+修订后完整37项正运行`e230-approval-result-final.log`，未有最终计数，不以32通过当最终绿色。源／测试继续冻结；已核完整消费矩阵文件存在，仍须在专项终态后执行，不并发启动重复回归。
+
+### 37项终态及最终谱系原件缺口
+
+原session78366终态为 **37 passed、600.80秒、exit0，无skip／deselect**，日志`e230-approval-result-final.log`。真实最后审计后三租约均整笔回滚，原应用决定保留；取消等待者和ACK丢失后仅重入资产保留，不重跑图／模型／工具。
+
+提交前按既有progress原件测试模式补充三项：重算checkpoint9最后admission／receipt、asset source和asset hash及外层审计后，仍不能替代真实最后Task admission／journal receipt。`e230-lineage-red.log` 实际 **3 failed、58.64秒、exit1**，均DID NOT RAISE，暴露确实遗漏了最后嵌入谱系与真实原件的等值核验；合法摘要只证明内部一致，不能证明来源。原reader已读取真实saved admission与applied receipt，现按progress `_validate`同一规则在共享reader中逐一比较，不加hash fallback或新恢复入口。该缺口的红结果保留。
+
+修复后的完整40项正在`e230-approval-result-lineage-final.log`运行，37通过不代表这次字节通过；后续45完整文件消费矩阵、静态／摘要、精确提交仍待执行。完整v4及本步整体均未据此标完成。
+
+### 新专项最终终态及45文件消费回归启动
+
+原session32978已终态，`e230-approval-result-lineage-final.log` 实际 **40 passed、596.98秒、exit0，无skip／deselect**。三项谱系红样本现精确拒绝，完整37项重跑也通过，不沿用旧字节代替本次结果。固定Agent解释器pytest／multiprocessing残留为0。
+
+`e230-source-frozen.log`：src **884个py，889b7c859e7a1410c21af89fdcaf78e6cf7fc82b83504e02ef7d590047616431**；tests **699个py，1851f573bb87c8bd25728eaf19d4e137a31882c9a724c54d3b5172825a082051**。全src／tests `python -m compileall -q src tests`与`python -m pip check`均实际exit0，No broken requirements found；ruff／mypy查证未安装，未运行独立lint／typecheck，不安装依赖，不以compileall替代。相关tracked diff --check exit0，用户v3 SHA256仍为原值。
+
+随后启动完整消费矩阵，清单`e230-affected-files.txt`为原33文件与§229的17文件并集，再加新result、原result、tool projection、普通消息／审批结果读者和runtime asset，共**45个完整文件**。cwd=Agent_Server，固定Agent解释器、每条pytest前ProcessOnly清UV、PG=1、其余实际live=0、diagnostics=1、UTF8：
+
+~~~powershell
+$files = Get-Content ../.codex-logs/e230-affected-files.txt
+& E:\MiniConda3\envs\Agent\python.exe -u -m pytest @files -q -rs --tb=short
+~~~
+
+日志`e230-all-consumers.log`正运行，尚无最终计数；不并发重启pytest、不在运行中修改src／tests。新专项通过仅证明已列证据范围，不替完整消费回归、后继唯一结算或整体v4验收。当前本步仍未提交，待终态、前后字节与暂存范围复核后决定交付。
+
+### 45文件真实终态、字节与交付边界
+
+原session32675已终态，`e230-all-consumers.log` 实际 **2060 passed、13764.30秒（3:49:24）、exit0，无skip／deselect**。包含新40项、原完整33文件和§229的17文件并集、普通消息／审批结果读者、共享工具投影与资产消费方；首次正式Session投影／Assessment／结算以及原独立首次停车／Worker故障窗口均原样通过。没有中途重启pytest或修改src／tests，也未删除旧失败节点。
+
+`e230-source-after.log` 与冻结src884／tests699的数量和两个SHA256完全一致；用户v3 SHA256仍原值。全src／testscompileall和pip check再次实际exit0，No broken requirements found，见`e230-static-final.log`；ruff／mypy未安装，独立lint／typecheck未执行。固定Agent解释器pytest／multiprocessing残留为0，相关diff --check通过。真实供应商／领域Runner、后继独立进程强杀、main lifespan和全量前后端未在本步运行，不以2060通过替代这些验收。
+
+交付对应：v4 §9.2／§9.4／§12.1 → §230 → checkpoint9原结果家族与完整审批谱系、共享reader／纯投影／Verification／资产writer、拒绝原生消息比较、历史消费者及独立default-off能力 → 行为红4、拒绝分支3红／1绿、测试适配5红／32绿、原37绿、最终谱系红3、最终专项40绿与完整45文件2060绿、静态／摘要 → **仅后继完整结果材料已验证，未完成后继唯一Session投影／Assessment／结算**。结果保留后最后Task和正式Attempt仍running，不伪装正式完成。
+
+本步仅精确暂存19相关文件（产品／schema、两个旧capability断言、新approval_result专项、路由说明与本记录），新测试单文件force-add，不改ignore。不暂存用户v3、日志／探针／环境／缓存，不push／PR。提交信息`【feat】保留审批后继完整结果及原始谱系`，实际ID见Git与交付；没有公共HTTP／DDL／依赖／生产路由更改。checkpoint9新格式需要兼容制品，旧max8提前延期，结果writer仍默认关闭。
+
+下一子步须将完整审批谱系接入**现有唯一**Session finalizer／各分项回执／Assessment／结算，并保留9的历史材料；不能直接降回3–6或复制一套finalizer。新批次停车、实际Worker路由／独立进程、双制品／备份恢复及全v4其他模式与E3／E4／性能出口继续未完成；§215历史账本／计时风险不因本步绿色而消失。完整goal保持active，整个项目剩余粗估仍 **4–8周有效开发／验收**，环境和人工等待另计。

@@ -15,6 +15,7 @@ from src.runtime.framework_tool_materials import read_unapproved_tool_materials,
 from src.runtime.postgres_framework_model_calls import PostgresFrameworkModelCalls
 from src.runtime.postgres_runtime_owner import assert_runtime_owner, configure_runtime_owner_transaction
 from src.runtime.postgres_tool_job_store import _job_from_row
+from src.runtime.task_deferred import TaskDeferred
 from src.schemas.controlled_case_task_input import ControlledCaseResultTaskInputAsset, parse_controlled_case_task_input
 from src.schemas.runtime_binding import RuntimeCheckpointSource
 
@@ -36,8 +37,50 @@ class ControlledCaseResultReader:
     promoted to model-response import evidence.
     """
 
-    def __init__(self, tasks):
+    def __init__(self, tasks, *, approval_continuations=None, capabilities=None):
         self._tasks = tasks
+        self._approval_continuations, self._capabilities = approval_continuations, capabilities
+
+    def original_input_in_transaction(self, cur, owner, locked, task):
+        """Resolve the real producer and frozen root; never fabricate a Task.
+
+        Approval history remains immutable and uses the same historical source
+        readers as claim. A terminal is not a new pending-batch admission.
+        """
+        if task['operation'] == 'case_execute':
+            return parse_controlled_case_task_input(task['input_payload']['case_execution_input']), None, None, (), task
+        continuation, caps = self._approval_continuations, self._capabilities
+        if caps is None or not caps.controlled_case_approval_result_available:
+            raise TaskDeferred("framework_case_approval_result_unavailable")
+        if caps.controlled_case_checkpoint_max_version < 9:
+            raise TaskDeferred("framework_case_checkpoint_format_unavailable")
+        _require(task['operation'] == 'case_approval' and continuation is not None
+            and continuation._tasks._settings == self._tasks._settings,
+            "Controlled approval result requires its dedicated original reader")
+        from src.runtime.controlled_case_approval_progress import ControlledCaseApprovalProgress
+        from src.schemas.controlled_case_admission import read_approval_history_checkpoint, read_result_checkpoint
+        from src.schemas.framework_approval import framework_approval_id
+
+        saved = continuation._locked(cur, continuation._wire(cur, task['id'], caps), caps)
+        _require(saved.task == task and saved.case.attempt.id == locked.attempt.id,
+            "Controlled approval result changed its original physical producer")
+        current = continuation._submission.current_wait_in_transaction(cur, saved.origin_command, saved.case,
+            saved.session, saved.owner, saved.wait, saved.origin, caps)
+        parent = current.state_asset
+        _require(parent is not None and len(parent.natives) == 1
+            and framework_approval_id(owner.binding, parent.natives[0]) == task['reference_id'],
+            "Controlled approval terminal requires its last original pending sibling")
+        plan, selected = ControlledCaseApprovalProgress(continuation)._selected(cur, saved)
+        retained = read_result_checkpoint(locked.attempt) if locked.attempt.checkpoint_version == 9 else None
+        _require(retained is None or (retained.approval_admission == saved.admission
+            and retained.decision_receipt == plan.receipt),
+            "Controlled result changed its original approval lineage")
+        lineage = dict(approval_history=(retained.approval_history if retained is not None
+                else read_approval_history_checkpoint(locked.attempt)),
+            approval_admission=saved.admission, decision_receipt=plan.receipt)
+        applied = tuple(item for item in parent.tool_materials if item.record.approval_id is not None) + (selected,)
+        original = caps.require_case_input_format(saved.origin['input_payload']['case_execution_input'])
+        return original, lineage, parent, applied, saved.origin
 
     async def prepare(self, owner, original, outcome, event_log):
         if outcome.native_terminal is None or outcome.native_interrupts or outcome.subagent_events:
@@ -96,19 +139,21 @@ class ControlledCaseResultReader:
         No public skip-owner flag, writes, graph invocation or response import.
         """
         tasks, binding, settings = self._tasks, owner.binding, self._tasks._settings
-        _require(task is not None and task["operation"] == "case_execute"
+        _require(task is not None and task["operation"] in {"case_execute", "case_approval"}
             and task["attempt_id"] == owner.attempt_id and task["worker_id"] == owner.worker_id
             and task["runtime_binding"] == binding.model_dump(mode="json")
-            and task["input_payload"] == {"case_execution_input": original.model_dump(mode="json")}
             and locked.checkpoint.input_sha256 == original.asset_sha256,
             "Controlled result differs from its durable original task/admission")
+        frozen, _, parent, applied, root = self.original_input_in_transaction(cur, owner, locked, task)
+        _require(frozen == original and root['input_payload'] == {"case_execution_input": original.model_dump(mode='json')},
+            "Controlled result differs from its frozen original preparation")
         ledger = PostgresFrameworkModelCalls(settings)
         cur.execute(f"SELECT binding_id FROM {ledger.budgets_table} WHERE binding_id=%s FOR SHARE", (binding.binding_id,))
         cur.execute(f"SELECT attempt_id FROM {ledger.calls_table} WHERE binding_id=%s ORDER BY attempt_id FOR SHARE", (binding.binding_id,))
         budget = ledger._snapshot(cur, binding)
-        expected = tasks._input_hash("case_execute", {"input": task["input_payload"],
+        expected = tasks._input_hash("case_execute", {"input": root["input_payload"],
             "runtime_binding_fingerprint": binding.fingerprint, "model_budget": budget.policy.model_dump(mode="json")})
-        _require(expected == task["input_hash"] == locked.checkpoint.submission_sha256
+        _require(expected == root["input_hash"] == locked.checkpoint.submission_sha256
             and budget.calls and all(call.phase == "completed" for call in budget.calls),
             "Controlled result has changed original input/budget or unsettled model calls")
         source = RuntimeCheckpointSource(binding=binding, owner_epoch=owner.owner_epoch,
@@ -138,8 +183,9 @@ class ControlledCaseResultReader:
             "Controlled result has unsettled business ToolJobs")
         outputs = read_projected_job_outputs(cur, settings, jobs)
         materials = read_unapproved_tool_materials(original.graph_input, binding,
-            native.values.get("messages", []), jobs, event_log=event_log, projected_outputs=outputs)
-        result = project_controlled_case_result(original, native, root_model_budget, event_log, materials)
+            native.values.get("messages", []), jobs, event_log=event_log, projected_outputs=outputs,
+            applied_materials=applied)
+        result = project_controlled_case_result(original, native, root_model_budget, event_log, materials, parent=parent)
         _require(not sealed or result.state["event_log"] == read.event_log,
             "Controlled result completion differs from its frozen deterministic projection")
         return result

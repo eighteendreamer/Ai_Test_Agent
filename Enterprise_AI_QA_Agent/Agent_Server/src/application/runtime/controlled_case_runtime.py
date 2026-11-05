@@ -300,9 +300,23 @@ class ControlledCaseRuntime:
                     "Formal tool result applied; atomic re-park or finalization remains separate.",
                     approval_id=task.reference_id, tool_job_id=approval_tool_projection.record.job_id,
                     status=approval_tool_projection.record.status, material_sha256=approval_tool_projection.sha256)
+                if outcome.native_terminal is not None and capabilities.controlled_case_approval_result_available:
+                    from src.runtime.controlled_case_result_reader import ControlledCaseResultReader
+                    from src.runtime.framework_runtime_results import FrameworkRuntimeResults
+
+                    owner = current_framework_owner()
+                    projected = await ControlledCaseResultReader(executor._tasks, approval_continuations=continuation,
+                        capabilities=capabilities).prepare(owner, prepared, outcome, state['event_log'])
+                    await append_graph_event_intent_durable(state, projected.events[-1])
+                    await complete_graph_event_log(state, outcome.native_terminal.proof.model_dump(mode='json'))
+                    result_asset = await FrameworkRuntimeResults(executor._tasks).freeze_controlled_case(owner,
+                        runtime_result=projected, native=outcome.native_terminal,
+                        approval_continuations=continuation, capabilities=capabilities)
+                    runtime_result, state = projected, deepcopy(projected.state)
                 # Do not pass a successor to the FIRST-execution finalizer or
                 # initial park writer. The exact tool application is durable;
-                # this returned state is only the pre-repark application step.
+                # Result retention is still not Session application/settlement;
+                # a pending outcome remains only the pre-repark step.
                 return
             if not isinstance(prepared, ControlledCaseResultTaskInputAsset) or outcome.native_interrupts:
                 # Historical preparation is not silently upgraded. Native wait

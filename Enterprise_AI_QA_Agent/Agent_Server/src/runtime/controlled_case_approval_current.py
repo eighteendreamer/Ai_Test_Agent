@@ -10,7 +10,7 @@ import logging
 
 from src.runtime.framework_approval_journal import FrameworkApprovalRecoveryRequired
 from src.runtime.task_deferred import TaskDeferred
-from src.schemas.controlled_case_admission import read_wait_checkpoint
+from src.schemas.controlled_case_admission import read_wait_checkpoint, read_approval_history_checkpoint
 
 
 logger = logging.getLogger(__name__)
@@ -32,15 +32,15 @@ def read_current_approval_wait(cur, submission, command, case, session, owner, r
     The historical continuation reader deliberately never calls this reader.
     """
     receipt, producer, state = root, origin, None
-    if case.attempt.checkpoint_version in {7, 8}:
+    if case.attempt.checkpoint_version in {7, 8, 9}:
         initial = read_wait_checkpoint(case.attempt)
         state = initial.state_asset
-    if case.attempt.checkpoint_version == 8:
+    history = read_approval_history_checkpoint(case.attempt) if state is not None else None
+    if history is not None and history.schema_version == 8:
         from src.runtime.controlled_case_approval_continuation import ControlledCaseApprovalContinuations
         from src.runtime.controlled_case_approval_repark import ControlledCaseApprovalReparks
-        from src.schemas.controlled_case_admission import ControlledCaseApprovalProgressCheckpoint
 
-        checkpoint = ControlledCaseApprovalProgressCheckpoint.model_validate(case.attempt.checkpoint_payload)
+        checkpoint = history
         shared = ControlledCaseApprovalContinuations(submission)
         reparks = ControlledCaseApprovalReparks(shared)
         last = checkpoint.progress_assets[-1]

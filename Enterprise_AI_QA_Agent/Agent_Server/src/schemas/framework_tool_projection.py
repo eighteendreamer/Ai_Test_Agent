@@ -68,6 +68,24 @@ class FrameworkToolProjection(BaseModel):
         # belongs to this envelope, not to the SDK's current display string.
         return parse_tool_projection(artifact[TOOL_PROJECTION_KEY]).require_binding(binding, source)
 
+    def require_native_message(self, message, *, binding, source):
+        """Compare material already authenticated by its scoped original reader.
+
+        HITL reject messages have no application artifact. Their material must
+        come from the applied journal reader, not from this comparison. Match
+        the same native rejection fields as the existing application evidence;
+        all other results still require their original artifact envelope.
+        """
+        self.require_binding(binding, source)
+        if message.status == "error" and self.record.status == "denied" and self.record.approval_id is not None:
+            if (message.tool_call_id != source.tool_call_id or message.name != source.tool_name
+                or not isinstance(message.content, str) or not message.content
+                or message.content != self.model_content or message.artifact is not None):
+                raise ValueError("Original rejection material differs from its native message")
+        elif self.from_tool_message(message, binding=binding, source=source) != self:
+            raise ValueError("Original tool material differs from its native artifact")
+        return self
+
     @classmethod
     def capture(cls, *, binding, source, record, message, model_content, runtime_message=None):
         payload = {"schema_version": 1, "scope": "tool_projection_material_only",

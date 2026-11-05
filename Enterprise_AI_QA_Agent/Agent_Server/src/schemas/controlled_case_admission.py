@@ -10,7 +10,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 from src.schemas.run_management import RunPlanSnapshotIdentity
 from src.schemas.runtime_binding import RuntimeBinding
 from src.schemas.framework_runtime_result import ControlledCaseRuntimeResultAsset
-from src.schemas.framework_approval import approval_value_hash
+from src.schemas.framework_approval import approval_value_hash, FrameworkDecisionReceipt, framework_approval_id
 from src.schemas.framework_projection_commit import (
     FrameworkSnapshotProjectionCommit, FrameworkEventProjectionCommits, FrameworkProjectionCommit,
     FrameworkTurnMemoryIntent, FrameworkTurnMemoryPlan, FrameworkTurnMemoryExecution,
@@ -20,6 +20,7 @@ from src.schemas.controlled_case_assessment import ControlledCaseAssessmentAsset
 from src.schemas.controlled_case_settlement import ControlledCaseSettlementReceipt
 from src.schemas.controlled_case_approval_state import ControlledCaseApprovalStateAsset
 from src.schemas.controlled_case_approval_progress import ControlledCaseApprovalProgressAsset
+from src.schemas.controlled_case_approval_submission import ControlledCaseApprovalAdmission
 
 
 CONTROLLED_CASE_ADMISSION_KEY = "controlled_case_admission"
@@ -72,6 +73,14 @@ class ControlledCaseResultCheckpoint(BaseModel):
     runtime_result_asset: ControlledCaseRuntimeResultAsset
     retained_at: datetime
 
+    @property
+    def result_producer_task_id(self):
+        return self.admission.task_id
+
+    @property
+    def result_source_sha256(self):
+        return approval_value_hash(self.admission.model_dump(mode="json"))
+
     @model_validator(mode="before")
     @classmethod
     def require_version(cls, value):
@@ -82,11 +91,11 @@ class ControlledCaseResultCheckpoint(BaseModel):
     @model_validator(mode="after")
     def require_original(self):
         source, asset = self.admission, self.runtime_result_asset
-        if (self.retained_at.utcoffset() is None or asset.binding != source.binding or asset.task_id != source.task_id
+        if (self.retained_at.utcoffset() is None or asset.binding != source.binding or asset.task_id != self.result_producer_task_id
             or (asset.run_id, asset.run_item_id, asset.run_item_execution_attempt_id)
                 != (source.run_id, source.run_item_id, source.run_item_execution_attempt_id)
             or asset.input_sha256 != source.input_sha256 or asset.execution_sha256 != source.submission_sha256
-            or asset.source_sha256 != approval_value_hash(source.model_dump(mode="json"))):
+            or asset.source_sha256 != self.result_source_sha256):
             raise ValueError("Controlled result checkpoint differs from its original admission")
         return self
 
@@ -259,12 +268,62 @@ class ControlledCaseApprovalProgressCheckpoint(BaseModel):
         return self
 
 
-def read_wait_checkpoint(attempt) -> ControlledCaseApprovalStateCheckpoint:
+def approval_result_source_sha256(history, admission, receipt):
+    return approval_value_hash(dict(approval_history=history.model_dump(mode="json"),
+        approval_admission=admission.model_dump(mode="json"), decision_receipt=receipt.model_dump(mode="json")))
+
+
+class ControlledCaseApprovalResultCheckpoint(ControlledCaseResultCheckpoint):
+    """Original result family with the entire immutable approval source.
+
+    No upstream counterpart (checked: result checkpoint2, waiting7/progress8,
+    v4 §9.2/§12.1): the result's physical producer is not the root reservation.
+    Keep both identities; never overwrite the root's retained history.
+    """
+    schema_version: Literal[9]
+    approval_history: ControlledCaseApprovalStateCheckpoint | ControlledCaseApprovalProgressCheckpoint
+    approval_admission: ControlledCaseApprovalAdmission
+    decision_receipt: FrameworkDecisionReceipt
+
+    @property
+    def result_producer_task_id(self):
+        return self.approval_admission.task_id
+
+    @property
+    def result_source_sha256(self):
+        return approval_result_source_sha256(self.approval_history, self.approval_admission, self.decision_receipt)
+
+    @model_validator(mode="after")
+    def require_original_approval(self):
+        history, proof, receipt, asset = self.approval_history, self.approval_admission, self.decision_receipt, self.runtime_result_asset
+        initial = history.initial_wait if isinstance(history, ControlledCaseApprovalProgressCheckpoint) else history
+        parent = history.progress_assets[-1] if isinstance(history, ControlledCaseApprovalProgressCheckpoint) else history.state_asset
+        if (initial.admission != self.admission or proof.origin_task_id != self.admission.task_id
+            or proof.binding_fingerprint != asset.binding.fingerprint or proof.input_sha256 != asset.input_sha256
+            or proof.run_item_execution_attempt_id != asset.run_item_execution_attempt_id
+            or proof.submission_sha256 != asset.execution_sha256 or asset.owner_epoch <= parent.owner_epoch
+            or len(parent.natives) != 1 or framework_approval_id(asset.binding, parent.natives[0]) != proof.approval_id
+            or receipt.approval_id != proof.approval_id or receipt.decision_id != proof.decision_id
+            or receipt.decision_hash != proof.decision_sha256 or receipt.state != "delivered"
+            or receipt.delivered_at is None or receipt.applied_at is None
+            or receipt.applied_at > self.retained_at or parent.retained_at > self.retained_at):
+            raise ValueError("Controlled result differs from its original approval lineage")
+        return self
+
+
+def read_approval_history_checkpoint(attempt):
+    if attempt.checkpoint_version == 9:
+        return ControlledCaseApprovalResultCheckpoint.model_validate(attempt.checkpoint_payload).approval_history
     if attempt.checkpoint_version == 8:
-        return ControlledCaseApprovalProgressCheckpoint.model_validate(attempt.checkpoint_payload).initial_wait
+        return ControlledCaseApprovalProgressCheckpoint.model_validate(attempt.checkpoint_payload)
     if attempt.checkpoint_version == 7:
         return ControlledCaseApprovalStateCheckpoint.model_validate(attempt.checkpoint_payload)
     raise ValueError("RunItem has no original controlled waiting checkpoint")
+
+
+def read_wait_checkpoint(attempt) -> ControlledCaseApprovalStateCheckpoint:
+    history = read_approval_history_checkpoint(attempt)
+    return history.initial_wait if isinstance(history, ControlledCaseApprovalProgressCheckpoint) else history
 
 
 def read_result_checkpoint(attempt) -> ControlledCaseResultCheckpoint | None:
@@ -272,7 +331,7 @@ def read_result_checkpoint(attempt) -> ControlledCaseResultCheckpoint | None:
         return None
     reader = {2: ControlledCaseResultCheckpoint, 3: ControlledCaseProjectionCheckpoint,
         4: ControlledCaseApplicationCheckpoint, 5: ControlledCaseAssessmentCheckpoint,
-        6: ControlledCaseSettlementCheckpoint}.get(attempt.checkpoint_version)
+        6: ControlledCaseSettlementCheckpoint, 9: ControlledCaseApprovalResultCheckpoint}.get(attempt.checkpoint_version)
     if reader is None:
         raise ValueError("RunItem has no supported controlled result checkpoint")
     return reader.model_validate(attempt.checkpoint_payload)
@@ -280,7 +339,7 @@ def read_result_checkpoint(attempt) -> ControlledCaseResultCheckpoint | None:
 
 def read_admission_checkpoint(attempt) -> ControlledCaseAdmissionCheckpoint:
     """Read the original reservation only; inherited attempts need reconciliation."""
-    if attempt.checkpoint_key != CONTROLLED_CASE_ADMISSION_KEY or attempt.checkpoint_version not in {1, 2, 3, 4, 5, 6, 7, 8}:
+    if attempt.checkpoint_key != CONTROLLED_CASE_ADMISSION_KEY or attempt.checkpoint_version not in {1, 2, 3, 4, 5, 6, 7, 8, 9}:
         raise ValueError("RunItem has no supported original controlled case admission checkpoint")
     if attempt.checkpoint_version in {7, 8}:
         checkpoint = read_wait_checkpoint(attempt).admission

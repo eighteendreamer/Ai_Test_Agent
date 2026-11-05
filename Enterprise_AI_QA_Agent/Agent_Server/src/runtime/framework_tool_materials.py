@@ -1,7 +1,7 @@
-"""Shared ordinary-invocation tool original checks, not execution authority."""
+"""Shared tool originals, including authenticated applied approvals, not authority."""
 from __future__ import annotations
 
-from langchain_core.messages import ToolMessage
+from langchain_core.messages import AIMessage, ToolMessage
 
 from src.application.deep_agents.framework_transcript import deserialize_messages
 from src.runtime.framework_message_stages import FrameworkMessageStageRecoveryRequired
@@ -33,11 +33,32 @@ def read_projected_job_outputs(cur, settings, jobs):
     return outputs
 
 
-def read_unapproved_tool_materials(original, binding, messages, jobs, *, event_log=None, projected_outputs=None):
+def read_unapproved_tool_materials(original, binding, messages, jobs, *, event_log=None, projected_outputs=None,
+                                  applied_materials=()):
     # Application ordinals are completion order, not native task-path order.
     by_job, materials = {job.id: job for job in jobs}, {}
+    # The caller must authenticate these through the approval journal's
+    # original applied-material reader. Native artifacts alone are not proof.
+    applied = {item.record.call_id: item for item in applied_materials}
+    by_source = {(item.source.source_message_id, item.source.tool_call_id): item for item in applied_materials}
+    _require(len(applied) == len(by_source) == len(applied_materials),
+        "Message result has conflicting original applied approval identities")
     frozen_history = deserialize_messages(original.framework_messages)
+    source = None
     for message in messages:
+        if isinstance(message, AIMessage):
+            source = message
+        if isinstance(message, ToolMessage):
+            material = by_source.get((source.id if source else None, message.tool_call_id))
+            if material is not None:
+                material.require_native_message(message, binding=binding, source=material.source)
+                _require(isinstance(material, FrameworkRuntimeToolProjection)
+                    and material.record.job_id in by_job,
+                    "Message result has missing or unsupported applied approval material")
+                _require(material.record.call_id not in materials or materials[material.record.call_id] == material,
+                    "Message result has conflicting original tool materials")
+                materials[material.record.call_id] = material
+                continue
         if not isinstance(message, ToolMessage) or not isinstance(message.artifact, dict) or TOOL_PROJECTION_KEY not in message.artifact:
             continue
         material = parse_tool_projection(message.artifact[TOOL_PROJECTION_KEY])
@@ -80,7 +101,8 @@ def read_unapproved_tool_materials(original, binding, messages, jobs, *, event_l
             "Message result has conflicting original tool materials")
         materials[record.call_id] = material
     ordered = sorted(materials.values(), key=lambda item: item.message.metadata["ordinal"])
-    _require({item.record.job_id for item in ordered if item.record.job_id is not None} == set(by_job)
+    _require(all(materials.get(key) == value for key, value in applied.items())
+        and {item.record.job_id for item in ordered if item.record.job_id is not None} == set(by_job)
         and [item.message.metadata["ordinal"] for item in ordered] == list(range(1, len(ordered) + 1)),
         "Message result has an unprepared business tool or conflicting original ordinals")
     return ordered

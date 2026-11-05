@@ -26,7 +26,7 @@ from src.runtime.framework_event_completion import original_checkpoint_source
 from src.runtime.postgres_framework_model_calls import PostgresFrameworkModelCalls
 from src.runtime.postgres_runtime_owner import assert_runtime_owner, configure_runtime_owner_transaction
 from src.runtime.task_deferred import TaskDeferred
-from src.schemas.controlled_case_admission import ControlledCaseApprovalProgressCheckpoint, read_wait_checkpoint
+from src.schemas.controlled_case_admission import ControlledCaseApprovalProgressCheckpoint, read_approval_history_checkpoint
 from src.schemas.controlled_case_approval_progress import ControlledCaseApprovalProgressAsset
 from src.schemas.framework_approval import approval_value_hash, framework_approval_id
 from src.schemas.session import ExecutionEvent
@@ -83,10 +83,10 @@ class ControlledCaseApprovalProgress:
         return result
 
     def _chain(self, saved):
-        if saved.case.attempt.checkpoint_version == 8:
-            checkpoint = ControlledCaseApprovalProgressCheckpoint.model_validate(saved.case.attempt.checkpoint_payload)
+        checkpoint = read_approval_history_checkpoint(saved.case.attempt)
+        if isinstance(checkpoint, ControlledCaseApprovalProgressCheckpoint):
             return checkpoint.initial_wait, list(checkpoint.progress_assets)
-        return read_wait_checkpoint(saved.case.attempt), []
+        return checkpoint, []
 
     def _selected(self, cur, saved):
         shared = self._continuations._decision_reader()

@@ -16,10 +16,9 @@ from src.application.runtime.turn_projection import project_completed_turn, proj
 from src.runtime.execution_logging import GRAPH_EVENT_LOG_VERSION_KEY, build_graph_event_intent
 from src.schemas.controlled_case_task_input import ControlledCaseResultTaskInputAsset, parse_controlled_case_task_input
 from src.schemas.framework_approval import FrameworkToolCallIdentity, approval_value_hash
-from src.schemas.framework_tool_projection import FrameworkToolProjection
 
 
-def project_controlled_case_result(original, native, root_model_budget, event_log, materials):
+def project_controlled_case_result(original, native, root_model_budget, event_log, materials, *, parent=None):
     """Reuse one rule for live completion and authenticated original reads.
 
     No upstream counterpart (checked: turn_projection, original case execution,
@@ -68,14 +67,14 @@ def project_controlled_case_result(original, native, root_model_budget, event_lo
             call = calls[0]
             identity = FrameworkToolCallIdentity(checkpoint_namespace="", source_message_id=source.id,
                 tool_call_id=call["id"], tool_name=call["name"], arguments=call["args"])
-            original_material = FrameworkToolProjection.from_tool_message(message, binding=binding, source=identity)
-            if (original_material != material or material.source != identity
+            material.require_native_message(message, binding=binding, source=identity)
+            if (material.source != identity
                 or approval_value_hash(material.record.input) != approval_value_hash(identity.arguments)):
                 raise ValueError("Controlled result tool material differs from its original model call")
             used.append(material.record.call_id)
     if len(used) != len(materials) or len(set(used)) != len(used):
         raise ValueError("Controlled result tool originals are missing, extra or repeated")
-    state = deepcopy(preparation.initial_state)
+    state = deepcopy(parent.state if parent is not None else preparation.initial_state)
     prefix = state["event_log"]
     if (event_log[:len(prefix)] != prefix or any(item["type"] == "runtime.turn_completed" for item in event_log)):
         raise ValueError("Controlled result changed its prepared prefix or already has a terminal intent")
@@ -86,6 +85,10 @@ def project_controlled_case_result(original, native, root_model_budget, event_lo
     state["tool_results"] = records
     state["tool_messages"] = build_runtime_tool_messages(binding.turn_id, records, binding_id=binding.binding_id,
         original_materials=materials, require_original=True)
+    if parent is not None:
+        if parent.binding != binding:
+            raise ValueError("Controlled result differs from its original approval parent")
+        state["context_bundle"]["deep_agent_approval_batch"] = []
     state.update(pending_approvals=[], pending_turn={}, model_response_text=output_text, final_response=output_text,
         termination_reason="completed", control_state="completed", continue_loop=False)
     state["model_response_summary"] = {"mode": "ok", "harness": "langgraph", "controlled_case_result_version": 1,

@@ -1182,6 +1182,29 @@ clock做最终核验；原件读前的剩余时间不能覆盖等待耗时。批
 后继独立Worker强杀／双制品部署及真实供应商／领域Runner另需验收。实际测试范围和
 未完成出口以实施记录§229为准，不以内部多步链路代替完整正式运行完成。
 
+### 审批后继终态结果材料（§230）
+
+内部Runtime在显式 `controlled_case_approval_result_available=True` 时，复用原结果
+reader／纯投影／Verification和资产writer，保留原批次最后一项之后的完整结果材料。
+该能力独立默认false，checkpoint兼容读者上限9；显式启用却max8时在begin／决定交付前
+延期。格式兼容、successor能力或历史读取均不隐式开启result writer。
+
+checkpoint9保留原root admission、完整checkpoint7／8历史、最后决定admission与
+delivered＋applied receipt。结果asset仍属于最后真实物理Task／AgentAttempt／epoch，
+source摘要绑定整个审批谱系；正式RunItem Attempt和已完成root／中间任务不改写。
+历史wait／progress／re-park读者从9读取原材料，不重新执行、续租或重分配身份。
+
+原生拒绝ToolMessage不携带应用artifact：展示原件只从已应用journal reader取得，
+并核对原生来源、工具身份、error状态及完整拒绝内容；批准／普通结果仍要求原artifact。
+结果保留parent的原slot／ordinal／展示字符串和事件前缀，完整messages、native终态、
+ToolJob、根预算及双租约继续验证。相同freeze／load复用原Verification和审计，
+取消等待者／丢ACK不证明回滚，也不授权重跑图／模型／工具；最后审计后仍核租约。
+
+本步**只有结果材料，没有后继Session投影／Assessment／唯一结算**。最后Task与正式
+Attempt仍running，不能将图退出设为正式完成；现有首次finalizer拒绝该后继来源，
+不把checkpoint9降为旧3–6并丢掉审批历史。main／CLI／Dispatcher、生产路由、新批次
+停车及新格式独立Worker／双制品尚未据此开放。实际验证与剩余出口见实施记录§230。
+
 ### 原路由与恢复验证
 
 关闭新选路时记录 `deep_agent_new_turn_route_disabled`，带 `session_id`、`turn_id` 和 `recovery_reason=new_turn_admission_disabled`；这是路由决定，不是取消/停止回执。

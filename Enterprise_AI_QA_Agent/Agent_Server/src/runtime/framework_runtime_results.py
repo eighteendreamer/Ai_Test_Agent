@@ -254,16 +254,18 @@ class FrameworkRuntimeResults:
     def __init__(self, tasks):
         self._tasks, self._settings = tasks, tasks._settings
 
-    async def freeze_controlled_case(self, owner, *, runtime_result, native):
+    async def freeze_controlled_case(self, owner, *, runtime_result, native, approval_continuations=None, capabilities=None):
         """Shared asset family, original formal attempt; not a message-stage."""
         from src.runtime.controlled_case_results import ControlledCaseResults
 
-        return await ControlledCaseResults(self._tasks).freeze(owner, runtime_result=runtime_result, native=native)
+        return await ControlledCaseResults(self._tasks, approval_continuations=approval_continuations,
+            capabilities=capabilities).freeze(owner, runtime_result=runtime_result, native=native)
 
-    async def load_controlled_case(self, owner, *, native):
+    async def load_controlled_case(self, owner, *, native, approval_continuations=None, capabilities=None):
         from src.runtime.controlled_case_results import ControlledCaseResults
 
-        return await ControlledCaseResults(self._tasks).load(owner, native=native)
+        return await ControlledCaseResults(self._tasks, approval_continuations=approval_continuations,
+            capabilities=capabilities).load(owner, native=native)
 
     async def read_completed_message(self, binding, task_id, *, native_reader):
         """Read the original ordinary message; no asset or successor is saved."""

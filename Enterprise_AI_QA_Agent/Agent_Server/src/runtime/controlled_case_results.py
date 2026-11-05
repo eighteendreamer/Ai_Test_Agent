@@ -16,8 +16,11 @@ from src.infrastructure.postgres_runtime import postgres_connect
 from src.runtime.controlled_case_result_reader import ControlledCaseResultReader, _require
 from src.runtime.postgres_runtime_owner import assert_runtime_owner, configure_runtime_owner_transaction
 from src.runtime.framework_application_projection import _model_hash, _tool_hash
-from src.schemas.controlled_case_admission import ControlledCaseResultCheckpoint, read_result_checkpoint
-from src.schemas.controlled_case_task_input import ControlledCaseFinalizationTaskInputAsset, parse_controlled_case_task_input
+from src.schemas.controlled_case_admission import (
+    ControlledCaseResultCheckpoint, ControlledCaseApprovalResultCheckpoint,
+    approval_result_source_sha256, read_result_checkpoint,
+)
+from src.schemas.controlled_case_task_input import ControlledCaseFinalizationTaskInputAsset
 from src.schemas.framework_approval import approval_value_hash
 from src.schemas.framework_runtime_result import ControlledCaseRuntimeResultAsset, FrameworkRuntimeResult
 from src.schemas.session import ExecutionEvent
@@ -41,8 +44,10 @@ def _retention_event(checkpoint):
 
 
 class ControlledCaseResults:
-    def __init__(self, tasks):
+    def __init__(self, tasks, *, approval_continuations=None, capabilities=None):
         self._tasks = tasks
+        self._reader = ControlledCaseResultReader(tasks, approval_continuations=approval_continuations,
+            capabilities=capabilities)
 
     async def freeze(self, owner, *, runtime_result, native):
         # Preserve worker-only authority; capture inputs before the DB thread.
@@ -81,14 +86,15 @@ class ControlledCaseResults:
             cur.execute(f"SELECT * FROM {tasks._tasks} WHERE id=%s FOR UPDATE", (owner.task_id,))
             task = cur.fetchone()
             _require(task is not None, "Controlled result asset original task is missing")
-            original = parse_controlled_case_task_input((task["input_payload"] or {}).get("case_execution_input"))
+            original, lineage, _, _, _ = self._reader.original_input_in_transaction(cur, owner, locked, task)
             _require(isinstance(original, ControlledCaseFinalizationTaskInputAsset),
                 "Controlled result asset has no original retention/Verification preparation")
-            result = ControlledCaseResultReader(tasks).read_in_transaction(cur, owner, original, native)
+            result = self._reader.read_in_transaction(cur, owner, original, native)
             material = FrameworkRuntimeResult.from_result(result).model_dump(mode="json")
             _require(supplied is None or supplied == material,
                 "Controlled result asset differs from its deterministic original projection")
-            previous = read_result_checkpoint(locked.attempt)
+            previous = (None if lineage is not None and locked.attempt.checkpoint_version in {7, 8}
+                else read_result_checkpoint(locked.attempt))
             if previous is not None:
                 # Retained verifications are reused, never rebuilt on reentry.
                 asset = require_retained_case_asset(cur, settings, owner, original, previous, material)
@@ -102,7 +108,9 @@ class ControlledCaseResults:
             values = dict(schema_version=2, scope="completed_controlled_case_finalization_input",
                 binding=binding.model_dump(mode="json"), task_id=owner.task_id, attempt_id=owner.attempt_id,
                 owner_epoch=owner.owner_epoch, input_sha256=original.asset_sha256,
-                source_sha256=approval_value_hash(admission.model_dump(mode="json")),
+                source_sha256=(approval_result_source_sha256(lineage['approval_history'],
+                    lineage['approval_admission'], lineage['decision_receipt']) if lineage is not None
+                    else approval_value_hash(admission.model_dump(mode="json"))),
                 execution_sha256=admission.submission_sha256,
                 model_calls_sha256=_model_hash(cur, settings, binding), tool_jobs_sha256=_tool_hash(cur, settings, binding),
                 runtime_result=material, assistant_message_id=original.runtime_preparation.identity.assistant_message_id,
@@ -113,14 +121,16 @@ class ControlledCaseResults:
                 run_item_execution_attempt_id=original.run_item_execution_attempt_id)
             asset = ControlledCaseRuntimeResultAsset(**values, asset_sha256=approval_value_hash(values))
             cur.execute("SELECT clock_timestamp() AS now")
-            checkpoint = ControlledCaseResultCheckpoint(schema_version=2, admission=admission,
-                runtime_result_asset=asset, retained_at=cur.fetchone()["now"])
+            reader, version = (ControlledCaseApprovalResultCheckpoint, 9) if lineage is not None else (ControlledCaseResultCheckpoint, 2)
+            checkpoint = reader(schema_version=version, admission=admission,
+                runtime_result_asset=asset, retained_at=cur.fetchone()["now"], **(lineage or {}))
             # Fresh DB clock after builders/waiting reads; locks hold to commit.
             assert_runtime_owner(cur, settings, owner)
-            locked.store._write_attempt(cur, locked.attempt.model_copy(update={"checkpoint_version": 2,
+            locked.store._write_attempt(cur, locked.attempt.model_copy(update={"checkpoint_version": version,
                 "checkpoint_payload": checkpoint.model_dump(mode="json")}))
             tasks._sessions.append_event_in_transaction(cur, binding.session_id,
                 _retention_event(checkpoint), runtime_owner=owner)
+            assert_runtime_owner(cur, settings, owner)
             return asset
 
 
@@ -128,6 +138,7 @@ def require_retained_case_asset(cur, settings, owner, original, checkpoint, mate
     """Shared original retention checks, AFTER the complete result reader."""
     asset, binding = checkpoint.runtime_result_asset, owner.binding
     _require(asset.runtime_result.model_dump(mode="json") == material
+        and asset.source_sha256 == checkpoint.result_source_sha256
         and asset.assistant_message_id == original.runtime_preparation.identity.assistant_message_id
         and asset.user_message == original.context.objective
         and asset.projection_at == asset.runtime_result.events[-1].timestamp

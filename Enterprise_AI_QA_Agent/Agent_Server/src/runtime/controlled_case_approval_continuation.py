@@ -152,6 +152,8 @@ class ControlledCaseApprovalContinuations:
             task, capabilities)
 
     def _prepare_runtime(self, task, capabilities):
+        if capabilities.controlled_case_approval_result_available and capabilities.controlled_case_checkpoint_max_version < 9:
+            raise TaskDeferred("framework_case_checkpoint_format_unavailable")
         with postgres_connect(self._settings) as conn, conn.cursor() as cur:
             configure_runtime_owner_transaction(cur, self._settings)
             saved = self._captured_originals(cur, task, capabilities, states=("claimed",), session_state="waiting_approval")
