@@ -11625,3 +11625,58 @@ $files = Get-Content ../.codex-logs/e230-affected-files.txt
 本步仅精确暂存19相关文件（产品／schema、两个旧capability断言、新approval_result专项、路由说明与本记录），新测试单文件force-add，不改ignore。不暂存用户v3、日志／探针／环境／缓存，不push／PR。提交信息`【feat】保留审批后继完整结果及原始谱系`，实际ID见Git与交付；没有公共HTTP／DDL／依赖／生产路由更改。checkpoint9新格式需要兼容制品，旧max8提前延期，结果writer仍默认关闭。
 
 下一子步须将完整审批谱系接入**现有唯一**Session finalizer／各分项回执／Assessment／结算，并保留9的历史材料；不能直接降回3–6或复制一套finalizer。新批次停车、实际Worker路由／独立进程、双制品／备份恢复及全v4其他模式与E3／E4／性能出口继续未完成；§215历史账本／计时风险不因本步绿色而消失。完整goal保持active，整个项目剩余粗估仍 **4–8周有效开发／验收**，环境和人工等待另计。
+
+## §231　已保留审批结果脱离当前停车标记的历史读取（v4 §9.4／§12.1）
+
+续接基线为`4e94b414fa6d1e31e11c13809c7c649c8564a484`。核对工作区只有用户v3改动，未覆盖或暂存；其SHA256仍为`8a43e94160767a0de20740f2cb30782f06322cbc3467076dfcb120d4efdf1ad4`。不重启已结束的§230专项／45文件测试，不沿用旧绿色代表本轮字节，也不修改时钟、chronyd或测试服务。完整v4目标保持active。
+
+### 根因、依据与本子步范围
+
+在接统一finalizer前确认一个依赖缺口：`SessionService._finalize_runtime_result`会把`metadata.pending_turn`设为原结果的空pending并完成Session状态；但`ControlledCaseResultReader.original_input_in_transaction`无论首次准备还是结果重入，都会读取当前停车并要求旧Session parking hash。它把可消费的准入标记误当作永久结果来源，因此即使历史材料与三租约有效，原结果也无法在合法清除标记后读取。这是来源边界错位，不是需要伪造Session／Task或跳过原件的例外。
+
+依据来源 → 采用方式：现有`ControlledCaseApprovalContinuations._locked`、`ControlledCaseApprovalProgress._read_chain`、`ControlledCaseApprovalReparks._read_receipt` → 在已保留checkpoint9时读取root、完整progress和**每一项**前序原子停车／原Worker返回原件；不重复实现native解析、决定应用、停车或finalizer。第一次准备尚无结果时继续调用原current reader。最后真实admission／applied receipt、native终态、完整事件／工具／模型结算、结果审计以及双owner／正式租约核验不变；原result／successor能力及codec边界不变。日志`controlled_case_result_approval_history_read`只记录身份、前序数量和automatic_replay=false，不记录正文或租约凭据。
+
+本地课程`Agent轨迹与协议鲁棒性.html`的幂等、轨迹和失败注入原则 → 测试比较完整数据库／native摘要和工具／模型次数，不只断言输出相等。新`test_controlled_case_approval_result_history.py`复用真实审批fixture、固定官方图和本地HTTP夹具，模型化现有finalizer的空／移除pending及Session completed字段转换，**没有伪称已调用后继finalizer或生成应用提交**；checkpoint仍9、无projection_receipts，最后Task／正式Attempt仍running且无正式结果。
+
+### TDD实测与当前验证状态
+
+固定`E:\MiniConda3\envs\Agent\python.exe`，cwd=Agent_Server；每条pytest前执行`../scripts/clear_uv_environment.ps1 -ProcessOnly`，PG=1、其余实际live开关=0、diagnostics=1、UTF8。不安装／升级依赖，不执行UV，不调用真实供应商或测试目标。
+
+~~~powershell
+& E:\MiniConda3\envs\Agent\python.exe -u -m pytest tests/test_controlled_case_approval_result_history.py -q -rs --tb=short
+~~~
+
+首次4项（单审批schema7／串行schema8，各空pending与移除pending）在`e231-history-red.log`实际 **4 failed、69.76秒、exit1**，均在当前停车原件比较抛`Formal current parking differs from its original published receipt`；不是fixture或环境失败。最小修复后`e231-history-green.log`实际 **4 passed、72.99秒、exit0，无skip／deselect**。重复load／freeze没有重建Verification、调用图／模型／工具或修改数据库；已完成root／前序和正式运行结果保持原样。
+
+随后补齐前序Task／Attempt／原子停车与progress审计／Worker claim和return／已应用决定缺失、重算回执与审计仍不能替代Worker原件、两级前序逐项核验、首次保留仍要求当前停车、三租约失效及最后历史读跨租约回滚、缺ports／默认关闭／旧codec／关闭successor能力等边界。完整新专项在`e231-history-full.log`运行中，**尚无最终计数**；源／测试冻结，不并发启动重复pytest，后续完整消费回归和静态／摘要／精确提交仍待终态。
+
+本子步不新增schema10／11，不把9降回旧3–6，不开放生产路由、main／CLI／Dispatcher或公共HTTP。下一依赖仍是显式传递已配置结果读者、保留审批谱系的原分项writer及唯一Session finalizer，再推进Assessment／原子结算和独立Worker等完整v4出口；不得把本轮读取前置条件当作后继正式运行完成。项目剩余粗估仍 **4–8周有效开发／验收**，环境与人工等待另计。
+
+### 新专项终态、字节冻结与完整消费回归启动
+
+原session7455已终态，`e231-history-full.log`实际 **25 passed、477.00秒（7:56）、exit0，无skip／deselect**。包含schema7／8结果在两种空标记形态下的并发load／freeze、无重执行权及全部新增历史原件／回执／租约／能力边界；模型化Session字段变化并非后继finalizer已经接通。
+
+`e231-source-frozen.log`：src **884个py，9428b554141e6f0a8ec28cbca97f36dbc4947f0b0a6f3eb6e249ffb200837345**；tests **700个py，60dd241d255909d60cca31447042f8fd940c4476fb6cc36f432b60f930e4a382**。`python -m compileall -q src tests`与`python -m pip check`实际exit0，No broken requirements found，日志`e231-static-pre.log`。ruff／mypy查证未安装，未运行独立lint／typecheck，不安装依赖，不以compileall替代它们。
+
+回归启动器首次过早读取前置命令尚未生成的清单，PowerShell报`e231-affected-files.txt`不存在（exit1），**pytest根本未启动**；不是产品或测试红。等待原前置session54303实际exit0、核清单46文件和固定解释器pytest／multiprocessing残留0后才启动一次pytest，不覆盖既有红绿日志或重复运行未终态进程。
+
+完整清单`e231-affected-files.txt`为§230完整45文件加新历史读者专项，共**46个完整消费文件**：
+
+~~~powershell
+$files = Get-Content ../.codex-logs/e231-affected-files.txt
+& E:\MiniConda3\envs\Agent\python.exe -u -m pytest @files -q -rs --tb=short
+~~~
+
+仍使用每条pytest前ProcessOnly清UV、PG=1、其余实际live=0、diagnostics=1、UTF8。原session39065、日志`e231-all-consumers.log`正在运行，**尚无最终结果**；src／tests保持上述字节冻结，不修改运行中的源码、不并发重启测试。本步未提交，终态后还须核前后摘要、用户v3、暂存范围和静态结果；完整v4仍未完成。
+
+### 完整消费回归终态及交付边界
+
+原session39065已终态，`e231-all-consumers.log`实际 **2085 passed、13821.06秒（3:50:21）、exit0，无skip／deselect**。46个完整文件包括新25项、§230全部45文件、原正式用例结果／Session分项／finalization／Assessment／Memory／原子结算、审批历史／successor／re-park及共享普通消息消费方。原首次停车与独立Worker故障窗口随原矩阵回归；没有在运行中改src／tests或重启pytest。
+
+`e231-source-after.log`与冻结src884／tests700及两个SHA256完全一致。全src／tests的`compileall`和`pip check`再次实际exit0，No broken requirements found，见`e231-static-final.log`；ruff／mypy仍未安装，独立lint／typecheck未执行，不以编译或测试代替。固定Agent解释器pytest／multiprocessing残留0；用户v3 SHA256仍原值；本轮相关diff --check通过。
+
+交付对应：v4 §9.4／§12.1 → §231 → `controlled_case_result_reader.py`复用历史完整状态／决定／每项原子停车回执，保持首次current准入和已保留结果原件／三租约／能力边界 → 新历史专项4红、最小4绿、最终25绿及完整46文件2085绿、静态／摘要 → **仅统一收尾所需的历史读取前置条件已验证**。新测试中的Session完成字段是模型化现有finalizer的合法变化，不是后继唯一finalizer、应用提交或正式用例结果验收；最后Task／正式Attempt仍running。
+
+本子步只允许精确暂存4相关文件：产品reader、新历史专项、路由说明、本实施记录。新测试被既有tests ignore覆盖，单文件force-add，不改ignore；用户v3、日志／探针／环境／缓存均不暂存。不push／PR，不新增HTTP／DDL／依赖／格式／生产路由。提交信息`【fix】从完整历史原件读取已保留审批结果`，实际ID以Git及交付为准。
+
+下一子步继续显式接入已配置结果读者和保留审批谱系的共享分项writer／唯一Session finalizer，再推进Assessment与唯一结算。新批次停车、新后继独立进程强杀、真实供应商／领域Runner、main lifespan、全量前后端、双制品／备份恢复及全v4其余模式／E3／E4／性能出口未在本步完成；§215风险仍保留。完整goal保持active，剩余粗估仍 **4–8周有效开发／验收**，环境与人工等待另计。

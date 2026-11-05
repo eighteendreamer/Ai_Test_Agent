@@ -64,14 +64,33 @@ class ControlledCaseResultReader:
         saved = continuation._locked(cur, continuation._wire(cur, task['id'], caps), caps)
         _require(saved.task == task and saved.case.attempt.id == locked.attempt.id,
             "Controlled approval result changed its original physical producer")
-        current = continuation._submission.current_wait_in_transaction(cur, saved.origin_command, saved.case,
-            saved.session, saved.owner, saved.wait, saved.origin, caps)
-        parent = current.state_asset
+        progress = ControlledCaseApprovalProgress(continuation)
+        retained = read_result_checkpoint(locked.attempt) if locked.attempt.checkpoint_version == 9 else None
+        if retained is None:
+            current = continuation._submission.current_wait_in_transaction(cur, saved.origin_command, saved.case,
+                saved.session, saved.owner, saved.wait, saved.origin, caps)
+            parent = current.state_asset
+        else:
+            from src.runtime.controlled_case_approval_repark import ControlledCaseApprovalReparks
+
+            # Application finalization consumes pending_turn. Read the same
+            # historical state/decision/parking originals, not that mutable
+            # current-admission marker. Every predecessor must have returned;
+            # unlike current admission, no trailing live progress is allowed.
+            initial, assets = progress._read_chain(cur, saved, caps)
+            if assets and not caps.controlled_case_approval_successor_available:
+                raise TaskDeferred("framework_case_approval_successor_unavailable")
+            reparks, parent = ControlledCaseApprovalReparks(continuation), initial.state_asset
+            for asset in assets:
+                predecessor = continuation._locked(cur, continuation._wire(cur, asset.task_id, caps), caps)
+                reparks._read_receipt(cur, predecessor, asset, caps)
+                parent = asset
+            logger.info("controlled_case_result_approval_history_read", extra={"task_id": task['id'],
+                "binding_id": owner.binding.binding_id, "predecessor_count": len(assets), "automatic_replay": False})
         _require(parent is not None and len(parent.natives) == 1
             and framework_approval_id(owner.binding, parent.natives[0]) == task['reference_id'],
             "Controlled approval terminal requires its last original pending sibling")
-        plan, selected = ControlledCaseApprovalProgress(continuation)._selected(cur, saved)
-        retained = read_result_checkpoint(locked.attempt) if locked.attempt.checkpoint_version == 9 else None
+        plan, selected = progress._selected(cur, saved)
         _require(retained is None or (retained.approval_admission == saved.admission
             and retained.decision_receipt == plan.receipt),
             "Controlled result changed its original approval lineage")

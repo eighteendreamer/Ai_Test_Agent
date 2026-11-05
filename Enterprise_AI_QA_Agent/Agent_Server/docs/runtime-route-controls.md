@@ -1205,6 +1205,20 @@ Attempt仍running，不能将图退出设为正式完成；现有首次finalizer
 不把checkpoint9降为旧3–6并丢掉审批历史。main／CLI／Dispatcher、生产路由、新批次
 停车及新格式独立Worker／双制品尚未据此开放。实际验证与剩余出口见实施记录§230。
 
+### 已保留审批结果的历史来源读取（§231）
+
+checkpoint9的freeze重入／load不再要求Session保留已消费的`pending_turn`停车标记。
+它们复用同一历史root、完整progress原件、每个前序的原子re-park回执和Worker
+claim／return、审计与账本读者；所有前序必须已停车，不使用当前准入允许的活跃末尾例外。
+最后真实Task admission／applied journal、原生终态、事件／工具／模型事实和结果资产
+原件仍须等值核验。摘要或同名Session标记不能替代这些原件。
+
+尚无保留结果时仍走原当前停车核验；已有结果也仍要求显式approval ports、原格式上限、
+既有successor／result能力及Session／owner／正式RunItem三项有效租约，历史读取不授予
+claim／begin／重执行权。未新增HTTP、DDL、格式或生产开关，也没有安装后继finalizer。
+本步只是唯一Session收尾清除旧标记后的读取前置条件；Session投影／Assessment／结算
+仍待接入并保留完整谱系，不以模型化的Session字段转换测试冒充实际finalizer验收。
+
 ### 原路由与恢复验证
 
 关闭新选路时记录 `deep_agent_new_turn_route_disabled`，带 `session_id`、`turn_id` 和 `recovery_reason=new_turn_admission_disabled`；这是路由决定，不是取消/停止回执。
