@@ -134,5 +134,6 @@ CREATE TABLE `system_sponsor_config`  (
 -- ----------------------------
 INSERT INTO `system_sponsor_config` (`name`, `logo_file`, `website_url`, `sponsor_type`, `sort_order`, `enabled`, `description`) VALUES ('E-API', 'e-api.png', 'https://api.ewo.so/', '中转站', 0, 1, NULL);
 INSERT INTO `QA_Agent`.`system_sponsor_config` (`id`, `name`, `logo_file`, `website_url`, `sponsor_type`, `sort_order`, `enabled`, `description`, `created_at`, `updated_at`) VALUES (2, '9LinkAI', 'https://9linkai.com/brand/9link/mark.svg', 'https://9linkai.com/register?aff=EIGHTEEN', '中转站', 1, 1, '专注 AI 模型 API 接入，通过统一接口连接第三方大模型，让开发者把精力放在 AI 应用与 Agent 工作流本身。', '2026-11-06 10:08:24', '2026-11-06 10:08:24');
+INSERT INTO `QA_Agent`.`system_sponsor_config` (`id`, `name`, `logo_file`, `website_url`, `sponsor_type`, `sort_order`, `enabled`, `description`, `created_at`, `updated_at`) VALUES (3, 'LAYSO', 'https://layso.ai/logo-ui.webp', 'https://layso.ai/?aff=bLWw', '中转站', 2, 1, '提供多模态模型 API 中转服务，统一接入对话、图像、视频与音频模型，按实际用量计费，适用于 AI 应用开发与 Agent 工作流。', '2026-11-06 10:37:10', '2026-11-06 10:37:10');
 
 SET FOREIGN_KEY_CHECKS = 1;
