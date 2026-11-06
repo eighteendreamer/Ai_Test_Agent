@@ -18,25 +18,26 @@
 
 ---
 
-## E-API 赞助支持
+## 赞助支持
 
-本项目获得 **E-API** 赞助支持。E-API 提供聚合模型 API 服务（中转站），可用于开发者工具和 AI 应用的模型接入。
+感谢以下赞助商对 **御策天检 · AI 测试平台** 的支持。如果你正在为 AI 应用、Agent 工作流或开发者工具接入模型服务，欢迎通过下方专属链接了解产品。
 
-新用户通过下方专属链接注册，可获得 **5 元产品额度**：
+| 赞助商 | 服务介绍 | 专属注册链接 | 邀请标识 | 新用户权益 |
+| --- | --- | --- | --- | --- |
+| **E-API** | 提供聚合模型 API 服务（中转站），可用于开发者工具和 AI 应用的模型接入。 | [注册并领取 5 元产品额度](https://eapi.site/register?aff=KZQTHE) | `KZQTHE` | 通过专属链接注册可获 **5 元产品额度**，具体使用规则以活动页面为准。 |
+| **9LinkAI · 久连 9Link** | 专注 AI 模型 API 接入，通过统一接口连接第三方大模型，让开发者把精力放在 AI 应用与 Agent 工作流本身。 | [通过专属链接注册 9LinkAI](https://9linkai.com/register?aff=EIGHTEEN) | `EIGHTEEN` | 最新活动与权益以官网页面为准。 |
 
-[领取 E-API 新用户 5 元产品额度](https://eapi.site/register?aff=KZQTHE)
+> **推广说明**：以上链接为赞助推广链接。你通过链接注册或消费后，我可能获得对应平台提供的推广返佣。各平台及本推广活动与 GitHub 官方无关。产品额度、可用范围及返佣结算以各平台活动页面的现行规则为准。
 
-邀请码：`KZQTHE`
+系统内也提供赞助商展示入口，当前默认配置为 E-API：
 
-> **推广说明**：以上链接为赞助推广链接。你通过该链接注册或消费后，我可能获得 E-API 提供的推广返佣。E-API 及本推广活动与 GitHub 官方无关。产品额度、可用范围及返佣结算以 E-API 活动页面的现行规则为准。
-
-赞助商信息在系统内也是可见的，不只是写在 README 里：
-
-- **前端入口**：桌面端 / Web 顶栏右侧的赞助商轮播 logo + 列表弹窗（`agent_web/src/components/layout/SponsorEntry.vue`，15 种语言均有文案）
-- **读取接口**：`GET /api/v1/sponsors`（只返回 `enabled=true` 的记录，无需鉴权）
-- **数据来源**：MySQL 表 `system_sponsor_config`，首次启动自动写入默认记录（E-API → `https://api.ewo.so/`，类型「中转站」）
-- **Logo 资源**：`Enterprise_AI_QA_Agent/agent_web/public/sponsors/e-api.png`
-- 当前未提供后台 CRUD 界面，新增/修改赞助商直接维护该表
+| 项目 | 说明 |
+| --- | --- |
+| **前端入口** | 桌面端 / Web 顶栏右侧的赞助商轮播 logo + 列表弹窗（`agent_web/src/components/layout/SponsorEntry.vue`，15 种语言均有文案）。 |
+| **读取接口** | `GET /api/v1/sponsors`，只返回 `enabled=true` 的记录，无需鉴权。 |
+| **数据来源** | MySQL 表 `system_sponsor_config`，首次启动自动写入默认记录（E-API → `https://api.ewo.so/`，类型「中转站」）。 |
+| **Logo 资源** | `Enterprise_AI_QA_Agent/agent_web/public/sponsors/e-api.png`。 |
+| **配置维护** | 当前未提供后台 CRUD 界面，新增或修改赞助商需直接维护该表。 |
 
 ---
 

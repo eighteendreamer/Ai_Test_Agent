@@ -133,5 +133,6 @@ CREATE TABLE `system_sponsor_config`  (
 -- Records of system_sponsor_config
 -- ----------------------------
 INSERT INTO `system_sponsor_config` (`name`, `logo_file`, `website_url`, `sponsor_type`, `sort_order`, `enabled`, `description`) VALUES ('E-API', 'e-api.png', 'https://api.ewo.so/', '中转站', 0, 1, NULL);
+INSERT INTO `QA_Agent`.`system_sponsor_config` (`id`, `name`, `logo_file`, `website_url`, `sponsor_type`, `sort_order`, `enabled`, `description`, `created_at`, `updated_at`) VALUES (2, '9LinkAI', 'https://9linkai.com/brand/9link/mark.svg', 'https://9linkai.com/register?aff=EIGHTEEN', '中转站', 1, 1, '专注 AI 模型 API 接入，通过统一接口连接第三方大模型，让开发者把精力放在 AI 应用与 Agent 工作流本身。', '2026-11-06 10:08:24', '2026-11-06 10:08:24');
 
 SET FOREIGN_KEY_CHECKS = 1;
